@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# Local configs & runtime artifacts
+.env
+config.json
+pure_webcam_variables.json
+screenshare_media_report.json
+webcam_metadata.json
+obs-rnp-bridge.dll
+obs_plugin_cpp/bin/
+
+# Temporary/scratch inspection scripts
+scratch_*.py
+test_*.py
+inspect_*.py
+check_*.py
+capture_*.py
+dump_*.py
+analyze_dump.py
+dummy.py
+find_all_webcam_names.py
+page_dump.html
+
+# Media & screenshots
+*.log
+*.tmp
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# IDE & Antigravity
+node_modules/
+.system_generated/
+.user_uploaded/
+.tempmediaStorage/
+scratch/
