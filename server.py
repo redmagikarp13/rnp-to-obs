@@ -1375,6 +1375,48 @@ NAME_TAG_CSS = """
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
+
+/* LIVE HEALTH MONITOR STYLES */
+.live-pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 8px #10b981;
+    animation: pulseLive 1.5s infinite;
+}
+@keyframes pulseLive {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.6; }
+}
+.source-health-pill {
+    background: rgba(11, 17, 32, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 5px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.25s ease;
+}
+.source-health-pill.is-active {
+    border-color: rgba(16, 185, 129, 0.4);
+    background: rgba(16, 185, 129, 0.08);
+}
+.pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.pill-dot.connected { background: #10b981; box-shadow: 0 0 6px #10b981; }
+.pill-dot.disconnected { background: #64748b; }
+.pill-dot.connecting { background: #eab308; box-shadow: 0 0 6px #eab308; }
+.pill-dot.alert { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+.pill-info { display: flex; flex-direction: column; line-height: 1.15; }
+.pill-name { font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.pill-state { font-size: 11px; color: #f8fafc; font-weight: 800; }
 """
 
 # --------------------------------------------------------------------------
@@ -1814,6 +1856,70 @@ async def get_control_panel():
             <div id="shieldBadge" class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">🛡️ Anti-Inatividade</div>
             <div id="statusBadge" class="badge disconnected">● Desconectado</div>
         </div>
+    </div>
+
+    <!-- MONITOR ATIVO DE FONTES & CONEXÃO (LIVE HEALTH MONITOR) -->
+    <div class="card" style="background: rgba(15, 23, 42, 0.85); border-color: rgba(56, 189, 248, 0.35); padding: 10px 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #38bdf8; font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+                <span class="live-pulse-dot"></span>
+                <span>Monitor de Fontes em Tempo Real</span>
+            </span>
+            <span id="healthHeartbeat" style="font-size: 10.5px; color: #94a3b8; font-family: monospace;">● Ativo (500ms)</span>
+        </div>
+
+        <div class="sources-health-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px;">
+            <div class="source-health-pill" id="healthPillRnp">
+                <span class="pill-dot disconnected" id="dotRnp"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Sala RNP</span>
+                    <span class="pill-state" id="healthStateRnp">Desconectado</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillSlides">
+                <span class="pill-dot disconnected" id="dotSlides"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Apresentação</span>
+                    <span class="pill-state" id="healthStateSlides">Sem Slides</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillCams">
+                <span class="pill-dot disconnected" id="dotCams"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Webcams</span>
+                    <span class="pill-state" id="healthStateCams">0 Câmeras</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillLibras">
+                <span class="pill-dot disconnected" id="dotLibras"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Libras</span>
+                    <span class="pill-state" id="healthStateLibras">Nenhum</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillYt">
+                <span class="pill-dot disconnected" id="dotYt"></span>
+                <div class="pill-info">
+                    <span class="pill-name">YouTube Chat</span>
+                    <span class="pill-state" id="healthStateYt">Desconectado</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillAudio">
+                <span class="pill-dot disconnected" id="dotAudio"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Áudio PCM</span>
+                    <span class="pill-state" id="healthStateAudio">Standby</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- BANNER DE EVENTO / NOTIFICAÇÃO AO VIVO (EX: NOVA CÂMERA ENTROU / SAIU) -->
+        <div id="liveSourceEventBanner" style="display: none; margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px;"></div>
     </div>
 
     <!-- SALVAR / CARREGAR CONFIGURAÇÕES -->
@@ -2505,11 +2611,45 @@ async def get_control_panel():
             }});
         }}
 
+        let prevConnected = null;
+        let prevCamMap = new Map();
+        let prevHasPresentation = false;
+        let prevLibrasCount = 0;
+        let lastEventTimeout = null;
+
+        function triggerSourceAlert(icon, text, type = 'info') {{
+            const banner = document.getElementById('liveSourceEventBanner');
+            if (!banner) return;
+            banner.style.display = 'flex';
+            if (type === 'success') {{
+                banner.style.background = 'rgba(16, 185, 129, 0.2)';
+                banner.style.border = '1px solid #10b981';
+                banner.style.color = '#34d399';
+            }} else if (type === 'warn') {{
+                banner.style.background = 'rgba(239, 68, 68, 0.2)';
+                banner.style.border = '1px solid #ef4444';
+                banner.style.color = '#f87171';
+            }} else {{
+                banner.style.background = 'rgba(56, 189, 248, 0.2)';
+                banner.style.border = '1px solid #38bdf8';
+                banner.style.color = '#38bdf8';
+            }}
+            banner.innerHTML = `<span>${{icon}}</span> <span>${{text}}</span>`;
+            if (lastEventTimeout) clearTimeout(lastEventTimeout);
+            lastEventTimeout = setTimeout(() => {{
+                banner.style.display = 'none';
+            }}, 4500);
+        }}
+
         async function fetchStatus() {{
             try {{
                 const res = await fetch('/api/status?t=' + Date.now());
-                if (!res.ok) return;
+                if (!res.ok) {{
+                    document.getElementById('healthHeartbeat').innerText = '⚠️ Erro de API';
+                    return;
+                }}
                 const data = await res.json();
+                document.getElementById('healthHeartbeat').innerText = '● Ao Vivo (500ms)';
                 
                 const badge = document.getElementById('statusBadge');
                 if (data.connecting) {{
@@ -2539,6 +2679,146 @@ async def get_control_panel():
                 focusedCamId = (data.focused_camera_id !== null && data.focused_camera_id !== undefined) ? String(data.focused_camera_id) : null;
                 pinnedCamIds = (data.pinned_camera_ids || []).map(String);
                 librasCamIds = (data.libras_camera_ids || []).map(String);
+
+                const cams = data.cameras || [];
+                const librasCams = cams.filter(c => librasCamIds.includes(String(c.id)) || c.is_libras);
+
+                // --- 📡 MONITOR ATIVO DE FONTES & EVENTOS ---
+                // 1. Conexão Sala RNP
+                const pillRnp = document.getElementById('healthPillRnp');
+                const dotRnp = document.getElementById('dotRnp');
+                const stateRnp = document.getElementById('healthStateRnp');
+                if (data.connecting) {{
+                    dotRnp.className = 'pill-dot connecting';
+                    stateRnp.innerText = 'Conectando...';
+                    pillRnp.className = 'source-health-pill';
+                }} else if (data.connected) {{
+                    dotRnp.className = 'pill-dot connected';
+                    stateRnp.innerText = '🟢 Online';
+                    pillRnp.className = 'source-health-pill is-active';
+                }} else {{
+                    dotRnp.className = 'pill-dot disconnected';
+                    stateRnp.innerText = '⚪ Offline';
+                    pillRnp.className = 'source-health-pill';
+                }}
+
+                if (prevConnected !== null) {{
+                    if (!prevConnected && data.connected) {{
+                        triggerSourceAlert('⚡', 'Conectado à sala RNP com sucesso!', 'success');
+                    }} else if (prevConnected && !data.connected) {{
+                        triggerSourceAlert('⚠️', 'Conexão com a sala RNP foi interrompida ou caiu.', 'warn');
+                    }}
+                }}
+                prevConnected = !!data.connected;
+
+                // 2. Apresentação / Compartilhamento de Tela
+                const dotSlides = document.getElementById('dotSlides');
+                const stateSlides = document.getElementById('healthStateSlides');
+                const pillSlides = document.getElementById('healthPillSlides');
+                if (data.has_presentation) {{
+                    dotSlides.className = 'pill-dot connected';
+                    stateSlides.innerText = '🟢 1080p Ativo';
+                    pillSlides.className = 'source-health-pill is-active';
+                }} else {{
+                    dotSlides.className = 'pill-dot disconnected';
+                    stateSlides.innerText = data.connected ? '⚪ Aguardando' : '⚪ Sem Slides';
+                    pillSlides.className = 'source-health-pill';
+                }}
+
+                if (prevConnected && data.connected) {{
+                    if (!prevHasPresentation && data.has_presentation) {{
+                        triggerSourceAlert('📊', 'Apresentação/Slides iniciados pelo palestrante!', 'success');
+                    }} else if (prevHasPresentation && !data.has_presentation) {{
+                        triggerSourceAlert('📊', 'Apresentação/Slides pausados ou finalizados.', 'info');
+                    }}
+                }}
+                prevHasPresentation = !!data.has_presentation;
+
+                // 3. Monitor de Câmeras & Detecção de Entrada/Saída
+                const dotCams = document.getElementById('dotCams');
+                const stateCams = document.getElementById('healthStateCams');
+                const pillCams = document.getElementById('healthPillCams');
+                stateCams.innerText = cams.length > 0 ? (cams.length + ' Ativa(s)') : '0 Câmeras';
+                if (cams.length > 0) {{
+                    dotCams.className = 'pill-dot connected';
+                    pillCams.className = 'source-health-pill is-active';
+                }} else {{
+                    dotCams.className = 'pill-dot disconnected';
+                    pillCams.className = 'source-health-pill';
+                }}
+
+                const currentCamMap = new Map(cams.map(c => [String(c.id), c.name]));
+                if (prevConnected && data.connected) {{
+                    // Câmera entrou
+                    currentCamMap.forEach((name, id) => {{
+                        if (!prevCamMap.has(id)) {{
+                            triggerSourceAlert('🎥', 'Nova câmera conectada: ' + name, 'success');
+                        }}
+                    }});
+                    // Câmera saiu
+                    prevCamMap.forEach((name, id) => {{
+                        if (!currentCamMap.has(id)) {{
+                            triggerSourceAlert('🔴', 'Câmera desconectada: ' + name, 'warn');
+                        }}
+                    }});
+                }}
+                prevCamMap = currentCamMap;
+
+                // 4. Intérprete de Libras
+                const dotLibras = document.getElementById('dotLibras');
+                const stateLibras = document.getElementById('healthStateLibras');
+                const pillLibras = document.getElementById('healthPillLibras');
+                if (librasCams.length > 0) {{
+                    dotLibras.className = 'pill-dot connected';
+                    stateLibras.innerText = '🟢 ' + (librasCams[0].name.split(' ')[0] || 'Libras');
+                    pillLibras.className = 'source-health-pill is-active';
+                }} else {{
+                    dotLibras.className = 'pill-dot disconnected';
+                    stateLibras.innerText = '⚪ Nenhum';
+                    pillLibras.className = 'source-health-pill';
+                }}
+
+                if (prevConnected && data.connected) {{
+                    if (prevLibrasCount === 0 && librasCams.length > 0) {{
+                        triggerSourceAlert('🤟', 'Intérprete de Libras reconhecido: ' + librasCams[0].name, 'success');
+                    }} else if (prevLibrasCount > 0 && librasCams.length === 0) {{
+                        triggerSourceAlert('🤟', 'Intérprete de Libras desconectou.', 'warn');
+                    }}
+                }}
+                prevLibrasCount = librasCams.length;
+
+                // 5. YouTube Live Chat
+                const dotYt = document.getElementById('dotYt');
+                const stateYt = document.getElementById('healthStateYt');
+                const pillYt = document.getElementById('healthPillYt');
+                if (data.youtube_connected) {{
+                    dotYt.className = 'pill-dot connected';
+                    stateYt.innerText = '🟢 Ao Vivo';
+                    pillYt.className = 'source-health-pill is-active';
+                }} else {{
+                    dotYt.className = 'pill-dot disconnected';
+                    stateYt.innerText = '⚪ ' + (data.youtube_status || 'Desconectado');
+                    pillYt.className = 'source-health-pill';
+                }}
+
+                // 6. Áudio Digital PCM
+                const dotAudio = document.getElementById('dotAudio');
+                const stateAudio = document.getElementById('healthStateAudio');
+                const pillAudio = document.getElementById('healthPillAudio');
+                const pcmListeners = data.pcm_listeners || 0;
+                if (pcmListeners > 0) {{
+                    dotAudio.className = 'pill-dot connected';
+                    stateAudio.innerText = '🟢 ' + pcmListeners + ' OBS Ouvinte(s)';
+                    pillAudio.className = 'source-health-pill is-active';
+                }} else if (data.connected) {{
+                    dotAudio.className = 'pill-dot connected';
+                    stateAudio.innerText = '🟢 PCM Ativo';
+                    pillAudio.className = 'source-health-pill is-active';
+                }} else {{
+                    dotAudio.className = 'pill-dot disconnected';
+                    stateAudio.innerText = '⚪ Standby';
+                    pillAudio.className = 'source-health-pill';
+                }}
 
                 const savedCount = (data.libras_saved_names || []).length;
                 const elSavedCount = document.getElementById('savedInterpretersCount');
@@ -2586,7 +2866,6 @@ async def get_control_panel():
                 renderChatList(currentMessages);
 
                 // Cameras sync
-                const cams = data.cameras || [];
                 document.getElementById('camTotalCount').innerText = cams.length;
                 
                 const grid = document.getElementById('camerasGrid');
@@ -2639,7 +2918,9 @@ async def get_control_panel():
                         grid.appendChild(box);
                     }});
                 }}
-            }} catch (err) {{}}
+            }} catch (err) {{
+                document.getElementById('healthHeartbeat').innerText = '🔴 Servidor Offline';
+            }}
         }}
 
         async function updateGridConfig() {{
@@ -2851,7 +3132,7 @@ async def get_control_panel():
             alert('Link copiado com sucesso para o OBS Studio:\\n' + url);
         }}
 
-        setInterval(fetchStatus, 1200);
+        setInterval(fetchStatus, 500);
         fetchStatus();
     </script>
 </body>
