@@ -645,36 +645,36 @@ async def sync_loop():
             state.cameras_list = cams_info
 
             # 2. Capturar Apresentação (Tela Compartilhada, Vídeo Externo do YouTube ou Slides)
-            screen_data = await target_frame.evaluate('''() => {
-                // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
-                const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
-                    const t = (b.innerText || '').toLowerCase();
-                    const a = (b.getAttribute('aria-label') || '').toLowerCase();
-                    return t.includes('somente ouvir') || a.includes('somente ouvir') || t.includes('listen only') || a.includes('listen only');
-                });
-                if (audioDismissBtns.length > 0) {
-                    audioDismissBtns[0].click();
-                }
+            screen_data = None
+            try:
+                screen_data = await target_frame.evaluate('''() => {
+                    try {
+                        // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
+                        const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
+                            const t = (b.innerText || '').toLowerCase();
+                            const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                            return t.includes('somente ouvir') || a.includes('somente ouvir') || t.includes('listen only') || a.includes('listen only');
+                        });
+                        if (audioDismissBtns.length > 0) {
+                            audioDismissBtns[0].click();
+                        }
+                    } catch(e) {}
 
-                // Clicar em "joinVideo" para iniciar o player se estiver pendente
-                const joinVid = document.querySelector('[data-test="joinVideo"], button:has-text("Play")');
-                if (joinVid && joinVid.offsetParent !== null) {
-                    joinVid.click();
-                }
-
-                const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
-                if (vid && vid.videoWidth > 0) {
-                    const canvas = document.createElement('canvas');
-                    const w = vid.videoWidth || 1920;
-                    const h = vid.videoHeight || 1080;
-                    canvas.width = w;
-                    canvas.height = h;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(vid, 0, 0, w, h);
-                    return { mode: 'screenshare', frame: canvas.toDataURL('image/jpeg', 0.85).replace(/^data:image\\/jpeg;base64,/, '') };
-                }
-                return null;
-            }''')
+                    const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
+                    if (vid && vid.videoWidth > 0) {
+                        const canvas = document.createElement('canvas');
+                        const w = vid.videoWidth || 1920;
+                        const h = vid.videoHeight || 1080;
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(vid, 0, 0, w, h);
+                        return { mode: 'screenshare', frame: canvas.toDataURL('image/jpeg', 0.85).replace(/^data:image\\/jpeg;base64,/, '') };
+                    }
+                    return null;
+                }''')
+            except Exception:
+                screen_data = None
 
             if screen_data:
                 state.latest_presentation_frame = base64.b64decode(screen_data['frame'])
