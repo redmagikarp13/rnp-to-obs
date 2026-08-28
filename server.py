@@ -1083,10 +1083,16 @@ async def api_grid_config(req: Request):
     if "stage_preset" in data:
         state.stage_preset = data["stage_preset"]
     if "custom_name" in data and "cam_id" in data:
-        state.custom_camera_names[str(data["cam_id"])] = data["custom_name"].strip()
-        if str(data["cam_id"]) in state.libras_camera_ids:
-            if data["custom_name"].strip() not in state.libras_saved_names:
-                state.libras_saved_names.append(data["custom_name"].strip())
+        c_name = data["custom_name"].strip()
+        cid_str = str(data["cam_id"])
+        if c_name:
+            state.custom_camera_names[cid_str] = c_name
+            if cid_str in state.libras_camera_ids:
+                if c_name not in state.libras_saved_names:
+                    state.libras_saved_names.append(c_name)
+        else:
+            # Apaga a personalização e volta para o nome padrão da RNP!
+            state.custom_camera_names.pop(cid_str, None)
     
     save_disk_config(state.export_config())
     return JSONResponse({"status": "ok", "libras_camera_ids": state.libras_camera_ids, "libras_saved_names": state.libras_saved_names})
@@ -3081,8 +3087,8 @@ async def get_control_panel():
         }}
 
         async function renameCamera(camId, currentName) {{
-            const newName = prompt('Digite o nome a ser exibido na câmera:', currentName);
-            if (newName && newName.trim()) {{
+            const newName = prompt('Digite o novo nome para esta câmera:\\n(Deixe em branco e clique em OK para restaurar o nome padrão da RNP)', currentName);
+            if (newName !== null) {{
                 await fetch('/api/grid/config', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
