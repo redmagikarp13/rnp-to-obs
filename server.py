@@ -3392,44 +3392,43 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 
                 if (signature !== currentStageSignature) {{
                     currentStageSignature = signature;
-                    container.className = 'preset-' + activePreset;
                     container.innerHTML = '';
 
                     // 1. Container do Slide / Apresentação
                     const slideFrame = document.createElement('div');
                     slideFrame.className = 'slide-frame';
                     slideFrame.innerHTML = `<img id="stage_slide_img" src="/raw_frame/presentation?t=${{Date.now()}}">`;
-                    container.appendChild(slideFrame);
 
-                    // Identificar Câmeras de Libras e Outras Câmeras
-                    let librasCams = cams.filter(c => c.is_libras || librasIds.includes(String(c.id)));
-                    let nonLibrasCams = cams.filter(c => !c.is_libras && !librasIds.includes(String(c.id)));
+                    // Identificar Câmeras de Libras e Outras Câmeras Reais
+                    const librasCams = cams.filter(c => c.is_libras || librasIds.includes(String(c.id)));
+                    let speakerCams = cams.filter(c => !c.is_libras && !librasIds.includes(String(c.id)));
 
                     if (pinnedIds.length > 0) {{
-                        nonLibrasCams = nonLibrasCams.filter(c => pinnedIds.includes(String(c.id)));
+                        speakerCams = speakerCams.filter(c => pinnedIds.includes(String(c.id)));
                     }}
 
-                    // Fallback para demonstração se não houver câmeras conectadas
-                    if (cams.length === 0) {{
-                        if (librasIds.length > 0 || (data.libras_saved_names && data.libras_saved_names.length > 0)) {{
-                            librasCams = [{{ id: '2', name: 'Prof. Intérprete Libras', is_libras: true }}];
-                            nonLibrasCams = [{{ id: '1', name: 'Palestrante Principal', is_libras: false }}];
-                        }} else {{
-                            nonLibrasCams = [
-                                {{ id: '1', name: 'Palestrante Principal', is_libras: false }},
-                                {{ id: '2', name: 'Moderador', is_libras: false }}
-                            ];
-                        }}
+                    // CASO 1: SEM NENHUMA CÂMERA CONECTADA OU MODO SOMENTE SLIDES
+                    if (activePreset === 'slide-only' || (speakerCams.length === 0 && librasCams.length === 0)) {{
+                        container.className = 'preset-slide-only';
+                        slideFrame.style.width = '100%';
+                        slideFrame.style.height = '100%';
+                        slideFrame.style.borderRadius = '0';
+                        slideFrame.style.border = 'none';
+                        container.appendChild(slideFrame);
+                        return;
                     }}
 
-                    // CASO 1: MODO IGUAL AO PALESTRANTE (equal) - PARIDADE TOTAL IFES / MEC
-                    if (currentLibrasSize === 'equal' && librasCams.length > 0) {{
+                    container.className = 'preset-' + activePreset;
+                    container.appendChild(slideFrame);
+
+                    // CASO 2: TEM LIBRAS E TEM PALESTRANTE COM MODO IGUAL (equal)
+                    if (currentLibrasSize === 'equal' && librasCams.length > 0 && speakerCams.length > 0) {{
                         const isBottomRow = (activePreset === 'bottom-bar');
                         const camsCont = document.createElement('div');
                         camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
 
                         const activeLibras = librasCams[0];
-                        const mainSpeaker = (focusedId ? nonLibrasCams.find(c => String(c.id) === focusedId) : null) || nonLibrasCams[0] || {{ id: '1', name: 'Palestrante Principal' }};
+                        const mainSpeaker = (focusedId ? speakerCams.find(c => String(c.id) === focusedId) : null) || speakerCams[0];
 
                         // 1. Box do Palestrante
                         const wrapSpeaker = document.createElement('div');
@@ -3453,15 +3452,15 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         container.appendChild(camsCont);
 
                     }} else {{
-                        // CASO 2: JANELA FLUTUANTE OU MODO SEM LIBRAS
-                        if (activePreset !== 'slide-only' && nonLibrasCams.length > 0) {{
-                            const isBottomRow = (activePreset === 'bottom-bar');
-                            const isPip = activePreset.startsWith('pip');
+                        // CASO 3: APENAS PALESTRANTE, OU LIBRAS EM JANELA FLUTUANTE, OU APENAS LIBRAS
+                        const isBottomRow = (activePreset === 'bottom-bar');
+                        const isPip = activePreset.startsWith('pip');
 
+                        if (speakerCams.length > 0) {{
                             const camsCont = document.createElement('div');
                             camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
 
-                            let displayCams = nonLibrasCams;
+                            let displayCams = speakerCams;
                             if (isPip) {{
                                 const mainCam = displayCams.find(c => String(c.id) === focusedId) || displayCams[0];
                                 displayCams = [mainCam];
@@ -3478,10 +3477,25 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             }});
 
                             container.appendChild(camsCont);
+                        }} else if (librasCams.length > 0 && currentLibrasSize === 'equal') {{
+                            // Se só tem Libras e está no modo equal, exibe a Libras na coluna
+                            const camsCont = document.createElement('div');
+                            camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
+
+                            const activeLibras = librasCams[0];
+                            const wrapLibras = document.createElement('div');
+                            wrapLibras.className = 'stage-cam-wrap is-libras-box';
+                            wrapLibras.innerHTML = `
+                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}?t=${{Date.now()}}">
+                                <div class="libras-badge-overlay">🤟 Libras</div>
+                                ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
+                            `;
+                            camsCont.appendChild(wrapLibras);
+                            container.appendChild(camsCont);
                         }}
 
-                        // JANELA FLUTUANTE DE LIBRAS SELECIONADA
-                        if (librasCams.length > 0) {{
+                        // JANELA FLUTUANTE DE LIBRAS (SELECIONADA OU SE NÃO FOR EQUAL)
+                        if (librasCams.length > 0 && currentLibrasSize !== 'equal') {{
                             const activeLibras = librasCams[0];
                             const librasFloating = document.createElement('div');
                             librasFloating.className = 'libras-floating-box';
@@ -3521,12 +3535,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     const slideImg = document.getElementById('stage_slide_img');
                     if (slideImg) slideImg.src = '/raw_frame/presentation?t=' + Date.now();
 
-                    const allCams = cams.length > 0 ? cams : [
-                        {{ id: '1', name: 'Palestrante Principal' }},
-                        {{ id: '2', name: 'Prof. Intérprete Libras' }}
-                    ];
-
-                    allCams.forEach(c => {{
+                    cams.forEach(c => {{
                         const img = document.getElementById(`stage_cam_${{c.id}}`);
                         if (img) img.src = `/raw_frame/camera/${{c.id}}?t=` + Date.now();
                     }});
@@ -3616,23 +3625,22 @@ async def get_libras_overlay(cam_id: Optional[str] = None):
                     targetCam = cams.find(c => c.is_libras || librasIds.includes(String(c.id)));
                 }}
 
-                if (!targetCam && cams.length > 0) {{
-                    targetCam = cams[cams.length - 1];
+                const card = document.querySelector('.libras-card');
+                if (!targetCam) {{
+                    if (card) card.style.display = 'none';
+                    return;
                 }}
+                if (card) card.style.display = 'flex';
 
-                if (targetCam) {{
-                    currentTargetCamId = String(targetCam.id);
-                    img.src = '/raw_frame/camera/' + targetCam.id + '?t=' + Date.now();
-                    
-                    if (showNames && targetCam.name) {{
-                        nameTag.className = 'name-tag style-' + nameStyle;
-                        nameTag.innerText = targetCam.name;
-                        nameTag.style.display = 'flex';
-                    }} else {{
-                        nameTag.style.display = 'none';
-                    }}
+                currentTargetCamId = String(targetCam.id);
+                img.src = '/raw_frame/camera/' + targetCam.id + '?t=' + Date.now();
+                
+                if (showNames && targetCam.name) {{
+                    nameTag.className = 'name-tag style-' + nameStyle;
+                    nameTag.innerText = targetCam.name;
+                    nameTag.style.display = 'flex';
                 }} else {{
-                    img.src = '/raw_frame/camera/' + currentTargetCamId + '?t=' + Date.now();
+                    nameTag.style.display = 'none';
                 }}
             }} catch (e) {{}}
         }}
@@ -4204,9 +4212,7 @@ async def get_cameras_grid_overlay(
                 if (cams.length === 0) {{
                     if (currentSig !== 'empty') {{
                         currentSig = 'empty';
-                        container.innerHTML = '<div class="empty-placeholder"><span>🎥</span><span>Aguardando câmeras da sala RNP...</span></div>';
-                        container.style.gridTemplateColumns = '1fr';
-                        container.style.gridTemplateRows = '1fr';
+                        container.innerHTML = '';
                     }}
                     return;
                 }}
