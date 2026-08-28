@@ -146,6 +146,7 @@ class BridgeState:
         self.chat_style: str = cfg.get("chat_style", "glass")
         self.chat_font_size: str = cfg.get("chat_font_size", "medium")
         self.chat_max_messages: int = cfg.get("chat_max_messages", 6)
+        self.show_chat_avatars: bool = cfg.get("show_chat_avatars", True)
         
         # Blindagem Anti-Inatividade
         self.inactivity_bypassed_count: int = 0
@@ -175,6 +176,7 @@ class BridgeState:
             "chat_style": self.chat_style,
             "chat_font_size": self.chat_font_size,
             "chat_max_messages": self.chat_max_messages,
+            "show_chat_avatars": self.show_chat_avatars,
             "custom_camera_names": self.custom_camera_names,
             "libras_camera_ids": self.libras_camera_ids
         }
@@ -1120,9 +1122,11 @@ async def api_chat_config(req: Request):
         state.chat_font_size = data["chat_font_size"]
     if "chat_max_messages" in data:
         state.chat_max_messages = int(data["chat_max_messages"])
+    if "show_chat_avatars" in data:
+        state.show_chat_avatars = bool(data["show_chat_avatars"])
     
     save_disk_config(state.export_config())
-    return JSONResponse({"status": "ok"})
+    return JSONResponse({"status": "ok", "show_chat_avatars": state.show_chat_avatars})
 
 @app.post("/api/config/save")
 async def api_config_save(req: Request):
@@ -1143,6 +1147,7 @@ async def api_config_save(req: Request):
     if "chat_style" in data: state.chat_style = data["chat_style"]
     if "chat_font_size" in data: state.chat_font_size = data["chat_font_size"]
     if "chat_max_messages" in data: state.chat_max_messages = int(data["chat_max_messages"])
+    if "show_chat_avatars" in data: state.show_chat_avatars = bool(data["show_chat_avatars"])
     if "custom_camera_names" in data: state.custom_camera_names = data["custom_camera_names"]
     if "libras_camera_ids" in data: state.libras_camera_ids = [str(x) for x in data["libras_camera_ids"]]
 
@@ -1168,6 +1173,7 @@ async def api_config_reset():
     state.chat_style = cfg["chat_style"]
     state.chat_font_size = cfg["chat_font_size"]
     state.chat_max_messages = cfg["chat_max_messages"]
+    state.show_chat_avatars = cfg.get("show_chat_avatars", True)
     state.custom_camera_names = {}
     state.libras_camera_ids = []
     save_disk_config(cfg)
@@ -1205,12 +1211,15 @@ async def api_status():
             "chat_style": state.chat_style,
             "chat_font_size": state.chat_font_size,
             "chat_max_messages": state.chat_max_messages,
+            "show_chat_avatars": state.show_chat_avatars,
             "featured_message": state.featured_message,
             "poll": state.poll_data,
             "poll_display_mode": state.poll_display_mode,
             "poll_display_duration": state.poll_display_duration,
             "poll_force_visible": state.poll_force_visible,
             "poll_style": state.poll_style,
+            "poll_nonce": state.poll_nonce,
+            "poll_dismissed": state.poll_dismissed,
             "custom_camera_names": state.custom_camera_names,
             "inactivity_bypassed_count": state.inactivity_bypassed_count,
             "screenshare_active": state.screenshare_active,
@@ -1230,7 +1239,8 @@ async def api_chat():
         "featured_message": state.featured_message,
         "chat_style": state.chat_style,
         "chat_font_size": state.chat_font_size,
-        "chat_max_messages": state.chat_max_messages
+        "chat_max_messages": state.chat_max_messages,
+        "show_chat_avatars": state.show_chat_avatars
     }, headers={"Cache-Control": "no-store, no-cache"})
 
 # --------------------------------------------------------------------------
@@ -1879,6 +1889,8 @@ async def get_control_panel():
     sel_max_8 = "selected" if state.chat_max_messages == 8 else ""
     sel_max_12 = "selected" if state.chat_max_messages == 12 else ""
 
+    chk_chat_avatars = "checked" if state.show_chat_avatars else ""
+
     html_content = f"""
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -2274,6 +2286,13 @@ async def get_control_panel():
                     <option value="8" {sel_max_8}>8 msgs</option>
                     <option value="12" {sel_max_12}>12 msgs</option>
                 </select>
+            </div>
+
+            <div class="grid-opt-group" style="width: 100%; margin-top: 4px;">
+                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; color: #f8fafc; font-size: 12px;">
+                    <input type="checkbox" id="chkShowAvatars" {chk_chat_avatars} onchange="updateChatConfig()" style="width: 15px; height: 15px; accent-color: #38bdf8;">
+                    <span>👤 Exibir Avatares dos Usuários (YouTube / RNP)</span>
+                </label>
             </div>
         </div>
 
@@ -2998,10 +3017,11 @@ async def get_control_panel():
             const chat_style = document.getElementById('selChatTheme').value;
             const chat_font_size = document.getElementById('selChatSize').value;
             const chat_max_messages = document.getElementById('selChatMax').value;
+            const show_chat_avatars = document.getElementById('chkShowAvatars').checked;
             await fetch('/api/chat/config', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ chat_style, chat_font_size, chat_max_messages }})
+                body: JSON.stringify({{ chat_style, chat_font_size, chat_max_messages, show_chat_avatars }})
             }});
             showSaveNotice();
         }}
@@ -4379,7 +4399,8 @@ async def get_cameras_grid_overlay(
 async def get_chat_overlay(
     style: Optional[str] = None,
     size: Optional[str] = None,
-    max_msgs: Optional[int] = None
+    max_msgs: Optional[int] = None,
+    avatar: Optional[int] = None
 ):
     return HTMLResponse(f"""
 <!DOCTYPE html>
@@ -4423,6 +4444,41 @@ async def get_chat_overlay(
             gap: 4px;
             box-shadow: 0 4px 16px rgba(0,0,0,0.5);
             transition: all 0.25s ease;
+        }}
+
+        /* MINI AVATAR */
+        .chat-mini-avatar {{
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #334155;
+            border: 1.5px solid rgba(255,255,255,0.25);
+        }}
+        .chat-mini-avatar img {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }}
+        .mini-avatar-fallback {{
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 800;
+            color: #ffffff;
+            background: linear-gradient(135deg, #0284c7, #38bdf8);
+            text-transform: uppercase;
+        }}
+        .mini-avatar-fallback.yt {{
+            background: linear-gradient(135deg, #dc2626, #f87171);
         }}
 
         /* FONT SIZES */
@@ -4517,6 +4573,7 @@ async def get_chat_overlay(
         const overrideStyle = "{style or ''}";
         const overrideSize = "{size or ''}";
         const overrideMax = {max_msgs if max_msgs is not None else 'null'};
+        const overrideAvatar = {avatar if avatar is not None else 'null'};
         let currentSig = '';
 
         async function updateChat() {{
@@ -4527,9 +4584,10 @@ async def get_chat_overlay(
                 const theme = overrideStyle || data.chat_style || 'glass';
                 const size = overrideSize || data.chat_font_size || 'medium';
                 const maxCount = (overrideMax !== null) ? overrideMax : (data.chat_max_messages || 6);
+                const showAvatars = (overrideAvatar !== null) ? !!overrideAvatar : (data.show_chat_avatars !== undefined ? data.show_chat_avatars : true);
 
                 const recent = msgs.slice(-maxCount);
-                const sig = recent.map(m => (m.id || '') + '_' + m.user + '_' + m.time).join(';') + '::' + theme + '::' + size + '::' + maxCount;
+                const sig = recent.map(m => (m.id || '') + '_' + m.user + '_' + m.time + '_' + (m.avatar || '')).join(';') + '::' + theme + '::' + size + '::' + maxCount + '::' + showAvatars;
 
                 if (sig !== currentSig) {{
                     currentSig = sig;
@@ -4538,11 +4596,20 @@ async def get_chat_overlay(
 
                     recent.forEach(m => {{
                         const isYt = (m.source === 'youtube');
+                        const initial = (m.user ? m.user.charAt(0).toUpperCase() : '?');
+                        const avatarHtml = showAvatars ? `
+                            <div class="chat-mini-avatar">
+                                ${{m.avatar ? `<img src="${{m.avatar}}" referrerpolicy="no-referrer" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : ''}}
+                                <div class="mini-avatar-fallback ${{isYt ? 'yt' : 'rnp'}}" style="${{m.avatar ? 'display:none;' : ''}}">${{initial}}</div>
+                            </div>
+                        ` : '';
+
                         const card = document.createElement('div');
                         card.className = 'chat-msg-card theme-' + theme;
                         card.innerHTML = `
                             <div class="msg-header">
-                                <div style="display:flex; align-items:center; gap:6px;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    ${{avatarHtml}}
                                     <span class="source-badge ${{isYt ? 'badge-yt' : 'badge-rnp'}}">${{isYt ? 'YouTube' : 'RNP'}}</span>
                                     <span class="msg-user">${{m.user || 'Participante'}}</span>
                                 </div>
@@ -4567,7 +4634,7 @@ async def get_chat_overlay(
 # OBS OVERLAY: MENSAGEM EM DESTAQUE / LOWER-THIRD (/chat/featured)
 # --------------------------------------------------------------------------
 @app.get("/chat/featured")
-async def get_chat_featured_overlay(style: Optional[str] = None):
+async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optional[int] = None):
     return HTMLResponse(f"""
 <!DOCTYPE html>
 <html>
@@ -4628,6 +4695,39 @@ async def get_chat_featured_overlay(style: Optional[str] = None):
             height: 56px;
             flex-shrink: 0;
         }}
+
+        .feat-avatar-wrap {{
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2.5px solid #eab308;
+            box-shadow: 0 0 16px rgba(234, 179, 8, 0.45);
+            flex-shrink: 0;
+            background: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .feat-avatar-img {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }}
+        .feat-avatar-fallback {{
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #ef4444, #eab308);
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-transform: uppercase;
+        }}
+
         .feat-content {{
             flex: 1;
             display: flex;
@@ -4666,6 +4766,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None):
 
     <script>
         const container = document.getElementById('featContainer');
+        const overrideAvatar = {avatar if avatar is not None else 'null'};
         let currentSig = '';
         let isVisible = false;
 
@@ -4674,6 +4775,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None):
                 const res = await fetch('/api/chat?t=' + Date.now());
                 const data = await res.json();
                 const feat = data.featured_message;
+                const showAvatars = (overrideAvatar !== null) ? !!overrideAvatar : (data.show_chat_avatars !== undefined ? data.show_chat_avatars : true);
 
                 if (!feat || !feat.text) {{
                     if (isVisible) {{
@@ -4694,14 +4796,27 @@ async def get_chat_featured_overlay(style: Optional[str] = None):
                     return;
                 }}
 
-                const sig = (feat.id || '') + '_' + feat.user + '_' + feat.text;
+                const sig = (feat.id || '') + '_' + feat.user + '_' + feat.text + '_' + (feat.avatar || '') + '_' + showAvatars;
                 if (sig !== currentSig) {{
                     currentSig = sig;
                     const isYt = (feat.source === 'youtube');
+                    const initial = (feat.user ? feat.user.charAt(0).toUpperCase() : '?');
+
+                    let avatarHtml = '';
+                    if (showAvatars) {{
+                        avatarHtml = `
+                            <div class="feat-avatar-wrap" style="border-color: ${{isYt ? '#ef4444' : '#0284c7'}}; box-shadow: 0 0 16px ${{isYt ? 'rgba(239,68,68,0.5)' : 'rgba(2,132,199,0.5)'}};">
+                                ${{feat.avatar ? `<img src="${{feat.avatar}}" referrerpolicy="no-referrer" class="feat-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : ''}}
+                                <div class="feat-avatar-fallback" style="${{feat.avatar ? 'display:none;' : ''}}; background:${{isYt ? 'linear-gradient(135deg, #ef4444, #f87171)' : 'linear-gradient(135deg, #0284c7, #38bdf8)'}};">${{initial}}</div>
+                            </div>
+                        `;
+                    }} else {{
+                        avatarHtml = `<div class="feat-icon">${{isYt ? '▶️' : '💬'}}</div>`;
+                    }}
 
                     container.innerHTML = `
-                        <div class="featured-card" id="featBox">
-                            <div class="feat-icon">💬</div>
+                        <div class="featured-card" id="featBox" style="border-color: ${{isYt ? '#ef4444' : '#eab308'}}; box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px ${{isYt ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)'}};">
+                            ${{avatarHtml}}
                             <div class="feat-content">
                                 <div class="feat-header">
                                     <span class="source-tag ${{isYt ? 'tag-yt' : 'tag-rnp'}}">${{isYt ? 'YouTube' : 'RNP'}}</span>
