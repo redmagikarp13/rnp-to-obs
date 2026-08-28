@@ -106,6 +106,8 @@ class BridgeState:
         
         self.cameras_list: List[dict] = []
         self.chat_messages: List[dict] = []
+        self.rnp_messages_map: Dict[str, dict] = {}
+        self.youtube_messages_list: List[dict] = []
         self.featured_message: Optional[dict] = None
         self.poll_data: Optional[dict] = None
         self.last_active_poll: Optional[dict] = None
@@ -260,17 +262,23 @@ async def youtube_chat_loop(video_id: str):
                     msg_text = emojize_text(raw_msg)
 
                 new_msg = {
-                    "id": f"yt_{int(time.time()*1000)}_{len(state.chat_messages)}",
+                    "id": f"yt_{int(time.time()*1000)}_{len(state.youtube_messages_list)}",
                     "source": "youtube",
                     "user": author_name,
                     "text": msg_text,
                     "time": t_str,
-                    "avatar": avatar_url
+                    "avatar": avatar_url,
+                    "timestamp": time.time()
                 }
 
-                state.chat_messages.append(new_msg)
-                if len(state.chat_messages) > 120:
-                    state.chat_messages = state.chat_messages[-120:]
+                state.youtube_messages_list.append(new_msg)
+                if len(state.youtube_messages_list) > 120:
+                    state.youtube_messages_list = state.youtube_messages_list[-120:]
+
+                # Merge com mensagens RNP ordenando cronologicamente
+                all_msgs = list(state.rnp_messages_map.values()) + state.youtube_messages_list
+                all_msgs.sort(key=lambda x: x.get('timestamp', 0))
+                state.chat_messages = all_msgs[-120:]
 
             await asyncio.sleep(1.0)
 
@@ -663,36 +671,99 @@ async def sync_loop():
                     except Exception:
                         pass
 
-            # 3. Capturar Chat da RNP
+            # 3. Capturar Chat da RNP (com abertura automática da aba e múltiplos seletores BBB/Mconf)
             rnp_messages = await target_frame.evaluate('''() => {
-                const containers = document.querySelectorAll('div[data-test="chatMessageItem"], div.chat-message-container');
+                // 1. Garantir que a aba de bate-papo público está aberta no DOM do BBB
+                const hasChatItems = document.querySelector('[data-test="chatMessageItem"], div.chat-message-container, [data-test="chatUserMessageText"], [data-test="chatMessageList"]');
+                if (!hasChatItems) {
+                    const chatOpeners = Array.from(document.querySelectorAll('button, div, a, [role="button"], [role="tab"]')).filter(el => {
+                        const t = (el.innerText || '').toLowerCase();
+                        const a = (el.getAttribute('aria-label') || '').toLowerCase();
+                        const dt = (el.getAttribute('data-test') || '').toLowerCase();
+                        return (t.includes('bate-papo público') || a.includes('bate-papo público') || dt === 'publicchat' || dt === 'chatbutton') && !a.includes('opções');
+                    });
+                    if (chatOpeners.length > 0) {
+                        chatOpeners[0].click();
+                    }
+                }
+
+                // 2. Extrair mensagens de chat com múltiplos seletores de compatibilidade
+                const containers = Array.from(document.querySelectorAll(
+                    'div[data-test="chatMessageItem"], div.chat-message-container, div[class*="messageWrapper"], div[class*="chatMessageItem"], div[class*="MessageItem"], div[class*="chat-message"]'
+                ));
                 const list = [];
                 let lastUser = 'Participante';
                 let lastTime = '';
 
                 containers.forEach((container, idx) => {
-                    const msgType = container.getAttribute('data-message-type');
-                    if (msgType && msgType !== 'default') return;
+                    // 1. Verificar se é mensagem de sistema / aviso interno
+                    const isSystem = container.getAttribute('data-message-type') === 'system' ||
+                                     container.classList.contains('system-message') ||
+                                     container.querySelector('[data-test="systemMessageText"]');
 
-                    const timeEl = container.querySelector('time');
+                    // 2. Extrair Time
+                    const timeEl = container.querySelector('time, span[class*="time"], [data-test="chatMessageTime"]');
                     if (timeEl && timeEl.innerText.trim()) {
                         lastTime = timeEl.innerText.trim();
                     }
 
-                    const headerNameEl = container.querySelector('div[class*="lfMFCt"] > div:first-child, div[class*="sc-deEcOf"] > div:first-child, [data-test="chatUserMessageSender"]');
-                    if (headerNameEl && headerNameEl.innerText.trim()) {
-                        const raw = headerNameEl.innerText.trim().split('\\n')[0].trim();
-                        if (raw && !raw.includes(':') && raw.length > 2) {
-                            lastUser = raw;
+                    // 3. Extrair Nome do Remetente (Aria-label, Container ou Grupo Pai)
+                    let rawUser = '';
+                    
+                    const aria = container.getAttribute('aria-label') || (container.parentElement ? container.parentElement.getAttribute('aria-label') : '') || '';
+                    if (aria && (aria.includes(' disse') || aria.includes(' said') || aria.includes('Mensagem de') || aria.includes('Message from') || aria.includes(':'))) {
+                        const mMatch = aria.match(/(?:Mensagem de |Message from )?([^:]+?)(?: disse| said|:)/i);
+                        if (mMatch && mMatch[1].trim().length > 1 && !mMatch[1].match(/^\\d+:\\d+$/)) {
+                            rawUser = mMatch[1].trim();
                         }
                     }
 
-                    const contentEl = container.querySelector('div.chat-message-content, [data-test="chatUserMessageText"]');
-                    if (contentEl) {
+                    if (!rawUser) {
+                        let headerEl = container.querySelector(
+                            '[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"], div[class*="userName"], span[class*="userName"], div[class*="Name"], [class*="sender"]'
+                        );
+                        if (!headerEl && container.parentElement) {
+                            headerEl = container.parentElement.querySelector('[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"], div[class*="userName"], span[class*="userName"], [class*="sender"]');
+                        }
+                        if (!headerEl) {
+                            const groupEl = container.closest('[class*="group"], [class*="Group"], [class*="Wrapper"], [class*="message"]');
+                            if (groupEl) {
+                                headerEl = groupEl.querySelector('[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"], div[class*="userName"], span[class*="userName"], [class*="sender"], h4, h5, strong');
+                            }
+                        }
+
+                        if (headerEl && headerEl.innerText.trim()) {
+                            const cloneH = headerEl.cloneNode(true);
+                            cloneH.querySelectorAll('time, button, span[class*="time"], [class*="time"]').forEach(el => el.remove());
+                            let raw = cloneH.innerText.replace(/\\d{1,2}:\\d{2}(:\\d{2})?/g, '').replace(/[•|·]/g, '').trim().split('\\n')[0].trim();
+                            if (raw.endsWith(':')) raw = raw.slice(0, -1).trim();
+                            if (raw.length >= 2 && !raw.match(/^\\d+$/)) {
+                                rawUser = raw;
+                            }
+                        }
+                    }
+
+                    if (rawUser) {
+                        lastUser = rawUser;
+                    }
+
+                    // 4. Extrair Conteúdo da Mensagem
+                    const contentEl = container.querySelector(
+                        '[data-test="chatUserMessageText"], div.chat-message-content, div[class*="messageText"], div[class*="content"], div[class*="Text"], p'
+                    );
+                    if (contentEl && !isSystem) {
                         const clone = contentEl.cloneNode(true);
                         clone.querySelectorAll('.chat-message-toolbar, [data-test="chatMessageToolbar"], button, time, i').forEach(x => x.remove());
                         const cleanText = clone.innerText.trim();
-                        if (cleanText) {
+                        
+                        // Filtrar mensagens automáticas de boas-vindas ou avisos de gravação/papéis
+                        const isAutoNotice = cleanText.startsWith('Bem-vindo à') || 
+                                             cleanText.includes('gravação desta sessão') || 
+                                             cleanText.includes('é agora o apresentador') ||
+                                             cleanText.includes('Resultados da enquete') ||
+                                             cleanText.match(/^[A-Z]: \\d+ voto/);
+
+                        if (cleanText && !isAutoNotice) {
                             list.push({
                                 id: `rnp_${idx}`,
                                 source: 'rnp',
@@ -712,10 +783,15 @@ async def sync_loop():
             for m in rnp_messages:
                 m['text'] = emojize_text(m['text'])
                 clean_rnp_messages.append(m)
+                msg_key = f"{m['user']}___{m['text']}___{m['time']}"
+                if msg_key not in state.rnp_messages_map:
+                    m['timestamp'] = time.time()
+                    state.rnp_messages_map[msg_key] = m
 
-            yt_msgs = [m for m in state.chat_messages if m.get("source") == "youtube"]
-            combined = clean_rnp_messages + yt_msgs
-            state.chat_messages = combined[-100:]
+            # Merge e ordenação cronológica
+            all_msgs = list(state.rnp_messages_map.values()) + state.youtube_messages_list
+            all_msgs.sort(key=lambda x: x.get('timestamp', 0))
+            state.chat_messages = all_msgs[-120:]
 
             # 4. Capturar Enquete Ativa ou Publicada
             poll_info = await target_frame.evaluate('''() => {
