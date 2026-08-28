@@ -132,6 +132,7 @@ class BridgeState:
         self.focused_camera_id: Optional[str] = None
         self.pinned_camera_ids: List[str] = []
         self.libras_camera_ids: List[str] = [str(x) for x in cfg.get("libras_camera_ids", [])]
+        self.libras_disabled_camera_ids: Set[str] = set()
         self.libras_saved_names: List[str] = [str(x) for x in cfg.get("libras_saved_names", [])]
         self.libras_auto_detect: bool = cfg.get("libras_auto_detect", True)
         self.libras_size: str = cfg.get("libras_size", "equal")
@@ -592,26 +593,29 @@ async def sync_loop():
                 is_pin = (str(cam['id']) in [str(x) for x in state.pinned_camera_ids])
 
                 # 🤟 RECONHECIMENTO AUTOMÁTICO E PERSISTENTE DE LIBRAS
-                is_libras = (str(cam['id']) in [str(x) for x in state.libras_camera_ids])
+                cid_str = str(cam['id'])
+                is_libras = (cid_str in [str(x) for x in state.libras_camera_ids])
+                is_explicitly_disabled = (cid_str in [str(x) for x in state.libras_disabled_camera_ids])
                 
-                if not is_libras and state.libras_saved_names:
-                    for s_name in state.libras_saved_names:
-                        if s_name and (s_name.lower() in display_name.lower() or s_name.lower() in cam['name'].lower() or display_name.lower() in s_name.lower()):
-                            is_libras = True
-                            if str(cam['id']) not in [str(x) for x in state.libras_camera_ids]:
-                                state.libras_camera_ids.append(str(cam['id']))
-                            break
+                if not is_libras and not is_explicitly_disabled:
+                    if state.libras_saved_names:
+                        for s_name in state.libras_saved_names:
+                            if s_name and (s_name.lower() in display_name.lower() or s_name.lower() in cam['name'].lower() or display_name.lower() in s_name.lower()):
+                                is_libras = True
+                                if cid_str not in [str(x) for x in state.libras_camera_ids]:
+                                    state.libras_camera_ids.append(cid_str)
+                                break
 
-                if not is_libras and state.libras_auto_detect:
-                    keywords = ['libras', 'intérprete', 'interprete', 'tradutor', 'tradutora', 'ils']
-                    name_lower = (display_name + " " + cam['name']).lower()
-                    if any(kw in name_lower for kw in keywords):
-                        is_libras = True
-                        if str(cam['id']) not in [str(x) for x in state.libras_camera_ids]:
-                            state.libras_camera_ids.append(str(cam['id']))
-                        if display_name not in state.libras_saved_names:
-                            state.libras_saved_names.append(display_name)
-                            save_disk_config(state.export_config())
+                    if not is_libras and state.libras_auto_detect:
+                        keywords = ['libras', 'intérprete', 'interprete', 'tradutor', 'tradutora', 'ils']
+                        name_lower = (display_name + " " + cam['name']).lower()
+                        if any(kw in name_lower for kw in keywords):
+                            is_libras = True
+                            if cid_str not in [str(x) for x in state.libras_camera_ids]:
+                                state.libras_camera_ids.append(cid_str)
+                            if display_name not in state.libras_saved_names:
+                                state.libras_saved_names.append(display_name)
+                                save_disk_config(state.export_config())
 
                 cams_info.append({
                     "id": str(cam['id']),
@@ -1042,13 +1046,32 @@ async def api_grid_config(req: Request):
     if "pinned_camera_ids" in data:
         state.pinned_camera_ids = [str(x) for x in data["pinned_camera_ids"]]
     if "libras_camera_ids" in data:
-        state.libras_camera_ids = [str(x) for x in data["libras_camera_ids"]]
-        for cam in state.cameras_list:
-            if str(cam['id']) in state.libras_camera_ids:
-                if cam.get('name') and cam['name'] not in state.libras_saved_names:
-                    state.libras_saved_names.append(cam['name'])
-                if cam.get('original_name') and cam['original_name'] not in state.libras_saved_names:
-                    state.libras_saved_names.append(cam['original_name'])
+        new_libras_ids = [str(x) for x in data["libras_camera_ids"]]
+        old_libras_ids = list(state.libras_camera_ids)
+        
+        # Câmeras que foram DESMARCADAS manualmente
+        removed_ids = [cid for cid in old_libras_ids if cid not in new_libras_ids]
+        for rid in removed_ids:
+            state.libras_disabled_camera_ids.add(str(rid))
+            # Remover o nome de saved_names para não reativar
+            for cam in state.cameras_list:
+                if str(cam.get('id')) == str(rid):
+                    cam_name = cam.get('name', '').strip()
+                    orig_name = cam.get('original_name', '').strip()
+                    state.libras_saved_names = [n for n in state.libras_saved_names if n.lower() not in (cam_name.lower(), orig_name.lower())]
+
+        # Câmeras que foram MARCADAS manualmente
+        added_ids = [cid for cid in new_libras_ids if cid not in old_libras_ids]
+        for aid in added_ids:
+            state.libras_disabled_camera_ids.discard(str(aid))
+            for cam in state.cameras_list:
+                if str(cam.get('id')) == str(aid):
+                    if cam.get('name') and cam['name'] not in state.libras_saved_names:
+                        state.libras_saved_names.append(cam['name'])
+                    if cam.get('original_name') and cam['original_name'] not in state.libras_saved_names:
+                        state.libras_saved_names.append(cam['original_name'])
+
+        state.libras_camera_ids = new_libras_ids
     if "libras_size" in data:
         state.libras_size = data["libras_size"]
     if "show_camera_names" in data:
@@ -1066,7 +1089,21 @@ async def api_grid_config(req: Request):
                 state.libras_saved_names.append(data["custom_name"].strip())
     
     save_disk_config(state.export_config())
-    return JSONResponse({"status": "ok"})
+    return JSONResponse({"status": "ok", "libras_camera_ids": state.libras_camera_ids, "libras_saved_names": state.libras_saved_names})
+
+@app.post("/api/libras/toggle_auto")
+async def api_libras_toggle_auto():
+    state.libras_auto_detect = not state.libras_auto_detect
+    save_disk_config(state.export_config())
+    return JSONResponse({"status": "ok", "libras_auto_detect": state.libras_auto_detect})
+
+@app.post("/api/libras/clear_saved")
+async def api_libras_clear_saved():
+    state.libras_saved_names = []
+    state.libras_camera_ids = []
+    state.libras_disabled_camera_ids = set()
+    save_disk_config(state.export_config())
+    return JSONResponse({"status": "ok", "libras_saved_names": [], "libras_camera_ids": []})
 
 @app.post("/api/chat/config")
 async def api_chat_config(req: Request):
@@ -2008,9 +2045,14 @@ async def get_control_panel():
                     <option value="medium" {sel_lib_med}>▫️ Médio Flutuante (380x214)</option>
                 </select>
             </div>
-            <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 11px; color: #94a3b8;">
-                <span style="display:flex; align-items:center; gap:4px; color:#10b981;">🛡️ Reconhecimento Automático de Intérprete: <strong>ATIVO</strong></span>
-                <span id="savedInterpretersCount" style="color:#38bdf8;">0 salvos</span>
+            <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px; flex-wrap: wrap; gap: 6px;">
+                <button id="btnAutoLibras" class="btn-ctrl active-pin" style="padding: 3px 8px; font-size: 11px;" onclick="toggleLibrasAutoDetect()">
+                    🛡️ Auto-Reconhecimento: ATIVO
+                </button>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span id="savedInterpretersCount" style="color:#38bdf8; font-size: 11px;">0 salvos</span>
+                    <button class="btn-ctrl" style="padding: 2px 6px; font-size: 10.5px; color: #f87171;" onclick="clearSavedLibras()" title="Limpar lista de nomes de intérpretes salvos">🗑️ Limpar</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2824,6 +2866,17 @@ async def get_control_panel():
                 const elSavedCount = document.getElementById('savedInterpretersCount');
                 if (elSavedCount) elSavedCount.innerText = savedCount + ' salvos';
 
+                const elAuto = document.getElementById('btnAutoLibras');
+                if (elAuto) {{
+                    if (data.libras_auto_detect) {{
+                        elAuto.className = 'btn-ctrl active-pin';
+                        elAuto.innerText = '🛡️ Auto-Reconhecimento: ATIVO';
+                    }} else {{
+                        elAuto.className = 'btn-ctrl';
+                        elAuto.innerText = '⚪ Auto-Reconhecimento: DESLIGADO';
+                    }}
+                }}
+
                 if (data.stage_preset) {{
                     activeStagePreset = data.stage_preset;
                     updatePresetButtonsUI(activeStagePreset);
@@ -2972,6 +3025,31 @@ async def get_control_panel():
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{ libras_camera_ids: newLibras }})
             }});
+            fetchStatus();
+            showSaveNotice();
+        }}
+
+        async function toggleLibrasAutoDetect() {{
+            const res = await fetch('/api/libras/toggle_auto', {{ method: 'POST' }});
+            const data = await res.json();
+            const btn = document.getElementById('btnAutoLibras');
+            if (btn) {{
+                if (data.libras_auto_detect) {{
+                    btn.className = 'btn-ctrl active-pin';
+                    btn.innerText = '🛡️ Auto-Reconhecimento: ATIVO';
+                }} else {{
+                    btn.className = 'btn-ctrl';
+                    btn.innerText = '⚪ Auto-Reconhecimento: DESLIGADO';
+                }}
+            }}
+            fetchStatus();
+            showSaveNotice();
+        }}
+
+        async function clearSavedLibras() {{
+            if (!confirm('Deseja limpar todos os nomes de intérpretes salvos e desmarcar Libras de todas as câmeras?')) return;
+            await fetch('/api/libras/clear_saved', {{ method: 'POST' }});
+            librasCamIds = [];
             fetchStatus();
             showSaveNotice();
         }}
