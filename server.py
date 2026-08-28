@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     "user_name": "OBS Studio",
     "user_email": "obs@obs.com",
     "youtube_url": "",
+    "control_theme": "hardware",
     "show_camera_names": True,
     "camera_name_style": "glass",
     "grid_layout_mode": "auto",
@@ -56,6 +57,7 @@ DEFAULT_CONFIG = {
     "chat_style": "glass",
     "chat_font_size": "medium",
     "chat_max_messages": 6,
+    "show_chat_avatars": True,
     "custom_camera_names": {},
     "libras_camera_ids": []
 }
@@ -103,6 +105,7 @@ class BridgeState:
         self.youtube_url = cfg.get("youtube_url", "")
         self.youtube_connected = False
         self.youtube_status = "Desconectado"
+        self.control_theme = cfg.get("control_theme", "hardware")
         
         self.cameras_list: List[dict] = []
         self.chat_messages: List[dict] = []
@@ -164,6 +167,7 @@ class BridgeState:
             "user_name": self.user_name,
             "user_email": self.user_email,
             "youtube_url": self.youtube_url,
+            "control_theme": self.control_theme,
             "show_camera_names": self.show_camera_names,
             "camera_name_style": self.camera_name_style,
             "grid_layout_mode": self.grid_layout_mode,
@@ -640,8 +644,24 @@ async def sync_loop():
             
             state.cameras_list = cams_info
 
-            # 2. Capturar Apresentação
+            # 2. Capturar Apresentação (Tela Compartilhada, Vídeo Externo do YouTube ou Slides)
             screen_data = await target_frame.evaluate('''() => {
+                // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
+                const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
+                    const t = (b.innerText || '').toLowerCase();
+                    const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                    return t.includes('somente ouvir') || a.includes('somente ouvir') || t.includes('listen only') || a.includes('listen only');
+                });
+                if (audioDismissBtns.length > 0) {
+                    audioDismissBtns[0].click();
+                }
+
+                // Clicar em "joinVideo" para iniciar o player se estiver pendente
+                const joinVid = document.querySelector('[data-test="joinVideo"], button:has-text("Play")');
+                if (joinVid && joinVid.offsetParent !== null) {
+                    joinVid.click();
+                }
+
                 const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
                 if (vid && vid.videoWidth > 0) {
                     const canvas = document.createElement('canvas');
@@ -661,15 +681,27 @@ async def sync_loop():
                 state.screenshare_active = True
                 state.presentation_mode = "Tela Compartilhada (2.5K/1080p)"
             else:
-                pres_loc = target_frame.locator('#presentationContainer, [data-test="presentationContainer"]')
-                if await pres_loc.count() > 0 and await pres_loc.first.is_visible():
+                # 2.1 Verificar se há Vídeo Externo (YouTube / Vimeo / MP4) compartilhado
+                ext_video_loc = target_frame.locator('[data-test="videoPlayer"], div[class*="videoPlayer"], [data-test="externalVideoPlayer"], #external-video-player, div[class*="externalVideo"], div[class*="external-video"]')
+                if await ext_video_loc.count() > 0 and await ext_video_loc.first.is_visible():
                     try:
-                        slide_bytes = await pres_loc.first.screenshot(type="jpeg", quality=85)
-                        state.latest_presentation_frame = slide_bytes
-                        state.screenshare_active = False
-                        state.presentation_mode = "Slides / Apresentação"
+                        vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=85)
+                        state.latest_presentation_frame = vid_bytes
+                        state.screenshare_active = True
+                        state.presentation_mode = "Vídeo do YouTube (RNP)"
                     except Exception:
                         pass
+                else:
+                    # 2.2 Verificar Slides / Whiteboard
+                    pres_loc = target_frame.locator('#presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"]')
+                    if await pres_loc.count() > 0 and await pres_loc.first.is_visible():
+                        try:
+                            slide_bytes = await pres_loc.first.screenshot(type="jpeg", quality=85)
+                            state.latest_presentation_frame = slide_bytes
+                            state.screenshare_active = False
+                            state.presentation_mode = "Slides / Apresentação"
+                        except Exception:
+                            pass
 
             # 3. Capturar Chat da RNP (com abertura automática da aba e múltiplos seletores BBB/Mconf)
             rnp_messages = await target_frame.evaluate('''() => {
@@ -1204,6 +1236,16 @@ async def api_chat_config(req: Request):
     save_disk_config(state.export_config())
     return JSONResponse({"status": "ok", "show_chat_avatars": state.show_chat_avatars})
 
+@app.post("/api/theme/set")
+async def api_theme_set(req: Request):
+    data = await req.json()
+    theme = data.get("theme", "hardware")
+    if theme in ["hardware", "nordic", "glass", "obsidian"]:
+        state.control_theme = theme
+        save_disk_config(state.export_config())
+        return JSONResponse({"status": "ok", "control_theme": state.control_theme})
+    return JSONResponse({"status": "error", "message": "Tema inválido"}, status_code=400)
+
 @app.post("/api/config/save")
 async def api_config_save(req: Request):
     data = await req.json()
@@ -1211,6 +1253,7 @@ async def api_config_save(req: Request):
     if "user_name" in data: state.user_name = data["user_name"].strip()
     if "user_email" in data: state.user_email = data["user_email"].strip()
     if "youtube_url" in data: state.youtube_url = data["youtube_url"].strip()
+    if "control_theme" in data: state.control_theme = data["control_theme"]
     if "show_camera_names" in data: state.show_camera_names = bool(data["show_camera_names"])
     if "camera_name_style" in data: state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data: state.grid_layout_mode = data["grid_layout_mode"]
@@ -1907,6 +1950,216 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
     .audio-monitor-bar { padding: 8px 10px !important; gap: 8px !important; }
     .vu-container { min-width: 100% !important; }
 }
+
+/* ==========================================================================
+   THEME STYLES FOR BROADCAST CONTROL PANEL (Organic & Broadcast Design System)
+   ========================================================================== */
+
+/* 1. 🎛️ STUDIO MASTER / HARDWARE CONSOLE (Default) */
+body.theme-hardware {
+    background: #101318 !important;
+    color: #e2e8f0;
+}
+body.theme-hardware .card {
+    background: #171a21 !important;
+    border: 1px solid #282f3d !important;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.6);
+}
+body.theme-hardware .section-title {
+    color: #f1f5f9 !important;
+    font-family: 'JetBrains Mono', 'Outfit', monospace;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+body.theme-hardware .btn-primary {
+    background: linear-gradient(180deg, #242a36 0%, #171b23 100%) !important;
+    border: 1px solid #3b4559 !important;
+    border-bottom: 2.5px solid #0d1015 !important;
+    color: #38bdf8 !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+body.theme-hardware .btn-primary:hover {
+    background: linear-gradient(180deg, #2d3545 0%, #1e2430 100%) !important;
+    color: #7dd3fc !important;
+}
+body.theme-hardware .btn-ctrl {
+    background: #12151c !important;
+    border: 1px solid #2a3140 !important;
+    border-bottom: 2px solid #0b0d12 !important;
+    color: #94a3b8 !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+body.theme-hardware .btn-ctrl:hover {
+    color: #f8fafc !important;
+    border-color: #475569 !important;
+}
+body.theme-hardware .btn-ctrl.active-focus {
+    background: #1a1e27 !important;
+    border-color: #f59e0b !important;
+    color: #fbbf24 !important;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
+}
+body.theme-hardware .btn-ctrl.active-pin {
+    background: #1a1e27 !important;
+    border-color: #10b981 !important;
+    color: #34d399 !important;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
+}
+body.theme-hardware .btn-ctrl.active-libras {
+    background: #1a1e27 !important;
+    border-color: #06b6d4 !important;
+    color: #22d3ee !important;
+    box-shadow: 0 0 12px rgba(6, 182, 212, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
+}
+body.theme-hardware .btn-ctrl.active-preset {
+    background: #1a1e27 !important;
+    border-color: #38bdf8 !important;
+    color: #38bdf8 !important;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
+}
+body.theme-hardware input[type="text"], body.theme-hardware input[type="email"], body.theme-hardware select {
+    background: #12151c !important;
+    border: 1px solid #282f3d !important;
+    color: #f1f5f9 !important;
+}
+
+/* 2. 🌿 NORDIC MINIMAL / WARM SLATE & CLAY */
+body.theme-nordic {
+    background: #141518 !important;
+    color: #e6e2dd;
+}
+body.theme-nordic .card {
+    background: #1b1d22 !important;
+    border: 1px solid rgba(244, 241, 222, 0.08) !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    border-radius: 14px !important;
+}
+body.theme-nordic .section-title {
+    color: #f4f1de !important;
+    font-weight: 700;
+}
+body.theme-nordic .btn-primary {
+    background: #e07a5f !important;
+    color: #ffffff !important;
+    border-radius: 10px !important;
+}
+body.theme-nordic .btn-primary:hover {
+    background: #d46b50 !important;
+}
+body.theme-nordic .btn-ctrl {
+    background: #23262d !important;
+    border: 1px solid rgba(244, 241, 222, 0.08) !important;
+    color: #d1cbc1 !important;
+    border-radius: 9px !important;
+}
+body.theme-nordic .btn-ctrl.active-focus {
+    background: #e07a5f !important;
+    color: #ffffff !important;
+    border-color: #e07a5f !important;
+    box-shadow: 0 4px 14px rgba(224, 122, 95, 0.4);
+}
+body.theme-nordic .btn-ctrl.active-pin {
+    background: #81b29a !important;
+    color: #141518 !important;
+    border-color: #81b29a !important;
+    box-shadow: 0 4px 14px rgba(129, 178, 154, 0.4);
+}
+body.theme-nordic .btn-ctrl.active-libras {
+    background: #3d5a80 !important;
+    color: #ffffff !important;
+    border-color: #3d5a80 !important;
+    box-shadow: 0 4px 14px rgba(61, 90, 128, 0.4);
+}
+body.theme-nordic .btn-ctrl.active-preset {
+    background: #81b29a !important;
+    color: #141518 !important;
+    border-color: #81b29a !important;
+    box-shadow: 0 4px 14px rgba(129, 178, 154, 0.4);
+}
+body.theme-nordic input[type="text"], body.theme-nordic input[type="email"], body.theme-nordic select {
+    background: #23262d !important;
+    border: 1px solid rgba(244, 241, 222, 0.1) !important;
+    color: #f4f1de !important;
+    border-radius: 9px !important;
+}
+
+/* 3. 📺 BROADCAST TITANIUM / CLEAN GLASS PRO */
+body.theme-glass {
+    background: #0b1120 !important;
+    color: #f8fafc;
+}
+body.theme-glass .card {
+    background: rgba(15, 23, 42, 0.88) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(56, 189, 248, 0.25) !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+body.theme-glass .section-title {
+    color: #38bdf8 !important;
+}
+body.theme-glass .btn-primary {
+    background: #38bdf8 !important;
+    color: #0f172a !important;
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+}
+
+/* 4. ⬛ CYBER OBSIDIAN / DEEP MONOLITH */
+body.theme-obsidian {
+    background: #050507 !important;
+    color: #f4f4f5;
+}
+body.theme-obsidian .card {
+    background: #0c0d11 !important;
+    border: 1px solid #22252e !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+}
+body.theme-obsidian .section-title {
+    color: #ffffff !important;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+body.theme-obsidian .btn-primary {
+    background: #22c55e !important;
+    color: #050507 !important;
+    border-radius: 4px !important;
+    font-weight: 900;
+}
+body.theme-obsidian .btn-ctrl {
+    background: #111318 !important;
+    border: 1px solid #27272a !important;
+    border-radius: 4px !important;
+    color: #a1a1aa !important;
+}
+body.theme-obsidian .btn-ctrl.active-focus {
+    background: #eab308 !important;
+    color: #000000 !important;
+    border-color: #eab308 !important;
+}
+body.theme-obsidian .btn-ctrl.active-pin {
+    background: #22c55e !important;
+    color: #000000 !important;
+    border-color: #22c55e !important;
+}
+body.theme-obsidian .btn-ctrl.active-libras {
+    background: #06b6d4 !important;
+    color: #000000 !important;
+    border-color: #06b6d4 !important;
+}
+body.theme-obsidian .btn-ctrl.active-preset {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-color: #ffffff !important;
+}
+body.theme-obsidian input[type="text"], body.theme-obsidian input[type="email"], body.theme-obsidian select {
+    background: #0d0e12 !important;
+    border: 1px solid #27272a !important;
+    border-radius: 4px !important;
+    color: #ffffff !important;
+}
 """
 
 # --------------------------------------------------------------------------
@@ -1965,6 +2218,11 @@ async def get_control_panel():
     sel_max_8 = "selected" if state.chat_max_messages == 8 else ""
     sel_max_12 = "selected" if state.chat_max_messages == 12 else ""
 
+    sel_th_hardware = "selected" if state.control_theme == "hardware" else ""
+    sel_th_nordic = "selected" if state.control_theme == "nordic" else ""
+    sel_th_glass = "selected" if state.control_theme == "glass" else ""
+    sel_th_obsidian = "selected" if state.control_theme == "obsidian" else ""
+
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
 
     html_content = f"""
@@ -1974,15 +2232,25 @@ async def get_control_panel():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RNP & YouTube to OBS Bridge - Painel de Controle</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
         {CONTROL_PANEL_CSS}
     </style>
 </head>
-<body>
+<body class="theme-{state.control_theme}">
     <div class="header">
         <h1><span>RNP to OBS</span> 🎛️</h1>
         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);">
+                <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">🎨 Estilo:</span>
+                <select id="selControlTheme" onchange="changeControlTheme(this.value)" style="width: auto; padding: 2px 6px; font-size: 11.5px; font-weight: 700; background: transparent; border: none; cursor: pointer; color: #f8fafc;">
+                    <option value="hardware" {sel_th_hardware}>🎛️ Studio Master</option>
+                    <option value="nordic" {sel_th_nordic}>🌿 Nordic Minimal</option>
+                    <option value="glass" {sel_th_glass}>📺 Broadcast Titanium</option>
+                    <option value="obsidian" {sel_th_obsidian}>⬛ Cyber Obsidian</option>
+                </select>
+                <a href="/catalog" target="_blank" class="btn-copy" style="padding: 2px 7px; font-size: 10.5px; text-decoration: none; display: inline-flex; align-items: center; gap: 3px;" title="Ver Catálogo Visual de Estilos">📖 Catálogo</a>
+            </div>
             <div id="saveToast" class="badge" style="display:none; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">💾 Salvo!</div>
             <div id="shieldBadge" class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">🛡️ Anti-Inatividade</div>
             <div id="statusBadge" class="badge disconnected">● Desconectado</div>
@@ -3305,6 +3573,16 @@ async def get_control_panel():
             await fetch('/api/poll/clear', {{ method: 'POST' }});
             document.getElementById('pollDockCard').style.display = 'none';
             fetchStatus();
+        }}
+
+        async function changeControlTheme(th) {{
+            document.body.className = 'theme-' + th;
+            await fetch('/api/theme/set', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ theme: th }})
+            }});
+            showSaveNotice();
         }}
 
         function copyUrl(url) {{
@@ -5058,5 +5336,517 @@ async def get_raw_presentation_frame():
     </svg>'''
     return Response(content=placeholder_svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
+# --------------------------------------------------------------------------
+# CATÁLOGO VISUAL DE ESTILOS & TEMAS (/catalog e /themes)
+# --------------------------------------------------------------------------
+@app.get("/catalog", response_class=HTMLResponse)
+@app.get("/themes", response_class=HTMLResponse)
+async def get_themes_catalog():
+    return HTMLResponse(f"""
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo de Design Systems & Temas de Broadcast - RNP to OBS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }}
+        body {{
+            background: #090b10;
+            color: #f1f5f9;
+            padding: 36px 24px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+
+        .catalog-container {{
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }}
+
+        .catalog-header {{
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }}
+        .catalog-header h1 {{
+            font-size: 32px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+        .catalog-header p {{
+            font-size: 16px;
+            color: #94a3b8;
+            max-width: 700px;
+            line-height: 1.5;
+        }}
+
+        .themes-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+            gap: 24px;
+        }}
+
+        @media (max-width: 600px) {{
+            .themes-grid {{ grid-template-columns: 1fr; }}
+        }}
+
+        .theme-card {{
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }}
+        .theme-card:hover {{
+            transform: translateY(-3px);
+        }}
+
+        .theme-card-header {{
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }}
+        .theme-meta h2 {{
+            font-size: 20px;
+            font-weight: 800;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .theme-meta .inspiration {{
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 700;
+            opacity: 0.75;
+        }}
+
+        .theme-desc {{
+            font-size: 13.5px;
+            line-height: 1.5;
+            opacity: 0.88;
+        }}
+
+        .color-palette {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .color-dot {{
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(255,255,255,0.2);
+            position: relative;
+        }}
+
+        /* LIVE INTERACTIVE DEMO INSIDE CARD */
+        .theme-demo-box {{
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }}
+        .demo-row {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }}
+
+        .btn-apply-theme {{
+            width: 100%;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 800;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            text-decoration: none;
+        }}
+        .btn-apply-theme:hover {{
+            transform: translateY(-1px);
+            filter: brightness(1.1);
+        }}
+
+        /* --- THEME 1: STUDIO MASTER --- */
+        .card-hardware {{
+            background: #151820;
+            border: 1.5px solid #282f3d;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }}
+        .card-hardware .theme-meta h2 {{ color: #f1f5f9; font-family: 'JetBrains Mono', monospace; }}
+        .card-hardware .inspiration {{ color: #10b981; }}
+        .card-hardware .theme-demo-box {{
+            background: #111319;
+            border: 1px solid #232936;
+        }}
+        .hw-btn {{
+            background: linear-gradient(180deg, #242a36 0%, #171b23 100%);
+            border: 1px solid #3b4559;
+            border-bottom: 2.5px solid #0d1015;
+            color: #e2e8f0;
+            padding: 7px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+        }}
+        .hw-btn.active {{
+            border-color: #10b981;
+            color: #34d399;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
+        }}
+        .hw-tally {{
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10.5px;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border: 1px solid #10b981;
+        }}
+        .card-hardware .btn-apply-theme {{
+            background: linear-gradient(180deg, #2a3140 0%, #191d26 100%);
+            border: 1px solid #475569;
+            border-bottom: 3px solid #0f1217;
+            color: #38bdf8;
+            font-family: 'JetBrains Mono', monospace;
+        }}
+
+        /* --- THEME 2: NORDIC MINIMAL --- */
+        .card-nordic {{
+            background: #1c1e24;
+            border: 1px solid rgba(244, 241, 222, 0.08);
+            box-shadow: 0 12px 36px rgba(0,0,0,0.3);
+        }}
+        .card-nordic .theme-meta h2 {{ color: #f4f1de; font-family: 'Plus Jakarta Sans', sans-serif; }}
+        .card-nordic .inspiration {{ color: #81b29a; }}
+        .card-nordic .theme-demo-box {{
+            background: #141519;
+            border: 1px solid rgba(244, 241, 222, 0.06);
+            border-radius: 12px;
+        }}
+        .nordic-btn {{
+            background: #23262d;
+            border: 1px solid rgba(244, 241, 222, 0.08);
+            color: #d1cbc1;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+        }}
+        .nordic-btn.active {{
+            background: #e07a5f;
+            color: #ffffff;
+            border-color: #e07a5f;
+            box-shadow: 0 4px 12px rgba(224, 122, 95, 0.35);
+        }}
+        .nordic-pill {{
+            padding: 3px 9px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(129, 178, 154, 0.2);
+            color: #81b29a;
+            border: 1px solid rgba(129, 178, 154, 0.4);
+        }}
+        .card-nordic .btn-apply-theme {{
+            background: #e07a5f;
+            color: #ffffff;
+        }}
+
+        /* --- THEME 3: BROADCAST TITANIUM --- */
+        .card-glass {{
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(16px);
+            border: 1.5px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 25px rgba(56, 189, 248, 0.15);
+        }}
+        .card-glass .theme-meta h2 {{ color: #ffffff; }}
+        .card-glass .inspiration {{ color: #38bdf8; }}
+        .card-glass .theme-demo-box {{
+            background: rgba(11, 17, 32, 0.85);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }}
+        .glass-btn {{
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #e2e8f0;
+            padding: 7px 14px;
+            border-radius: 7px;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+        }}
+        .glass-btn.active {{
+            background: #38bdf8;
+            color: #0f172a;
+            border-color: #38bdf8;
+            box-shadow: 0 0 14px rgba(56, 189, 248, 0.6);
+        }}
+        .card-glass .btn-apply-theme {{
+            background: #38bdf8;
+            color: #0f172a;
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.4);
+        }}
+
+        /* --- THEME 4: CYBER OBSIDIAN --- */
+        .card-obsidian {{
+            background: #0c0d11;
+            border: 1.5px solid #22252e;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+        }}
+        .card-obsidian .theme-meta h2 {{ color: #ffffff; font-family: 'Inter', sans-serif; letter-spacing: 0.5px; }}
+        .card-obsidian .inspiration {{ color: #22c55e; }}
+        .card-obsidian .theme-demo-box {{
+            background: #050507;
+            border: 1px solid #27272a;
+            border-radius: 6px;
+        }}
+        .obsidian-btn {{
+            background: #111318;
+            border: 1px solid #27272a;
+            color: #a1a1aa;
+            padding: 7px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: pointer;
+        }}
+        .obsidian-btn.active {{
+            background: #22c55e;
+            color: #050507;
+            border-color: #22c55e;
+        }}
+        .card-obsidian .btn-apply-theme {{
+            background: #22c55e;
+            color: #050507;
+            border-radius: 4px;
+        }}
+
+        /* TOAST CONFIRMATION */
+        #toastNotice {{
+            position: fixed;
+            bottom: 30px;
+            background: #10b981;
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 15px;
+            padding: 12px 24px;
+            border-radius: 30px;
+            box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 1000;
+            animation: toastPop 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }}
+        @keyframes toastPop {{
+            from {{ opacity: 0; transform: translateY(20px) scale(0.9); }}
+            to {{ opacity: 1; transform: translateY(0) scale(1); }}
+        }}
+    </style>
+</head>
+<body>
+    <div id="toastNotice">✅ Tema ativado com sucesso! O painel /control foi atualizado.</div>
+
+    <div class="catalog-container">
+        <div class="catalog-header">
+            <h1>🎨 Catálogo de Design Systems & Temas de Broadcast</h1>
+            <p>Escolha o estilo visual para o seu <strong>Painel de Controle (Dock do OBS)</strong>. Interfaces inspiradas em hardware físico de estúdio, design escandinavo humanizado e software moderno de televisão.</p>
+            <div style="display: flex; gap: 10px; margin-top: 6px;">
+                <a href="/control" style="background: #38bdf8; color: #0f172a; font-weight: 800; font-size: 13.5px; padding: 8px 18px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">🎛️ Abrir Painel de Controle (/control)</a>
+            </div>
+        </div>
+
+        <div class="themes-grid">
+            <!-- 1. STUDIO MASTER -->
+            <div class="theme-card card-hardware">
+                <div class="theme-card-header">
+                    <div class="theme-meta">
+                        <h2>🎛️ Studio Master</h2>
+                        <span class="inspiration">Hardware Broadcast / Blackmagic ATEM Console</span>
+                    </div>
+                    <div class="color-palette">
+                        <div class="color-dot" style="background: #101318;" title="Onyx Titanium"></div>
+                        <div class="color-dot" style="background: #282f3d;" title="Steel Border"></div>
+                        <div class="color-dot" style="background: #10b981;" title="Tally Green"></div>
+                        <div class="color-dot" style="background: #f59e0b;" title="Amber Warning"></div>
+                    </div>
+                </div>
+
+                <div class="theme-desc">
+                    Inspirado em <strong>consoles e switchers de corte físicos</strong> (Blackmagic ATEM, Roland). Acabamento em titânio fosco com chanfros táteis, relevo mecânico nos botões, lâmpadas piloto Tally iluminadas por LED e tipografia técnica <code>JetBrains Mono</code>. Zero poluição de IA.
+                </div>
+
+                <div class="theme-demo-box">
+                    <div class="demo-row">
+                        <span class="hw-tally">🔴 ON-AIR (RNP)</span>
+                        <span class="hw-tally" style="background:rgba(56,189,248,0.15); color:#38bdf8; border-color:#38bdf8;">1080p 60FPS</span>
+                        <span class="hw-tally" style="background:rgba(245,158,11,0.15); color:#f59e0b; border-color:#f59e0b;">LIBRAS OK</span>
+                    </div>
+                    <div class="demo-row">
+                        <button class="hw-btn active">CAM 1: Leonardo</button>
+                        <button class="hw-btn">CAM 2: Libras</button>
+                        <button class="hw-btn">SLIDES (PIP)</button>
+                    </div>
+                </div>
+
+                <button class="btn-apply-theme" onclick="applyTheme('hardware')">⚡ Ativar Studio Master no Painel</button>
+            </div>
+
+            <!-- 2. NORDIC MINIMAL -->
+            <div class="theme-card card-nordic">
+                <div class="theme-card-header">
+                    <div class="theme-meta">
+                        <h2>🌿 Nordic Minimal</h2>
+                        <span class="inspiration">Warm Slate & Clay / Teenage Engineering / Raycast</span>
+                    </div>
+                    <div class="color-palette">
+                        <div class="color-dot" style="background: #141518;" title="Warm Charcoal"></div>
+                        <div class="color-dot" style="background: #e07a5f;" title="Terracota"></div>
+                        <div class="color-dot" style="background: #81b29a;" title="Sage Green"></div>
+                        <div class="color-dot" style="background: #f4f1de;" title="Cream Sand"></div>
+                    </div>
+                </div>
+
+                <div class="theme-desc">
+                    Design orgânico escandinavo com <strong>tons quentes e materiais naturais sutis</strong>. Elimina a fadiga visual durante lives de 3 a 5 horas. Cantos arredondados contínuos (*squircles*), sombras difusas e micro-interações táteis e acolhedoras.
+                </div>
+
+                <div class="theme-demo-box">
+                    <div class="demo-row">
+                        <span class="nordic-pill">🌿 Conectado</span>
+                        <span class="nordic-pill" style="background:rgba(224,122,95,0.15); color:#e07a5f; border-color:#e07a5f;">Áudio Sincronizado</span>
+                    </div>
+                    <div class="demo-row">
+                        <button class="nordic-btn active">Lado a Lado</button>
+                        <button class="nordic-btn">Slide Topo</button>
+                        <button class="nordic-btn">Split 50/50</button>
+                    </div>
+                </div>
+
+                <button class="btn-apply-theme" onclick="applyTheme('nordic')">⚡ Ativar Nordic Minimal no Painel</button>
+            </div>
+
+            <!-- 3. BROADCAST TITANIUM -->
+            <div class="theme-card card-glass">
+                <div class="theme-card-header">
+                    <div class="theme-meta">
+                        <h2>📺 Broadcast Titanium</h2>
+                        <span class="inspiration">Clean Glass Pro / vMix / TV Control Room</span>
+                    </div>
+                    <div class="color-palette">
+                        <div class="color-dot" style="background: #0b1120;" title="Deep Navy"></div>
+                        <div class="color-dot" style="background: #38bdf8;" title="Cyan Tech"></div>
+                        <div class="color-dot" style="background: #2563eb;" title="Electric Blue"></div>
+                        <div class="color-dot" style="background: #ffffff;" title="Pure White"></div>
+                    </div>
+                </div>
+
+                <div class="theme-desc">
+                    O visual de <strong>softwares profissionais de switchers de televisão</strong> (vMix, Vizrt). Vidro fosco escuro (*glassmorphism*), linhas perimétricas em ciano cirúrgico e alto contraste para tomada de decisão instantânea pelo diretor de transmissão.
+                </div>
+
+                <div class="theme-demo-box">
+                    <div class="demo-row">
+                        <button class="glass-btn active">Palco Principal</button>
+                        <button class="glass-btn">Grade 4x Cams</button>
+                        <button class="glass-btn">Destaque YouTube</button>
+                    </div>
+                </div>
+
+                <button class="btn-apply-theme" onclick="applyTheme('glass')">⚡ Ativar Broadcast Titanium no Painel</button>
+            </div>
+
+            <!-- 4. CYBER OBSIDIAN -->
+            <div class="theme-card card-obsidian">
+                <div class="theme-card-header">
+                    <div class="theme-meta">
+                        <h2>⬛ Cyber Obsidian</h2>
+                        <span class="inspiration">Deep Monolith / Vercel / Laser Precision</span>
+                    </div>
+                    <div class="color-palette">
+                        <div class="color-dot" style="background: #050507;" title="Absolute Black"></div>
+                        <div class="color-dot" style="background: #22c55e;" title="Phosphor Green"></div>
+                        <div class="color-dot" style="background: #eab308;" title="Gold Focus"></div>
+                        <div class="color-dot" style="background: #94a3b8;" title="Platinum"></div>
+                    </div>
+                </div>
+
+                <div class="theme-desc">
+                    Preto absoluto (<code>#050507</code>) com <strong>divisórias ultra-finas de 1px cortadas a laser</strong>. Acentos em verde fósforo de estúdio clássico e tipografia com contraste cirúrgico. Máximo minimalismo e economia de processamento de GPU.
+                </div>
+
+                <div class="theme-demo-box">
+                    <div class="demo-row">
+                        <button class="obsidian-btn active">MASTER ACTIVE</button>
+                        <button class="obsidian-btn">PREVIEW</button>
+                        <button class="obsidian-btn">TALLY SAFE</button>
+                    </div>
+                </div>
+
+                <button class="btn-apply-theme" onclick="applyTheme('obsidian')">⚡ Ativar Cyber Obsidian no Painel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function applyTheme(themeName) {{
+            try {{
+                const res = await fetch('/api/theme/set', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ theme: themeName }})
+                }});
+                const data = await res.json();
+                
+                const toast = document.getElementById('toastNotice');
+                toast.innerHTML = '✅ Tema <strong>' + themeName.toUpperCase() + '</strong> aplicado com sucesso no painel /control!';
+                toast.style.display = 'flex';
+                setTimeout(() => {{
+                    toast.style.display = 'none';
+                }}, 3500);
+            }} catch (e) {{
+                alert('Erro ao aplicar tema: ' + e);
+            }}
+        }}
+    </script>
+</body>
+</html>
+""")
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=3333, log_level="warning")
+
