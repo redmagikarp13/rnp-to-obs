@@ -17,6 +17,11 @@ screenshare_media_report.json
 webcam_metadata.json
 obs-rnp-bridge.dll
 obs_plugin_cpp/bin/
+.app_profile/
+build/
+dist/
+dist_installer/
+*.spec
 
 # Temporary/scratch inspection scripts
 scratch_*.py
@@ -37,6 +42,9 @@ page_dump.html
 *.jpg
 *.jpeg
 *.webp
+*.lnk
+!app_icon.png
+!app_icon.ico
 
 # IDE & Antigravity
 node_modules/

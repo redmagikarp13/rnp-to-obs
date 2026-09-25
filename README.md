@@ -1,130 +1,175 @@
 # 🚀 RNP & BigBlueButton to OBS Studio Bridge
 
-Uma ponte de nível broadcast em tempo real que conecta salas da **RNP WebConf (BigBlueButton)** e transmissões do **YouTube Live** diretamente ao **OBS Studio**.
+Uma ponte de transmissão broadcast de alta fidelidade e ultra-baixa latência conectando salas da **RNP WebConf (BigBlueButton)** e transmissões do **YouTube Live** diretamente ao **OBS Studio**.
 
-Desenvolvida com foco em ultra-baixa latência, fidelidade visual sem perda de qualidade, total paridade de acessibilidade (Libras), integração completa de enquetes ao vivo, chat unificado com lower-thirds e mixagem digital de áudio PCM.
+Desenvolvida especialmente para eventos institucionais, aulas magnas e transmissões do **Cefor / Ifes**, priorizando **paridade plena de acessibilidade em Libras**, **mixagem digital de áudio PCM Float32**, **enquetes dinâmicas** e **chat unificado com lower-thirds**.
 
 ---
 
-## 🌟 Principais Recursos
+## 🌟 Principais Recursos e Funcionalidades
 
-### 🎛️ 1. Dock de Controle Integrado no OBS (`/control`)
-- Painel moderno em tema escuro com suporte nativo a **Docks Personalizados do OBS Studio** (`Docks -> Docks de Navegador Personalizados`).
-- Controle em 1 clique para conectar/desconectar da sala RNP e vincular lives do YouTube.
-- Troca em tempo real de presets de palco, foco de câmeras, fixação de palestrantes e temas visuais.
-- **Persistência em Disco:** todas as configurações são salvas em `config.json` e restauradas automaticamente.
+### 🎛️ 1. Painel de Controle Integrado (`/control`)
+- **Modo Dock OBS & Janela Desktop Nativa:** Pode ser embutido como Dock no OBS Studio ou executado como aplicativo de desktop independente (via Microsoft Edge / Google Chrome em modo `--app`).
+- **Conexão em 1 Clique:** Entrada automatizada na sala da RNP WebConf com bypass anti-inatividade autônomo (mantém a sessão ativa sem desconexões).
+- **Integração YouTube Live:** Vinculação simultânea com qualquer transmissão ao vivo do YouTube para mesclagem de chat e super chats.
+- **Seletor de Temas do Painel:** Inclui tema oficial **Ifes (Instituto Federal)**, **Hardware Broadcast**, **Cyberpunk Neon**, **Glassmorphism**, **Discord** e **Minimal Slate**.
+- **Persistência Completa:** Todas as preferências, nomes personalizados, palestrante fixado e intérpretes são salvos automaticamente no `config.json`.
 
-### 🎭 2. Palco Composto Inteligente (`/stage`)
-- Combina dinamicamente apresentação/slides e câmeras dos participantes com transições suaves.
-- **6 Presets de Transmissão:**
-  - `📺 Lado a Lado (70/30)`: Slides em 70% à esquerda + Câmeras e Libras em 30% à direita.
-  - `⬇️ Slide Top + Rodapé`: Apresentação no topo com grid horizontal de participantes embaixo.
-  - `🖼️ PIP Canto Inferior`: Slides em tela cheia com palestrante flutuando no canto inferior direito.
-  - `↗️ PIP Canto Superior`: Slides em tela cheia com palestrante no canto superior direito.
-  - `⚖️ Split 50 / 50`: Divisão meio a meio para debates e mesas-redondas.
-  - `📊 Somente Slides`: Foco exclusivo na apresentação.
+### 🎚️ 2. Rack de Áudio com VU Meters Verticais e Detecção de Voz Ativa
+- **Mixer Visual em Tempo Real:** Medição precisa de volume no painel de controle com rack vertical de medidores estéreo.
+- **Isolamento de Áudio Ativo:** Indicadores visuais dinâmicos que destacam o participante que está falando no momento (`activeTalkers`).
+- **Prevenção de Eco no OBS:** O áudio é transmitido exclusivamente pelo endpoint `/audio`. Os overlays de vídeo (`/stage`, `/libras`, etc.) mantêm a saída de áudio mutada para evitar duplicações e microfonia no OBS Studio.
 
 ### 🤟 3. Janela de Libras Paritária & Acessibilidade (`/libras`)
-- **Padrão IFES / ABNT:** Janela com proporção idêntica ao palestrante (`equal`) ou flutuante nos tamanhos `huge` (560x315), `large` (480x270) e `medium` (380x214).
-- **Auto-Reconhecimento de Intérprete:** Detecta automaticamente palavras-chave como `Libras`, `Intérprete`, `ILS` no nome do participante.
-- **Persistência de Conexão:** Se o intérprete cair e reconectar, o sistema o identifica e restaura na cena com a configuração exata.
+- **Conformidade ABNT / Cefor / Ifes:** Suporte à visualização paritária (`equal`, 50% de proporção em relação ao palestrante) ou janelas flutuantes (`huge` 560x315, `large` 480x270, `medium` 380x214).
+- **Auto-Reconhecimento Inteligente:** Identifica automaticamente intérpretes por palavras-chave (`Libras`, `Intérprete`, `ILS`).
+- **Marcação Manual Instantânea:** Botão seletor direto em cada card de câmera no Dock com atualização imediata em tempo real.
+- **Isolamento Estrito de Fluxo:** Cada câmera recebe apenas o seu próprio sinal WebRTC, sem risco de troca de imagens.
+- **Memória de Reconexão:** Se o intérprete perder a conexão momentaneamente, o sistema o reconhece e restaura na cena com as configurações salvas.
 
-### 📊 4. Enquetes ao Vivo com Temporizador e 5 Temas (`/poll`)
-- Extração de enquetes abertas e resultados publicados diretamente do BigBlueButton.
-- **Modos de Exibição:** Somente Resultados Finais (Recomendado) ou Votação ao Vivo.
-- **Temporizador com Auto-Exit:** 10s, 15s (padrão), 30s, 60s ou permanente, com animação suave de saída.
-- **5 Temas Visuais:**
-  - `⚡ Neon Glow`: Borda cyan neon com gradientes luminosos.
-  - `💎 Glassmorphism`: Vidro fosco moderno (*frosted glass*).
-  - `💬 Discord Bubbles`: Card escuro com acentos em índigo.
-  - `🎬 Cyberpunk Broadcast`: Estilo angular com bordas douradas.
-  - `📄 Minimal Slate`: Minimalista escuro e discreto.
-- **Modo Transmissão Pura:** Monitoramento seguro sem intervenção ou botões de votação interna.
+### 🎭 4. Palco Composto Inteligente (`/stage`)
+Combinação dinâmica em tempo real da apresentação/slides e das câmeras dos participantes com transições suaves e 6 presets:
+- `📺 Lado a Lado (70/30)`: Slides em 70% à esquerda + Câmeras e Libras em 30% à direita.
+- `⬇️ Slide Top + Rodapé`: Apresentação no topo com grid horizontal de participantes embaixo.
+- `🖼️ PIP Canto Inferior`: Slides em tela cheia com palestrante flutuando no canto inferior direito.
+- `↗️ PIP Canto Superior`: Slides em tela cheia com palestrante no canto superior direito.
+- `⚖️ Split 50 / 50`: Divisão meio a meio para debates, entrevistas e mesas-redondas.
+- `📊 Somente Slides`: Foco exclusivo no material da apresentação.
 
-### 💬 5. Chat Unificado & Lower-Thirds (`/chat` & `/chat/featured`)
-- Agregação em tempo real de mensagens do chat da RNP e do SuperChat/Live Chat do YouTube.
-- **Destaque em 1 Clique:** Clique em qualquer mensagem no Dock para exibi-la como um banner de destaque (*lower-third*) no OBS.
-- Emojis convertidos e renderizados com alta nitidez.
+### 📊 5. Enquetes ao Vivo BBB com 5 Temas Visuais (`/poll`)
+- Extração em tempo real das enquetes abertas e resultados publicados na conferência RNP/BBB.
+- **5 Temas Visuais:** `Neon Glow`, `Glassmorphism`, `Discord Bubbles`, `Cyberpunk Broadcast` e `Minimal Slate`.
+- **Temporizador com Saída Animada:** Exibição configurável (10s, 15s padrão, 30s, 60s ou permanente).
+- **Modo Transmissão Pura:** Overlay visual limpo sem botões de voto do BBB, ideal para o público da live.
 
-### 🔊 6. Áudio Digital de Alta Fidelidade (`/audio`)
-- Transmissão direta de áudio sem compressão via **WebSocket PCM Float32 (48.000 Hz)**.
-- Latência sub-50ms e monitor com VU Meter em tempo real no painel de controle.
+### 💬 6. Chat Unificado & Lower-Thirds (`/chat` e `/chat/featured`)
+- Agrupamento cronológico unificado do chat interno da RNP e do chat ao vivo do YouTube.
+- **Lower-Third de Destaque:** 1 clique na mensagem dentro do Dock a projeta instantaneamente como tarja de destaque no OBS.
+- **Isolamento Estrito de Avatares:** Participantes sem foto de perfil utilizam avatares vetoriais individuais gerados com suas iniciais, sem risco de herdar a imagem de mensagens anteriores.
+- Opção para ocultar ou exibir avatares e ajuste de tamanho de fonte no painel.
 
-### 🛡️ 7. Bypass Anti-Inatividade Automático
-- Sistema autônomo que intercepta e fecha modais de inatividade da RNP, mantendo o bot conectado indefinidamente sem interrupções na live.
+### 🎥 7. Captura de Vídeos do YouTube Compartilhados na Sala (`/presentation`)
+- Detecta automaticamente quando o apresentador da RNP compartilha um vídeo externo do YouTube.
+- O endpoint `/presentation` transiciona perfeitamente entre os slides de PDF e o player de vídeo do YouTube em tela cheia.
 
 ---
 
-## 📋 Lista de Endpoints para o OBS Studio
+## 📋 Catálogo Completo de Endpoints para o OBS Studio
 
-Todos os endpoints operam em `http://localhost:3333` com fundo 100% transparente para encaixe direto nas cenas:
+Todos os endpoints operam em `http://localhost:3333` com transparência total (`alpha channel`) para sobreposição direta nas cenas:
 
-| Endpoint | Tipo no OBS | Resolução Recomendada | Descrição |
+| Endpoint | Tipo no OBS Studio | Dimensões Recomendadas | Descrição e Finalidade |
 | :--- | :--- | :--- | :--- |
-| `http://localhost:3333/control` | **Dock de Navegador** | — | Painel de controle para o operador. |
-| `http://localhost:3333/stage` | **Browser Source** | `1920 x 1080` | Palco composto (Slides + Câmeras + Libras). |
-| `http://localhost:3333/cameras/grid` | **Browser Source** | `1920 x 600` ou `1920 x 1080` | Grid responsivo de todas as webcams abertas. |
-| `http://localhost:3333/libras` | **Browser Source** | `560 x 315` | Janela isolada para Intérprete de Libras. |
-| `http://localhost:3333/presentation` | **Browser Source** | `1920 x 1080` | Apresentação ou compartilhamento de tela puro. |
-| `http://localhost:3333/chat` | **Browser Source** | `460 x 600` | Feed de mensagens unificado (RNP + YouTube). |
-| `http://localhost:3333/chat/featured` | **Browser Source** | `1920 x 1080` | Banner de mensagem em destaque (Lower-Third). |
-| `http://localhost:3333/poll` | **Browser Source** | `1920 x 1080` | Card animado de resultados de enquetes. |
-| `http://localhost:3333/audio` | **Browser Source** | `200 x 200` | Receptor de áudio digital sem perdas. |
+| `http://localhost:3333/control` | **Dock de Navegador** | Painel Livre | Painel de controle e monitoramento para o operador. |
+| `http://localhost:3333/stage` | **Browser Source** | `1920 x 1080` | Palco principal completo (Slides + Câmeras + Libras). |
+| `http://localhost:3333/cameras/grid` | **Browser Source** | `1920 x 1080` ou `1920 x 600` | Grid dinâmico com todas as webcams ativas. |
+| `http://localhost:3333/libras` | **Browser Source** | `560 x 315` | Janela isolada dedicada para o Intérprete de Libras. |
+| `http://localhost:3333/presentation` | **Browser Source** | `1920 x 1080` | Slides da apresentação ou vídeo compartilhado. |
+| `http://localhost:3333/chat` | **Browser Source** | `460 x 700` | Feed de mensagens com rolagem automática. |
+| `http://localhost:3333/chat/featured` | **Browser Source** | `1920 x 1080` | Tarja de mensagem em destaque (*Lower-Third*). |
+| `http://localhost:3333/poll` | **Browser Source** | `1920 x 1080` | Card animado de resultado da enquete ao vivo. |
+| `http://localhost:3333/audio` | **Browser Source** | `200 x 200` | Receptor digital de áudio PCM Float32 (48 kHz). |
+| `http://localhost:3333/catalog` | **Navegador Web** | — | Vitrine visual interativa com demonstração de todos os temas. |
 
 ---
 
-## ⚙️ Instalação e Execução
+## 🚀 Como Executar o Projeto
+
+### Opção 1: Executável ou Instalador Profissional (Recomendado para Produção)
+O projeto conta com automação para geração de instalador `.exe` via Inno Setup e binários portáteis com PyInstaller:
+- **Gerar Instalador:** Execute `compilar_instalador.bat`. O instalador `Instalador_RNP_to_OBS_Setup.exe` será gerado em `dist_installer\`.
+- **Gerar Executável Portátil:** Execute `compilar_exe.bat`. A pasta autônoma `dist\RNP to OBS\` será gerada pronta para distribuição (pode ser compactada em `.zip`).
+- **Instalar:** Execute o instalador gerado; ele criará atalhos no Menu Iniciar e na Área de Trabalho com ícone oficial.
+
+### Opção 2: Modo Desktop com Python Local
+1. Dê um duplo clique no atalho **`Abrir Painel.bat`** (ou execute `pythonw app.pyw`).
+2. O servidor iniciará em segundo plano e abrirá uma janela de aplicativo dedicada, sem barras de navegador.
+3. Ao fechar a janela, o sistema pergunta se deseja encerrar o servidor ou mantê-lo ativo para o OBS Studio continuar transmitindo.
+4. Para forçar a parada a qualquer momento, execute **`Parar Servidor.bat`** ou clique no botão *Desligar Servidor* no cabeçalho do Dock.
+
+### Opção 3: Modo Servidor Console Tradicional
+```bash
+python server.py
+```
+Acesse `http://localhost:3333/control` no seu navegador.
+
+---
+
+## 🛠️ Instalação para Desenvolvedores
 
 ### Pré-requisitos
-- **Python 3.10 ou superior** instalado ([python.org](https://www.python.org/downloads/)).
+- **Python 3.10 ou superior** instalado.
 - **OBS Studio 28+** instalado.
 
-### 1. Instalação Rápida (Windows)
-1. Clone ou baixe este repositório:
+### Passo a Passo
+1. Clone este repositório:
    ```bash
    git clone https://github.com/redmagikarp13/rnp-to-obs.git
    cd rnp-to-obs
    ```
-2. Execute o arquivo **`install.bat`** (ele instalará o `FastAPI`, `Playwright`, `Pytchat` e o motor do Chromium automaticamente).
-
-### 2. Instalação Manual
-```bash
-pip install -r requirements.txt
-playwright install chromium
-```
-
-### 3. Como Iniciar o Servidor
-Dê um duplo clique em **`start.bat`** ou rode no terminal:
-```bash
-python server.py
-```
-O servidor estará pronto em `http://localhost:3333`.
+2. Instale as dependências:
+   ```bash
+   pip install -r requirements.txt
+   playwright install chromium
+   ```
 
 ---
 
-## 🎬 Configurando no OBS Studio
+## 🎬 Configuração Passo a Passo no OBS Studio
 
-### Adicionando o Painel de Controle no OBS
-1. No menu superior do OBS, acesse: **Docks** -> **Docks de Navegador Personalizados...**
-2. No campo *Nome do Dock*, digite: `RNP Control`.
-3. No campo *URL*, digite: `http://localhost:3333/control`.
-4. Clique em **Aplicar** e encaixe a janela onde preferir na sua interface do OBS.
+### 1. Inserir o Painel de Controle no OBS
+1. No menu superior do OBS, clique em: **Docks** -> **Docks de Navegador Personalizados...**
+2. Em **Nome do Dock**, informe: `RNP Control`.
+3. Em **URL**, cole: `http://localhost:3333/control`.
+4. Clique em **Aplicar** e encaixe a janela na lateral ou rodapé do OBS Studio.
 
-### Adicionando Cenas e Overlays
-1. Em qualquer cena, clique no botão **`+`** em *Fontes* e escolha **Navegador** (*Browser Source*).
-2. Cole o link desejado (ex: `http://localhost:3333/stage`).
-3. Defina a largura e altura como `1920` x `1080`.
-4. Marque a opção: `Controlar áudio via OBS` (opcional caso utilize a fonte de áudio).
+### 2. Inserir as Cenas de Vídeo
+1. Na lista de **Fontes** da cena, clique no **`+`** e selecione **Navegador** (*Browser Source*).
+2. Marque *Criar nova* e dê um nome (ex: `Palco RNP`).
+3. Cole a URL correspondente (ex: `http://localhost:3333/stage`).
+4. Configure a resolução: **Largura:** `1920`, **Altura:** `1080`.
+5. Deixe desmarcado "Controlar áudio via OBS" nas fontes de vídeo para evitar sobreposição sonora.
+
+### 3. Inserir a Fonte de Áudio Digital
+1. Adicione uma fonte do tipo **Navegador** com a URL: `http://localhost:3333/audio`.
+2. Configure **Largura:** `200`, **Altura:** `200`.
+3. Marque a opção: **Controlar áudio via OBS**.
+4. No Mixer de Áudio do OBS, essa fonte fornecerá o som digital transparente da sala em 48 kHz.
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
-- **Backend:** Python 3, FastAPI, Uvicorn, WebSockets, Asyncio.
-- **Automação WebRTC:** Playwright (Chromium Headless).
-- **Front-End & Overlays:** Vanilla HTML5, CSS3 Glassmorphism/Neon Design System, Web Audio API.
-- **Integração YouTube:** Pytchat (Live Stream Chat API).
+## 🏗️ Arquitetura e Engenharia de Performance
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    RNP WebConf (BigBlueButton)              │
+│       Câmeras WebRTC  │  Slides SVG/Canvas  │  Áudio WebRTC │
+└───────────────────────┬─────────────────────────────────────┘
+                        │ CDP (Chrome DevTools Protocol)
+┌───────────────────────▼─────────────────────────────────────┐
+│              RNP to OBS Core (Playwright Engine)            │
+│  - Loop Sequencial de Sincronização (~20 FPS)              │
+│  - Extrator de Câmeras e Isolamento Estrito de IDs          │
+│  - Scraping Não-Bloqueante de Chat RNP & YouTube (Pytchat)  │
+│  - Transmissor de Áudio PCM Float32 via WebSocket           │
+└───────────────────────┬─────────────────────────────────────┘
+                        │ HTTP / WebSocket (Porta 3333)
+┌───────────────────────▼─────────────────────────────────────┐
+│                      OBS Studio (CEF)                       │
+│  - /control (Dock)     - /stage (Palco 70/30, PIP, etc.)    │
+│  - /libras (Acessib.)  - /cameras/grid (Grade de Câmeras)   │
+│  - /chat (Overlay)     - /poll (Enquetes BBB)               │
+│  - /audio (PCM 48kHz)  - /chat/featured (Lower-Third)       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Loop Único Sequencial de Sincronização:** Elimina conflitos de concorrência no protocolo CDP do Chrome, mantendo uso estável de CPU e latência mínima.
+- **Cache-Busting Discrete Polling para OBS CEF:** Fontes de Browser no OBS operam com chamadas de quadros `/raw_frame/` de alta velocidade, prevenindo travamento de conexões persistentes que ocorriam com streams multipart antigos.
+- **Isolamento de Avatares:** Algoritmo que garante que participantes sem foto utilizem avatares SVG dinâmicos baseados no nome, impedindo contaminação visual entre mensagens consecutivas.
 
 ---
 
 ## 📄 Licença
-Distribuído sob licença proprietária/privada. Todos os direitos reservados.
+Desenvolvido para apoio às transmissões educacionais e institucionais.
+Cefor / Ifes — Instituto Federal do Espírito Santo.
+Todos os direitos reservados.

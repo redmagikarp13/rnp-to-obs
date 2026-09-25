@@ -8,14 +8,61 @@ import time
 import urllib.parse
 from typing import Dict, List, Optional, Set
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Frame
 import pytchat
 import emoji
 
-sys.stdout.reconfigure(encoding='utf-8')
+class SafeLogWriter:
+    def __init__(self, filepath=None):
+        self.file = None
+        if filepath:
+            try:
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                self.file = open(filepath, "a", encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+    def write(self, s):
+        if self.file:
+            try:
+                self.file.write(s)
+                self.file.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        if self.file:
+            try:
+                self.file.flush()
+            except Exception:
+                pass
+
+    def isatty(self):
+        return False
+
+    def reconfigure(self, **kwargs):
+        pass
+
+log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.dirname(os.path.abspath(__file__))), "RNP_to_OBS")
+if sys.stdout is None or not hasattr(sys.stdout, 'isatty'):
+    sys.stdout = SafeLogWriter(os.path.join(log_dir, "server_stdout.log"))
+elif hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+if sys.stderr is None or not hasattr(sys.stderr, 'isatty'):
+    sys.stderr = SafeLogWriter(os.path.join(log_dir, "server_stderr.log"))
+elif hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 
 def emojize_text(text: str) -> str:
     if not text:
@@ -42,6 +89,7 @@ DEFAULT_CONFIG = {
     "user_name": "OBS Studio",
     "user_email": "obs@obs.com",
     "youtube_url": "",
+    "youtube_auto_connect": False,
     "control_theme": "hardware",
     "show_camera_names": True,
     "camera_name_style": "glass",
@@ -103,6 +151,7 @@ class BridgeState:
         self.user_name = cfg.get("user_name", "OBS Studio")
         self.user_email = cfg.get("user_email", "obs@obs.com")
         self.youtube_url = cfg.get("youtube_url", "")
+        self.youtube_auto_connect = bool(cfg.get("youtube_auto_connect", False))
         self.youtube_connected = False
         self.youtube_status = "Desconectado"
         self.control_theme = cfg.get("control_theme", "hardware")
@@ -132,6 +181,7 @@ class BridgeState:
         self.latest_camera_frames: Dict[str, bytes] = {}
         self.latest_presentation_frame: Optional[bytes] = None
         self.pcm_clients: Set[WebSocket] = set()
+        self.last_speaker_map: Dict[str, bool] = {}
         
         # Opções de Grid, Câmeras e Libras
         self.focused_camera_id: Optional[str] = None
@@ -158,6 +208,7 @@ class BridgeState:
         self.last_keep_alive_time: float = 0
         
         self.sync_task: Optional[asyncio.Task] = None
+        self.content_sync_task: Optional[asyncio.Task] = None
         self.keep_alive_task: Optional[asyncio.Task] = None
         self.youtube_task: Optional[asyncio.Task] = None
 
@@ -167,6 +218,7 @@ class BridgeState:
             "user_name": self.user_name,
             "user_email": self.user_email,
             "youtube_url": self.youtube_url,
+            "youtube_auto_connect": self.youtube_auto_connect,
             "control_theme": self.control_theme,
             "show_camera_names": self.show_camera_names,
             "camera_name_style": self.camera_name_style,
@@ -227,7 +279,7 @@ async def youtube_chat_loop(video_id: str):
     state.youtube_status = f"Conectando ao YouTube ({video_id})..."
     print(f"[YouTube] Iniciando captura do chat para o vídeo {video_id}...")
     try:
-        chat = pytchat.create(video_id=video_id)
+        chat = await asyncio.to_thread(pytchat.create, video_id=video_id)
         state.youtube_status = f"Ao Vivo no YouTube ({video_id})"
         print(f"[YouTube] Conectado com sucesso ao chat da Live {video_id}!")
 
@@ -315,15 +367,62 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
 
     try:
         state.playwright = await async_playwright().start()
-        state.browser = await state.playwright.chromium.launch(
-            headless=True,
-            args=[
-                '--use-fake-ui-for-media-stream',
-                '--autoplay-policy=no-user-gesture-required',
-                '--disable-web-security'
-            ]
+        launch_args = [
+            '--use-fake-ui-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+            '--disable-web-security',
+            '--headless=new',
+            # --- Aceleração de Hardware (GPU) & Baixa Latência ---
+            '--enable-gpu-rasterization',
+            '--enable-zero-copy',
+            '--enable-accelerated-video-decode',
+            '--enable-accelerated-mjpeg-decode',
+            '--enable-features=WebRtcHWDecoding,WebRtcHWEncoding,CanvasOopRasterization',
+            '--disable-frame-rate-limit',
+            '--ignore-gpu-blocklist',
+            '--use-gl=angle',
+            '--use-angle=d3d11',
+            # --- Performance & Memória ---
+            '--disable-dev-shm-usage',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-ipc-flooding-protection',
+            '--disable-hang-monitor',
+            # --- Reduzir overhead visual do browser ---
+            '--disable-smooth-scrolling',
+            '--disable-default-apps',
+            '--no-first-run',
+            '--disable-extensions',
+            '--disable-component-update',
+            '--disable-breakpad',
+            '--metrics-recording-only',
+            '--mute-audio',
+        ]
+
+        browser_obj = None
+        for ch in ["msedge", "chrome", None]:
+            try:
+                if ch:
+                    browser_obj = await state.playwright.chromium.launch(headless=True, channel=ch, args=launch_args)
+                else:
+                    browser_obj = await state.playwright.chromium.launch(headless=True, args=launch_args)
+                if browser_obj:
+                    log(f"Chromium iniciado com sucesso via {ch if ch else 'playwright default'}!")
+                    break
+            except Exception:
+                continue
+
+        if not browser_obj:
+            raise RuntimeError("Nenhum navegador compatível (Edge, Chrome ou Chromium) foi encontrado.")
+
+        state.browser = browser_obj
+        state.context = await state.browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            bypass_csp=True,
+            java_script_enabled=True,
+            ignore_https_errors=True
         )
-        state.context = await state.browser.new_context(viewport={'width': 1920, 'height': 1080})
         state.page = await state.context.new_page()
 
         log(f"Acessando sala RNP: {state.room_url} ...")
@@ -356,27 +455,49 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         except Exception:
             pass
 
-        # 3. Confirmar entrada
+        # 3. Confirmar entrada (com suporte a sala ainda fechada/aguardando moderador)
         try:
             final_enter = state.page.locator('input[value="Entrar"], button:has-text("Entrar"), a.btn:has-text("Entrar")')
             if await final_enter.count() > 0 and await final_enter.first.is_visible():
+                # Verificar se o botão está desabilitado (ex: "A videoconferência ainda não começou")
+                if await final_enter.first.is_disabled():
+                    log("⏳ Sala ainda não começou. Aguardando o moderador iniciar a sessão...")
+                    while state.connecting and await final_enter.first.is_disabled():
+                        await asyncio.sleep(2)
+                
+                if not state.connecting:
+                    return
+
                 log("Confirmando entrada na sala...")
-                await final_enter.first.click()
-        except Exception:
-            pass
+                await final_enter.first.click(timeout=10000)
+        except Exception as e:
+            log(f"Aviso na confirmação de entrada: {e}")
 
-        # 4. Aguardar sessão
-        log("Aguardando preparação da sessão BigBlueButton (15-20s)...")
-        await asyncio.sleep(15)
+        # 4. Aguardar sessão BigBlueButton carregar
+        log("Aguardando carregamento da sessão BigBlueButton...")
+        target_frame = None
+        for _ in range(45):
+            if not state.connecting:
+                return
+            curr_frame = find_active_bbb_frame(state.page)
+            try:
+                indicators = curr_frame.locator('#layout, #app, [data-test="webcamVideoItem"], [data-test="listenOnlyBtn"], [aria-label="Somente ouvir"], [aria-label="Listen only"]')
+                if await indicators.count() > 0:
+                    target_frame = curr_frame
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(1)
 
-        target_frame = find_active_bbb_frame(state.page)
+        if not target_frame:
+            target_frame = find_active_bbb_frame(state.page)
         state.bbb_frame = target_frame
         log("Conectado ao BigBlueButton!")
 
         # 5. Fechar modal Somente Ouvir
         try:
             listen_btn = target_frame.locator('[aria-label="Somente ouvir"], [aria-label="Listen only"], button:has-text("Somente ouvir"), [data-test="listenOnlyBtn"]')
-            await listen_btn.wait_for(state="visible", timeout=15000)
+            await listen_btn.wait_for(state="visible", timeout=20000)
             await listen_btn.click()
             log("Modo ouvinte ativado.")
         except Exception:
@@ -394,37 +515,79 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         # 7. Iniciar áudio PCM Float32
         log("Iniciando transmissão de áudio PCM de baixa latência...")
         await target_frame.evaluate('''() => {
-            function startPcmCapture() {
-                const audioEl = Array.from(document.querySelectorAll('audio')).find(a => a.srcObject && a.srcObject.getAudioTracks().length > 0);
-                if (!audioEl || !audioEl.srcObject) {
-                    setTimeout(startPcmCapture, 1000);
-                    return;
-                }
+            if (window._pcmCaptureActive) return;
+            window._pcmCaptureActive = true;
 
+            function startPcmCapture() {
                 try {
                     const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-                    const src = ctx.createMediaStreamSource(audioEl.srcObject);
+                    if (ctx.state === 'suspended') {
+                        ctx.resume().catch(() => {});
+                    }
+
+                    const masterGain = ctx.createGain();
+                    masterGain.gain.setValueAtTime(1.0, ctx.currentTime);
+
                     const proc = ctx.createScriptProcessor(2048, 1, 1);
+                    const connectedStreams = new Set();
 
                     const ws = new WebSocket('ws://127.0.0.1:3333/ws/pcm_in');
                     ws.binaryType = 'arraybuffer';
 
-                    ws.onopen = () => {
-                        proc.onaudioprocess = (e) => {
-                            if (ws.readyState === WebSocket.OPEN) {
-                                const input = e.inputBuffer.getChannelData(0);
-                                ws.send(input.buffer);
-                            }
-                        };
-                        src.connect(proc);
-                        proc.connect(ctx.destination);
+                    proc.onaudioprocess = (e) => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            const input = e.inputBuffer.getChannelData(0);
+                            ws.send(input.buffer);
+                        }
                     };
 
+                    masterGain.connect(proc);
+                    proc.connect(ctx.destination);
+
+                    function scanAndMixAudioSources() {
+                        try {
+                            const mediaElements = Array.from(document.querySelectorAll('audio, video'));
+                            for (const el of mediaElements) {
+                                if (el.srcObject && el.srcObject.getAudioTracks && el.srcObject.getAudioTracks().length > 0) {
+                                    const tracks = el.srcObject.getAudioTracks();
+                                    const activeTracks = tracks.filter(t => t.readyState === 'live');
+                                    if (activeTracks.length === 0) continue;
+
+                                    const streamId = el.srcObject.id || (el.id ? ('el_' + el.id) : ('track_' + activeTracks[0].id));
+                                    if (!connectedStreams.has(streamId)) {
+                                        try {
+                                            const src = ctx.createMediaStreamSource(el.srcObject);
+                                            src.connect(masterGain);
+                                            connectedStreams.add(streamId);
+                                            console.log('[RNP Audio Mixer] Conectado novo canal de áudio:', streamId, el.tagName);
+                                        } catch (err) {
+                                            // Pode já estar conectado ao AudioContext
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    scanAndMixAudioSources();
+                    const scanInterval = setInterval(scanAndMixAudioSources, 1500);
+
                     ws.onclose = () => {
-                        try { src.disconnect(); proc.disconnect(); ctx.close(); } catch(e) {}
+                        try {
+                            clearInterval(scanInterval);
+                            proc.disconnect();
+                            masterGain.disconnect();
+                            ctx.close();
+                        } catch(e) {}
+                        window._pcmCaptureActive = false;
                         setTimeout(startPcmCapture, 2000);
                     };
+
+                    ws.onerror = () => {
+                        try { ws.close(); } catch(e) {}
+                    };
                 } catch(e) {
+                    window._pcmCaptureActive = false;
                     setTimeout(startPcmCapture, 2000);
                 }
             }
@@ -439,11 +602,14 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
             state.sync_task.cancel()
         state.sync_task = asyncio.create_task(sync_loop())
 
+        if state.content_sync_task and not state.content_sync_task.done():
+            state.content_sync_task.cancel()
+
         if state.keep_alive_task and not state.keep_alive_task.done():
             state.keep_alive_task.cancel()
         state.keep_alive_task = asyncio.create_task(keep_alive_loop())
 
-        if state.youtube_url:
+        if state.youtube_auto_connect and state.youtube_url:
             asyncio.create_task(start_youtube_chat(state.youtube_url))
 
     except Exception as e:
@@ -457,6 +623,8 @@ async def stop_connection():
     state.connecting = False
     if state.sync_task and not state.sync_task.done():
         state.sync_task.cancel()
+    if state.content_sync_task and not state.content_sync_task.done():
+        state.content_sync_task.cancel()
     if state.keep_alive_task and not state.keep_alive_task.done():
         state.keep_alive_task.cancel()
     if state.browser:
@@ -521,17 +689,70 @@ async def keep_alive_loop():
         await asyncio.sleep(25)
 
 async def sync_loop():
+    last_slide_check = 0.0
+    last_chat_check = 0.0
+    last_poll_check = 0.0
     while state.connected and state.page:
+        t_start = time.time()
         try:
             target_frame = find_active_bbb_frame(state.page)
             state.bbb_frame = target_frame
 
-            # 1. Capturar todas as Webcams
+            # 1. Capturar todas as Webcams com aceleracao, canvas persistente e deteccao de audio/fala
             cam_data = await target_frame.evaluate('''() => {
+                if (!window._camCanvasMap) window._camCanvasMap = {};
                 const list = [];
                 const seenVideos = new Set();
 
-                document.querySelectorAll('video').forEach((video) => {
+                // 🎙️ COLETAR NOMES DE QUEM ESTÁ FALANDO NOS TALKING INDICATORS (TOPO)
+                const activeTalkerNames = new Set();
+                const talkerSelectors = [
+                    '[data-test="isTalking"]',
+                    'button[data-test="isTalking"]',
+                    '[data-test="talkingIndicator"] button',
+                    '[data-test="talkingIndicator"]',
+                    'div[class*="TalkingIndicatorButton"]',
+                    'div[class*="IsTalkingWrapper"]',
+                    'div[class*="talkingIndicator"]',
+                    'div[class*="Speaking"]',
+                    'div[class*="speaking"]',
+                    '[class*="talkingUser"]',
+                    '[class*="voiceUser"]',
+                    '[aria-label*="falando" i]',
+                    '[aria-label*="speaking" i]',
+                    '[aria-label*="talking" i]'
+                ];
+
+                talkerSelectors.forEach(sel => {
+                    try {
+                        const els = document.querySelectorAll(sel);
+                        els.forEach(el => {
+                            const isWas = el.getAttribute('data-test') === 'wasTalking' || 
+                                          (el.className && typeof el.className === 'string' && el.className.includes('wasTalking'));
+                            if (isWas) return;
+                            
+                            let txt = (el.innerText || el.getAttribute('aria-label') || '').trim();
+                            if (txt) {
+                                txt = txt.replace(/falando\\s*:?/i, '')
+                                         .replace(/speaking\\s*:?/i, '')
+                                         .replace(/talking\\s*:?/i, '')
+                                         .replace(/microfone\\s*:?/i, '')
+                                         .trim();
+                                if (txt.length >= 2) {
+                                    txt.split('\\n').forEach(part => {
+                                        const p = part.trim().toLowerCase();
+                                        if (p && p.length >= 2 && !p.includes('opções') && !p.includes('abrir')) {
+                                            activeTalkerNames.add(p);
+                                        }
+                                    });
+                                }
+                            }
+                        });
+                    } catch(e) {}
+                });
+
+                const videoElements = document.querySelectorAll('video');
+                videoElements.forEach((video) => {
                     if (video.id === 'screenshareVideo' || video.closest('#screenshareContainer') || video.closest('[data-test="screenshareVideo"]')) {
                         return;
                     }
@@ -576,13 +797,76 @@ async def sync_loop():
                         name = `Câmera ${list.length + 1}`;
                     }
 
+                    // 🎙️ DETECÇÃO INDIVIDUAL DE STATUS DE ÁUDIO / FALA
+                    let isMuted = false;
+                    let isSpeaking = false;
+
+                    if (parent) {
+                        const parentClass = (parent.className && typeof parent.className === 'string') ? parent.className : '';
+                        if (parentClass.match(/talking|speaking|isTalking|activeSpeaker|voiceActive/i)) {
+                            isSpeaking = true;
+                        }
+
+                        const micEls = parent.querySelectorAll('button, svg, i, span, div[class*="mic"], div[class*="audio"], div[class*="voice"], div[class*="status"]');
+                        micEls.forEach(m => {
+                            const mClass = (m.className && typeof m.className === 'string' ? m.className : (m.className && m.className.baseVal ? m.className.baseVal : '')).toLowerCase();
+                            const mAria = (m.getAttribute('aria-label') || m.getAttribute('title') || '').toLowerCase();
+                            
+                            if (mClass.includes('mute') || mClass.includes('audio_off') || mAria.includes('mudo') || mAria.includes('muted') || mAria.includes('desativado')) {
+                                isMuted = true;
+                            }
+                            if (mClass.includes('speaking') || mClass.includes('talking') || mClass.includes('voiceactive') || mAria.includes('falando') || mAria.includes('speaking')) {
+                                isSpeaking = true;
+                            }
+                        });
+
+                        if (parent.querySelector('[data-test="isTalking"], [class*="speaking"], [class*="isTalking"]')) {
+                            isSpeaking = true;
+                        }
+                    }
+
+                    const camNameLower = name.toLowerCase().trim();
+                    if (!isMuted && activeTalkerNames.size > 0) {
+                        for (const tName of activeTalkerNames) {
+                            if (camNameLower.includes(tName) || tName.includes(camNameLower)) {
+                                isSpeaking = true;
+                                break;
+                            }
+                            const tPrefix = tName.replace(/\\.+$/, '').trim();
+                            if (tPrefix.length >= 4 && camNameLower.startsWith(tPrefix)) {
+                                isSpeaking = true;
+                                break;
+                            }
+                            const camParts = camNameLower.split(/\\s+/).filter(w => w.length > 2);
+                            const tParts = tName.split(/\\s+/).filter(w => w.length > 2);
+                            if (camParts.length > 0 && tParts.length > 0 && camParts[0] === tParts[0]) {
+                                if (tParts.length === 1 || camParts.length === 1 || (camParts.length > 1 && tParts.length > 1 && camParts[1] === tParts[1])) {
+                                    isSpeaking = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (isMuted) {
+                        isSpeaking = false;
+                    }
+
                     const w = video.videoWidth || video.clientWidth || 903;
                     const h = video.videoHeight || video.clientHeight || 508;
                     
-                    const canvas = document.createElement('canvas');
-                    canvas.width = w;
-                    canvas.height = h;
-                    const ctx = canvas.getContext('2d');
+                    const camKey = 'cam_' + (list.length + 1);
+                    let canvas = window._camCanvasMap[camKey];
+                    if (!canvas) {
+                        canvas = document.createElement('canvas');
+                        window._camCanvasMap[camKey] = canvas;
+                    }
+                    if (canvas.width !== w || canvas.height !== h) {
+                        canvas.width = w;
+                        canvas.height = h;
+                    }
+
+                    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
                     ctx.drawImage(video, 0, 0, w, h);
 
                     list.push({
@@ -590,7 +874,9 @@ async def sync_loop():
                         name: name,
                         width: w,
                         height: h,
-                        frame: canvas.toDataURL('image/jpeg', 0.85).replace(/^data:image\\/jpeg;base64,/, '')
+                        frame: canvas.toDataURL('image/jpeg', 0.80).slice(23),
+                        is_speaking: isSpeaking,
+                        is_muted: isMuted
                     });
                 });
 
@@ -639,72 +925,102 @@ async def sync_loop():
                     "height": cam['height'],
                     "is_focused": is_focus,
                     "is_pinned": is_pin,
-                    "is_libras": is_libras
+                    "is_libras": is_libras,
+                    "is_speaking": bool(cam.get('is_speaking', False)),
+                    "is_muted": bool(cam.get('is_muted', False))
                 })
             
             state.cameras_list = cams_info
 
-            # 2. Capturar Apresentação (Tela Compartilhada, Vídeo Externo do YouTube ou Slides)
-            screen_data = None
-            try:
-                screen_data = await target_frame.evaluate('''() => {
-                    try {
-                        // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
-                        const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
-                            const t = (b.innerText || '').toLowerCase();
-                            const a = (b.getAttribute('aria-label') || '').toLowerCase();
-                            return t.includes('somente ouvir') || a.includes('somente ouvir') || t.includes('listen only') || a.includes('listen only');
-                        });
-                        if (audioDismissBtns.length > 0) {
-                            audioDismissBtns[0].click();
-                        }
-                    } catch(e) {}
+            # 🎙️ Notificar clientes conectados via WebSocket sobre os oradores ativos em tempo real
+            speaker_map = {str(c['id']): bool(c.get('is_speaking', False)) for c in cams_info}
+            if speaker_map != state.last_speaker_map and state.pcm_clients:
+                state.last_speaker_map = speaker_map
+                msg_txt = json.dumps({"type": "speakers", "speakers": speaker_map})
+                for client in list(state.pcm_clients):
+                    try:
+                        asyncio.create_task(client.send_text(msg_txt))
+                    except Exception:
+                        pass
 
-                    const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
-                    if (vid && vid.videoWidth > 0) {
-                        const canvas = document.createElement('canvas');
-                        const w = vid.videoWidth || 1920;
-                        const h = vid.videoHeight || 1080;
+            # 2. Capturar Apresentação (Screenshare rápido via Canvas)
+            screen_data = await target_frame.evaluate('''() => {
+                const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
+                if (vid && vid.videoWidth > 0) {
+                    if (!window._screenCanvas) {
+                        window._screenCanvas = document.createElement('canvas');
+                    }
+                    const canvas = window._screenCanvas;
+                    const w = vid.videoWidth || 1920;
+                    const h = vid.videoHeight || 1080;
+                    if (canvas.width !== w || canvas.height !== h) {
                         canvas.width = w;
                         canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(vid, 0, 0, w, h);
-                        return { mode: 'screenshare', frame: canvas.toDataURL('image/jpeg', 0.85).replace(/^data:image\\/jpeg;base64,/, '') };
                     }
-                    return null;
-                }''')
-            except Exception:
-                screen_data = None
+                    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+                    ctx.drawImage(vid, 0, 0, w, h);
+                    return { mode: 'screenshare', frame: canvas.toDataURL('image/jpeg', 0.80).slice(23) };
+                }
+                return null;
+            }''')
 
             if screen_data:
                 state.latest_presentation_frame = base64.b64decode(screen_data['frame'])
                 state.screenshare_active = True
                 state.presentation_mode = "Tela Compartilhada (2.5K/1080p)"
             else:
-                # 2.1 Verificar se há Vídeo Externo (YouTube / Vimeo / MP4) compartilhado
-                ext_video_loc = target_frame.locator('[data-test="videoPlayer"], div[class*="videoPlayer"], [data-test="externalVideoPlayer"], #external-video-player, div[class*="externalVideo"], div[class*="external-video"]')
-                if await ext_video_loc.count() > 0 and await ext_video_loc.first.is_visible():
-                    try:
-                        vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=85)
-                        state.latest_presentation_frame = vid_bytes
-                        state.screenshare_active = True
-                        state.presentation_mode = "Vídeo do YouTube (RNP)"
-                    except Exception:
-                        pass
-                else:
-                    # 2.2 Verificar Slides / Whiteboard
-                    pres_loc = target_frame.locator('#presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"]')
-                    if await pres_loc.count() > 0 and await pres_loc.first.is_visible():
+                now = time.time()
+                if now - last_slide_check >= 1.0:
+                    last_slide_check = now
+                    ext_video_loc = target_frame.locator('[data-test="videoPlayer"], div[class*="videoPlayer"], [data-test="externalVideoPlayer"], #external-video-player, div[class*="externalVideo"]')
+                    if await ext_video_loc.count() > 0 and await ext_video_loc.first.is_visible():
                         try:
-                            slide_bytes = await pres_loc.first.screenshot(type="jpeg", quality=85)
-                            state.latest_presentation_frame = slide_bytes
-                            state.screenshare_active = False
-                            state.presentation_mode = "Slides / Apresentação"
+                            vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=80)
+                            state.latest_presentation_frame = vid_bytes
+                            state.screenshare_active = True
+                            state.presentation_mode = "Vídeo do YouTube (RNP)"
                         except Exception:
                             pass
+                    else:
+                        pres_loc = target_frame.locator('#presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"]')
+                        if await pres_loc.count() > 0 and await pres_loc.first.is_visible():
+                            try:
+                                slide_bytes = await pres_loc.first.screenshot(type="jpeg", quality=80)
+                                state.latest_presentation_frame = slide_bytes
+                                state.screenshare_active = False
+                                state.presentation_mode = "Slides / Apresentação"
+                            except Exception:
+                                pass
 
-            # 3. Capturar Chat da RNP (com abertura automática da aba e múltiplos seletores BBB/Mconf)
-            rnp_messages = await target_frame.evaluate('''() => {
+            now_tick = time.time()
+
+            # 3. Capturar Chat da RNP (a cada ~0.5s para economizar CPU)
+            if now_tick - last_chat_check >= 0.5:
+                last_chat_check = now_tick
+                await extract_rnp_chat(target_frame)
+
+            # 4. Capturar Enquete (a cada ~1.0s)
+            if now_tick - last_poll_check >= 1.0:
+                last_poll_check = now_tick
+                await extract_rnp_poll(target_frame)
+
+        except Exception:
+            pass
+
+        elapsed = time.time() - t_start
+        sleep_time = max(0.015, 0.05 - elapsed)
+        await asyncio.sleep(sleep_time)
+
+
+# Aliases de compatibilidade
+video_sync_loop = sync_loop
+content_sync_loop = sync_loop
+
+
+async def extract_rnp_chat(target_frame):
+    try:
+        # 3. Capturar Chat da RNP (com abertura automática da aba e múltiplos seletores BBB/Mconf)
+        rnp_messages = await target_frame.evaluate(r'''() => {
                 // 1. Garantir que a aba de bate-papo público está aberta no DOM do BBB
                 const hasChatItems = document.querySelector('[data-test="chatMessageItem"], div.chat-message-container, [data-test="chatUserMessageText"], [data-test="chatMessageList"]');
                 if (!hasChatItems) {
@@ -719,90 +1035,166 @@ async def sync_loop():
                     }
                 }
 
-                // 2. Extrair mensagens de chat com múltiplos seletores de compatibilidade
-                const containers = Array.from(document.querySelectorAll(
-                    'div[data-test="chatMessageItem"], div.chat-message-container, div[class*="messageWrapper"], div[class*="chatMessageItem"], div[class*="MessageItem"], div[class*="chat-message"]'
+                // 2. Extrair mensagens de chat com eliminação de nós aninhados duplicados
+                function cleanUserName(raw) {
+                    if (!raw) return '';
+                    let cleaned = raw
+                        .replace(/\(Você\)|\(You\)|\(Apresentador\)|\(Presenter\)|\(Moderador\)|\(Moderator\)/gi, '')
+                        .replace(/\d{1,2}:\d{2}(:\d{2})?/g, '')
+                        .replace(/[•|·:]/g, '')
+                        .trim();
+                    return (cleaned.length >= 2 && !cleaned.match(/^\d+$/)) ? cleaned : '';
+                }
+
+                // Coletar apenas os contêineres raiz de cada mensagem (elimina nós filhos duplicados como content e toolbar)
+                const rawContainers = Array.from(document.querySelectorAll(
+                    'div[data-test="chatMessageItem"], div.chat-message-container, div[class*="chatMessageItem"]'
                 ));
+                const containers = rawContainers.filter(c => !rawContainers.some(other => other !== c && other.contains(c)));
+
                 const list = [];
                 let lastUser = 'Participante';
                 let lastTime = '';
+                const userAvatars = {};
 
                 containers.forEach((container, idx) => {
-                    // 1. Verificar se é mensagem de sistema / aviso interno
-                    const isSystem = container.getAttribute('data-message-type') === 'system' ||
+                    // 1. Filtrar avisos e notificações do sistema
+                    const msgType = container.getAttribute('data-message-type') || '';
+                    const isSystem = msgType.includes('userIsPresenter') || 
+                                     msgType === 'system' ||
                                      container.classList.contains('system-message') ||
-                                     container.querySelector('[data-test="systemMessageText"]');
+                                     container.querySelector('[data-test="systemMessageText"]') ||
+                                     container.querySelector('[class*="systemMessage"]');
 
-                    // 2. Extrair Time
+                    if (isSystem) {
+                        return;
+                    }
+
+                    // 2. Extrair Horário
                     const timeEl = container.querySelector('time, span[class*="time"], [data-test="chatMessageTime"]');
                     if (timeEl && timeEl.innerText.trim()) {
                         lastTime = timeEl.innerText.trim();
                     }
 
-                    // 3. Extrair Nome do Remetente (Aria-label, Container ou Grupo Pai)
+                    // 3. Extrair Nome do Remetente (Identifica se é novo cluster)
                     let rawUser = '';
-                    
-                    const aria = container.getAttribute('aria-label') || (container.parentElement ? container.parentElement.getAttribute('aria-label') : '') || '';
-                    if (aria && (aria.includes(' disse') || aria.includes(' said') || aria.includes('Mensagem de') || aria.includes('Message from') || aria.includes(':'))) {
-                        const mMatch = aria.match(/(?:Mensagem de |Message from )?([^:]+?)(?: disse| said|:)/i);
-                        if (mMatch && mMatch[1].trim().length > 1 && !mMatch[1].match(/^\\d+:\\d+$/)) {
-                            rawUser = mMatch[1].trim();
+
+                    // Método A: Cabeçalho pai do elemento time (no BBB o nome e o <time> ficam juntos no cabeçalho)
+                    if (timeEl && timeEl.parentElement) {
+                        const headerClone = timeEl.parentElement.cloneNode(true);
+                        headerClone.querySelectorAll('time, button, svg, [class*="isYou"], [class*="badge"], span[class*="time"]').forEach(e => e.remove());
+                        const parsed = cleanUserName(headerClone.innerText);
+                        if (parsed) rawUser = parsed;
+
+                        if (!rawUser) {
+                            const candidate = Array.from(timeEl.parentElement.children).find(
+                                child => child !== timeEl && !child.contains(timeEl) && cleanUserName(child.innerText)
+                            );
+                            if (candidate) rawUser = cleanUserName(candidate.innerText);
                         }
                     }
 
+                    // Método B: data-test específico
                     if (!rawUser) {
-                        let headerEl = container.querySelector(
-                            '[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"], div[class*="userName"], span[class*="userName"], div[class*="Name"], [class*="sender"]'
-                        );
-                        if (!headerEl && container.parentElement) {
-                            headerEl = container.parentElement.querySelector('[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"], div[class*="userName"], span[class*="userName"], [class*="sender"]');
+                        const bbbSender = container.querySelector('[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"]');
+                        if (bbbSender) {
+                            const clone = bbbSender.cloneNode(true);
+                            clone.querySelectorAll('time, button, svg, [class*="isYou"], [class*="badge"]').forEach(e => e.remove());
+                            const parsed = cleanUserName(clone.innerText);
+                            if (parsed) rawUser = parsed;
                         }
-                        if (!headerEl) {
-                            const groupEl = container.closest('[class*="group"], [class*="Group"], [class*="Wrapper"], [class*="message"]');
-                            if (groupEl) {
-                                headerEl = groupEl.querySelector('[data-test="chatUserMessageSender"], [data-test="chatMessageUserName"], div[class*="userName"], span[class*="userName"], [class*="sender"], h4, h5, strong');
-                            }
-                        }
+                    }
 
-                        if (headerEl && headerEl.innerText.trim()) {
-                            const cloneH = headerEl.cloneNode(true);
-                            cloneH.querySelectorAll('time, button, span[class*="time"], [class*="time"]').forEach(el => el.remove());
-                            let raw = cloneH.innerText.replace(/\\d{1,2}:\\d{2}(:\\d{2})?/g, '').replace(/[•|·]/g, '').trim().split('\\n')[0].trim();
-                            if (raw.endsWith(':')) raw = raw.slice(0, -1).trim();
-                            if (raw.length >= 2 && !raw.match(/^\\d+$/)) {
-                                rawUser = raw;
+                    // Método C: classes de nome ou cabeçalho
+                    if (!rawUser) {
+                        const nameEl = container.querySelector('span[class*="userName"], div[class*="userName"], span[class*="sender"], [class*="sender"], h4, h5, strong');
+                        if (nameEl) {
+                            const clone = nameEl.cloneNode(true);
+                            clone.querySelectorAll('time, button, svg, [class*="isYou"], [class*="badge"]').forEach(e => e.remove());
+                            const parsed = cleanUserName(clone.innerText);
+                            if (parsed) rawUser = parsed;
+                        }
+                    }
+
+                    // Método D: aria-label
+                    if (!rawUser) {
+                        const aria = container.getAttribute('aria-label') || (container.parentElement ? container.parentElement.getAttribute('aria-label') : '') || '';
+                        if (aria && (aria.includes(' disse') || aria.includes(' said') || aria.includes('Mensagem de') || aria.includes('Message from') || aria.includes(':'))) {
+                            const mMatch = aria.match(/(?:Mensagem de |Message from )?([^:]+?)(?: disse| said|:)/i);
+                            if (mMatch) {
+                                const parsed = cleanUserName(mMatch[1]);
+                                if (parsed) rawUser = parsed;
                             }
                         }
                     }
 
+                    let isNewCluster = false;
                     if (rawUser) {
                         lastUser = rawUser;
+                        isNewCluster = true;
                     }
 
-                    // 4. Extrair Conteúdo da Mensagem
+                    // 4. Extrair Avatar com isolamento estrito por usuário
+                    const avatarContainer = container.querySelector('[data-test*="Avatar" i], [data-test*="avatar" i], div[class*="avatar" i], div[class*="Avatar" i]');
+                    let avatarImg = null;
+                    if (avatarContainer) {
+                        avatarImg = avatarContainer.querySelector('img');
+                    }
+                    if (!avatarImg) {
+                        avatarImg = container.querySelector('img[class*="avatar" i], img[class*="Avatar" i]');
+                    }
+
+                    let currentAvatar = '';
+                    const imgSrc = (avatarImg && avatarImg.src) ? avatarImg.src.trim() : '';
+                    const isRealPhoto = imgSrc && 
+                                        imgSrc.startsWith('http') && 
+                                        !imgSrc.startsWith('data:image/svg') && 
+                                        !imgSrc.includes('default-avatar') && 
+                                        !imgSrc.includes('default_avatar') &&
+                                        !imgSrc.includes('avatar-blank') &&
+                                        !imgSrc.includes('avatar-fallback');
+
+                    if (isRealPhoto) {
+                        currentAvatar = imgSrc;
+                        userAvatars[lastUser] = currentAvatar;
+                    } else if (isNewCluster) {
+                        // Novo cabeçalho de usuário encontrado, mas SEM imagem válida -> participante não tem foto
+                        userAvatars[lastUser] = '';
+                        currentAvatar = '';
+                    } else {
+                        // Continuação de mensagem do mesmo usuário no mesmo cluster
+                        currentAvatar = userAvatars[lastUser] || '';
+                    }
+
+                    // 5. Extrair Conteúdo do Texto
                     const contentEl = container.querySelector(
-                        '[data-test="chatUserMessageText"], div.chat-message-content, div[class*="messageText"], div[class*="content"], div[class*="Text"], p'
+                        '[data-test="messageContent"], [data-test="chatMessageContent"], [data-test="chatUserMessageText"], div.chat-message-content, div[class*="messageText"], div[class*="content"], div[class*="Text"], p'
                     );
-                    if (contentEl && !isSystem) {
+
+                    if (contentEl) {
                         const clone = contentEl.cloneNode(true);
-                        clone.querySelectorAll('.chat-message-toolbar, [data-test="chatMessageToolbar"], button, time, i').forEach(x => x.remove());
+                        clone.querySelectorAll('.chat-message-toolbar, [data-test="chatMessageToolbar"], button, time, i, svg').forEach(x => x.remove());
                         const cleanText = clone.innerText.trim();
-                        
-                        // Filtrar mensagens automáticas de boas-vindas ou avisos de gravação/papéis
+
                         const isAutoNotice = cleanText.startsWith('Bem-vindo à') || 
                                              cleanText.includes('gravação desta sessão') || 
                                              cleanText.includes('é agora o apresentador') ||
                                              cleanText.includes('Resultados da enquete') ||
-                                             cleanText.match(/^[A-Z]: \\d+ voto/);
+                                             cleanText.match(/^[A-Z]: \d+ voto/);
 
                         if (cleanText && !isAutoNotice) {
+                            const msgId = container.querySelector('[data-chat-message-id]')?.getAttribute('data-chat-message-id') || 
+                                          container.getAttribute('data-chat-message-id') || 
+                                          container.getAttribute('data-sequence') || 
+                                          `msg_${idx}`;
+
                             list.push({
-                                id: `rnp_${idx}`,
+                                id: `rnp_${msgId}`,
                                 source: 'rnp',
                                 user: lastUser,
                                 text: cleanText,
                                 time: lastTime,
-                                avatar: ''
+                                avatar: currentAvatar || ''
                             });
                         }
                     }
@@ -811,22 +1203,60 @@ async def sync_loop():
                 return list;
             }''')
 
-            clean_rnp_messages = []
-            for m in rnp_messages:
-                m['text'] = emojize_text(m['text'])
-                clean_rnp_messages.append(m)
-                msg_key = f"{m['user']}___{m['text']}___{m['time']}"
-                if msg_key not in state.rnp_messages_map:
+        clean_rnp_messages = []
+        for m in rnp_messages:
+            m['text'] = emojize_text(m['text'])
+            clean_rnp_messages.append(m)
+            
+            # Se a mensagem possui remetente identificado, purgar qualquer versão antiga com 'Participante'
+            if m['user'] != 'Participante':
+                for k in list(state.rnp_messages_map.keys()):
+                    item = state.rnp_messages_map[k]
+                    if item.get('user') == 'Participante' and item.get('text') == m['text']:
+                        m['timestamp'] = item.get('timestamp', time.time())
+                        del state.rnp_messages_map[k]
+
+            # Isolamento estrito de avatar por usuário
+            user_name = m.get('user')
+            if user_name and user_name != 'Participante':
+                m_avatar = m.get('avatar', '')
+                if m_avatar:
+                    # Se este usuário possui foto confirmada, atualizar mensagens dele que possam estar sem foto
+                    for prev_m in state.rnp_messages_map.values():
+                        if prev_m.get('source') == 'rnp' and prev_m.get('user') == user_name and not prev_m.get('avatar'):
+                            prev_m['avatar'] = m_avatar
+                else:
+                    # Se este usuário NÃO possui foto, limpar qualquer contaminação anterior nas mensagens dele
+                    for prev_m in state.rnp_messages_map.values():
+                        if prev_m.get('source') == 'rnp' and prev_m.get('user') == user_name and prev_m.get('avatar'):
+                            prev_m['avatar'] = ''
+
+            msg_key = m.get('id') or f"{m['user']}___{m['text']}___{m['time']}"
+            if msg_key not in state.rnp_messages_map:
+                if 'timestamp' not in m:
                     m['timestamp'] = time.time()
-                    state.rnp_messages_map[msg_key] = m
+                state.rnp_messages_map[msg_key] = m
+            else:
+                curr = state.rnp_messages_map[msg_key]
+                if m.get('user') and m['user'] != 'Participante':
+                    curr['user'] = m['user']
+                if 'avatar' in m:
+                    curr['avatar'] = m['avatar']
+                if m.get('time'):
+                    curr['time'] = m['time']
 
-            # Merge e ordenação cronológica
-            all_msgs = list(state.rnp_messages_map.values()) + state.youtube_messages_list
-            all_msgs.sort(key=lambda x: x.get('timestamp', 0))
-            state.chat_messages = all_msgs[-120:]
+        # Merge e ordenação cronológica
+        all_msgs = list(state.rnp_messages_map.values()) + state.youtube_messages_list
+        all_msgs.sort(key=lambda x: x.get('timestamp', 0))
+        state.chat_messages = all_msgs[-120:]
+    except Exception:
+        pass
 
-            # 4. Capturar Enquete Ativa ou Publicada
-            poll_info = await target_frame.evaluate('''() => {
+
+async def extract_rnp_poll(target_frame):
+    try:
+        # 4. Capturar Enquete Ativa ou Publicada
+        poll_info = await target_frame.evaluate('''() => {
                 // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
                 const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
                     const t = (b.innerText || '').toLowerCase();
@@ -993,25 +1423,22 @@ async def sync_loop():
                 return null;
             }''')
 
-            if poll_info:
-                if not state.poll_data or state.poll_data.get('question') != poll_info.get('question'):
-                    state.poll_dismissed = False
-                state.last_active_poll = poll_info
-                state.poll_data = poll_info
-            else:
-                # Se não há enquete aberta agora, mas havia uma em votação que acabou de fechar:
-                if state.last_active_poll and state.last_active_poll.get('status') == 'voting':
-                    state.last_active_poll['status'] = 'published'
-                    state.last_active_poll['published'] = True
-                    state.last_active_poll['published_at'] = time.time()
-                    state.poll_data = state.last_active_poll
-                    state.published_poll_timestamp = time.time()
-                    state.last_active_poll = None
-
-        except Exception:
-            pass
-
-        await asyncio.sleep(0.06)
+        if poll_info:
+            if not state.poll_data or state.poll_data.get('question') != poll_info.get('question'):
+                state.poll_dismissed = False
+            state.last_active_poll = poll_info
+            state.poll_data = poll_info
+        else:
+            # Se não há enquete aberta agora, mas havia uma em votação que acabou de fechar:
+            if state.last_active_poll and state.last_active_poll.get('status') == 'voting':
+                state.last_active_poll['status'] = 'published'
+                state.last_active_poll['published'] = True
+                state.last_active_poll['published_at'] = time.time()
+                state.poll_data = state.last_active_poll
+                state.published_poll_timestamp = time.time()
+                state.last_active_poll = None
+    except Exception:
+        pass
 
 # --------------------------------------------------------------------------
 # WEBSOCKET PCM AUDIO STREAMING
@@ -1046,6 +1473,31 @@ async def ws_pcm_out(websocket: WebSocket):
 # --------------------------------------------------------------------------
 # API REST
 # --------------------------------------------------------------------------
+# ÍCONES E CONTROLE DO SERVIDOR
+# --------------------------------------------------------------------------
+@app.get("/favicon.ico")
+async def get_favicon():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="image/x-icon")
+    return Response(status_code=204)
+
+@app.get("/app_icon.png")
+async def get_app_icon_png():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.png")
+    if os.path.exists(p):
+        return FileResponse(p, media_type="image/png")
+    return Response(status_code=204)
+
+@app.post("/api/server/stop")
+async def api_server_stop():
+    async def _delayed_stop():
+        await asyncio.sleep(0.5)
+        await stop_connection()
+        os._exit(0)
+    asyncio.create_task(_delayed_stop())
+    return JSONResponse({"status": "shutting_down", "message": "Servidor finalizado com sucesso."})
+
 @app.post("/api/connect")
 async def api_connect(req: Request):
     data = await req.json()
@@ -1103,6 +1555,25 @@ async def api_poll_clear():
     state.poll_dismissed = True
     state.poll_nonce += 1
     return JSONResponse({"status": "cleared"})
+
+@app.post("/api/poll/simulate")
+async def api_poll_simulate():
+    state.poll_data = {
+        "question": "Exemplo: Você está gostando da transmissão ao vivo?",
+        "options": [
+            {"text": "Sim, excelente qualidade!", "votes": 42, "percentage": 70},
+            {"text": "Sim, mas pode melhorar o áudio", "votes": 12, "percentage": 20},
+            {"text": "Ainda avaliando", "votes": 6, "percentage": 10}
+        ],
+        "total_votes": 60,
+        "is_active": True,
+        "status": "results",
+        "published": True
+    }
+    state.poll_force_visible = True
+    state.poll_dismissed = False
+    state.poll_nonce += 1
+    return JSONResponse({"status": "simulated", "poll": state.poll_data})
 
 @app.get("/api/poll")
 async def api_poll():
@@ -1182,6 +1653,8 @@ async def api_grid_config(req: Request):
                         state.libras_saved_names.append(cam['original_name'])
 
         state.libras_camera_ids = new_libras_ids
+        for cam in state.cameras_list:
+            cam['is_libras'] = (str(cam.get('id')) in state.libras_camera_ids)
     if "libras_size" in data:
         state.libras_size = data["libras_size"]
     if "show_camera_names" in data:
@@ -1218,6 +1691,8 @@ async def api_libras_clear_saved():
     state.libras_saved_names = []
     state.libras_camera_ids = []
     state.libras_disabled_camera_ids = set()
+    for cam in state.cameras_list:
+        cam['is_libras'] = False
     save_disk_config(state.export_config())
     return JSONResponse({"status": "ok", "libras_saved_names": [], "libras_camera_ids": []})
 
@@ -1240,7 +1715,7 @@ async def api_chat_config(req: Request):
 async def api_theme_set(req: Request):
     data = await req.json()
     theme = data.get("theme", "hardware")
-    if theme in ["hardware", "nordic", "glass", "obsidian"]:
+    if theme in ["hardware", "nordic", "glass", "obsidian", "ifes"]:
         state.control_theme = theme
         save_disk_config(state.export_config())
         return JSONResponse({"status": "ok", "control_theme": state.control_theme})
@@ -1253,6 +1728,7 @@ async def api_config_save(req: Request):
     if "user_name" in data: state.user_name = data["user_name"].strip()
     if "user_email" in data: state.user_email = data["user_email"].strip()
     if "youtube_url" in data: state.youtube_url = data["youtube_url"].strip()
+    if "youtube_auto_connect" in data: state.youtube_auto_connect = bool(data["youtube_auto_connect"])
     if "control_theme" in data: state.control_theme = data["control_theme"]
     if "show_camera_names" in data: state.show_camera_names = bool(data["show_camera_names"])
     if "camera_name_style" in data: state.camera_name_style = data["camera_name_style"]
@@ -1315,6 +1791,8 @@ async def api_status():
             "youtube_url": state.youtube_url,
             "youtube_connected": state.youtube_connected,
             "youtube_status": state.youtube_status,
+            "youtube_auto_connect": state.youtube_auto_connect,
+            "control_theme": state.control_theme,
             "cameras": state.cameras_list,
             "cameras_count": len(state.cameras_list),
             "focused_camera_id": state.focused_camera_id,
@@ -1396,6 +1874,15 @@ PCM_AUDIO_SCRIPT = """
             ws.binaryType = 'arraybuffer';
 
             ws.onmessage = (event) => {
+                if (typeof event.data === 'string') {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'speakers' && window.onSpeakersUpdate) {
+                            window.onSpeakersUpdate(msg.speakers);
+                        }
+                    } catch(e) {}
+                    return;
+                }
                 const ctx = getAudioContext();
                 const float32Data = new Float32Array(event.data);
                 const audioBuffer = ctx.createBuffer(1, float32Data.length, 48000);
@@ -1802,12 +2289,179 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
     margin-bottom: 12px;
 }
 
-/* Monitor de Áudio & VU Meter */
-.audio-monitor-bar { background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.vu-container { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 4px; }
-.vu-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: #94a3b8; }
-.vu-track { width: 100%; height: 10px; background: #030712; border-radius: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); position: relative; }
-.vu-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #10b981 0%, #10b981 70%, #f59e0b 85%, #ef4444 100%); transition: width 0.08s ease-out; }
+/* MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS (AUDIO MIXER RACK) */
+.audio-mixer-rack {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    overflow-x: auto;
+    padding: 14px;
+    background: rgba(3, 7, 18, 0.75);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 12px;
+    margin-bottom: 14px;
+}
+.audio-channel-strip {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 140px;
+    min-width: 140px;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+}
+.audio-channel-strip.master-channel {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.15);
+}
+.audio-channel-strip.speaking-active {
+    border-color: #10b981 !important;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.45) !important;
+}
+.channel-voice-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    transition: all 0.2s ease;
+}
+.channel-voice-badge.speaking {
+    background: #10b981;
+    color: #ffffff;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+.channel-voice-badge.muted {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+.channel-voice-badge.open {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+}
+.channel-header {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.channel-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+}
+.channel-tag {
+    font-size: 9.5px;
+    font-family: monospace;
+    color: #94a3b8;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+.channel-meter-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0;
+    height: 140px;
+    position: relative;
+}
+.meter-scale-vertical {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    font-size: 8.5px;
+    font-family: monospace;
+    color: #64748b;
+    text-align: right;
+    user-select: none;
+    padding-right: 2px;
+}
+.vu-track-vertical {
+    width: 22px;
+    height: 100%;
+    background: #020617;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.8);
+}
+.vu-fill-vertical {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 0%;
+    background: linear-gradient(0deg, #10b981 0%, #10b981 65%, #f59e0b 82%, #ef4444 100%);
+    transition: height 0.05s linear;
+}
+.vu-peak-vertical {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #ffffff;
+    bottom: 0%;
+    box-shadow: 0 0 5px #ffffff;
+    transition: bottom 0.25s ease-out;
+}
+.meter-db-readout {
+    font-size: 11px;
+    font-weight: 800;
+    font-family: monospace;
+    color: #38bdf8;
+    text-align: center;
+    margin: 4px 0;
+}
+.channel-fader-box {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+.channel-btn-copy {
+    width: 100%;
+    padding: 5px 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    border-radius: 6px;
+    text-align: center;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: #38bdf8;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-decoration: none;
+}
+.channel-btn-copy:hover {
+    background: #38bdf8;
+    color: #0f172a;
+}
 
 /* Live Preview do Grid OBS */
 .obs-grid-preview-box { width: 100%; height: 200px; background: #030712; border-radius: 10px; overflow: hidden; border: 1px solid rgba(56, 189, 248, 0.3); margin-bottom: 14px; position: relative; }
@@ -2160,11 +2814,209 @@ body.theme-obsidian input[type="text"], body.theme-obsidian input[type="email"],
     border-radius: 4px !important;
     color: #ffffff !important;
 }
+
+/* 5. 🏛️ INSTITUTO FEDERAL (IF CLEAN / IFES - BRANCO, VERDE E VERMELHO) */
+body.theme-ifes {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+}
+body.theme-ifes .card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-top: 3.5px solid #15803d !important;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+    border-radius: 12px !important;
+}
+body.theme-ifes .section-title {
+    color: #15803d !important;
+    font-weight: 800;
+    font-size: 13.5px;
+    letter-spacing: -0.2px;
+}
+body.theme-ifes .section-title span {
+    color: #15803d !important;
+}
+body.theme-ifes .btn-primary {
+    background: linear-gradient(135deg, #15803d 0%, #16a34a 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #166534 !important;
+    font-weight: 800 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25) !important;
+}
+body.theme-ifes .btn-primary:hover {
+    background: linear-gradient(135deg, #166534 0%, #15803d 100%) !important;
+    box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35) !important;
+    transform: translateY(-1px);
+}
+body.theme-ifes .btn-danger {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #b91c1c !important;
+    font-weight: 800 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important;
+}
+body.theme-ifes .btn-danger:hover {
+    background: linear-gradient(135deg, #b91c1c 0%, #dc2626 100%) !important;
+    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
+}
+body.theme-ifes .btn-ctrl {
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+    border-radius: 8px !important;
+    font-weight: 600;
+}
+body.theme-ifes .btn-ctrl:hover {
+    background: #f0fdf4 !important;
+    border-color: #16a34a !important;
+    color: #15803d !important;
+}
+body.theme-ifes .btn-ctrl.active-focus {
+    background: #dc2626 !important;
+    color: #ffffff !important;
+    border-color: #b91c1c !important;
+    box-shadow: 0 2px 10px rgba(220, 38, 38, 0.3) !important;
+}
+body.theme-ifes .btn-ctrl.active-pin {
+    background: #15803d !important;
+    color: #ffffff !important;
+    border-color: #166534 !important;
+    box-shadow: 0 2px 10px rgba(22, 163, 74, 0.3) !important;
+}
+body.theme-ifes .btn-ctrl.active-libras {
+    background: #0284c7 !important;
+    color: #ffffff !important;
+    border-color: #0369a1 !important;
+    box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3) !important;
+}
+body.theme-ifes .btn-ctrl.active-preset {
+    background: #15803d !important;
+    color: #ffffff !important;
+    border-color: #166534 !important;
+    box-shadow: 0 2px 10px rgba(22, 163, 74, 0.3) !important;
+}
+body.theme-ifes input[type="text"], 
+body.theme-ifes input[type="email"], 
+body.theme-ifes select {
+    background: #ffffff !important;
+    border: 1.5px solid #cbd5e1 !important;
+    color: #0f172a !important;
+    border-radius: 8px !important;
+}
+body.theme-ifes input[type="text"]:focus, 
+body.theme-ifes input[type="email"]:focus, 
+body.theme-ifes select:focus {
+    border-color: #15803d !important;
+    box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15) !important;
+    outline: none;
+}
+body.theme-ifes label {
+    color: #475569 !important;
+    font-weight: 600;
+}
+body.theme-ifes .log-box {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #15803d !important;
+    font-weight: 600;
+}
+body.theme-ifes .source-health-pill {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+}
+body.theme-ifes .audio-monitor-bar, body.theme-ifes #audioDockCard {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04) !important;
+}
+body.theme-ifes .audio-mixer-rack { background: #f8fafc !important; border-color: #cbd5e1 !important; }
+body.theme-ifes .audio-channel-strip { background: #ffffff !important; border-color: #e2e8f0 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important; }
+body.theme-ifes .audio-channel-strip.master-channel { background: #f0fdf4 !important; border-color: #86efac !important; }
+body.theme-ifes .audio-channel-strip.speaking-active { border-color: #16a34a !important; box-shadow: 0 0 16px rgba(22, 163, 74, 0.3) !important; }
+body.theme-ifes .channel-voice-badge.speaking { background: #16a34a !important; color: #ffffff !important; }
+body.theme-ifes .channel-voice-badge.muted { background: rgba(239, 68, 68, 0.15) !important; color: #dc2626 !important; }
+body.theme-ifes .channel-voice-badge.open { background: rgba(14, 165, 233, 0.15) !important; color: #0284c7 !important; }
+body.theme-ifes .channel-title { color: #0f172a !important; }
+body.theme-ifes .channel-tag { color: #475569 !important; background: #f1f5f9 !important; }
+body.theme-ifes .vu-track-vertical { background: #e2e8f0 !important; border-color: #cbd5e1 !important; }
+body.theme-ifes .channel-btn-copy { background: rgba(21, 128, 61, 0.1) !important; border-color: rgba(21, 128, 61, 0.3) !important; color: #15803d !important; }
+body.theme-ifes .channel-btn-copy:hover { background: #15803d !important; color: #ffffff !important; }
+body.theme-ifes .meter-db-readout { color: #15803d !important; }
+body.theme-ifes .audio-monitor-controls-bar {
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+}
+body.theme-ifes .audio-monitor-controls-bar span,
+body.theme-ifes .audio-monitor-controls-bar div {
+    color: #334155 !important;
+}
+body.theme-ifes #btnMuteMonitor {
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border-color: #cbd5e1 !important;
+}
+body.theme-ifes .btn-copy {
+    background: #f0fdf4 !important;
+    border-color: #86efac !important;
+    color: #15803d !important;
+}
+body.theme-ifes .btn-copy:hover {
+    background: #dcfce7 !important;
+    border-color: #4ade80 !important;
+}
+body.theme-ifes .badge {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #475569 !important;
+}
+body.theme-ifes .badge.connected {
+    background: #f0fdf4 !important;
+    border-color: #22c55e !important;
+    color: #15803d !important;
+}
+body.theme-ifes .badge.disconnected {
+    background: #fef2f2 !important;
+    border-color: #ef4444 !important;
+    color: #dc2626 !important;
+}
+body.theme-ifes #shieldBadge {
+    background: #eff6ff !important;
+    border-color: #93c5fd !important;
+    color: #1d4ed8 !important;
+}
+body.theme-ifes h1 {
+    color: #0f172a !important;
+}
+body.theme-ifes h1 span {
+    color: #15803d !important;
+}
+body.theme-ifes .header-theme-box {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+}
+body.theme-ifes #selControlTheme {
+    color: #0f172a !important;
+}
+body.theme-ifes .poll-question {
+    color: #0f172a !important;
+}
+body.theme-ifes .obs-grid-preview-box {
+    background: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+}
 """
 
 # --------------------------------------------------------------------------
 # PAINEL DE CONTROLE (/control)
 # --------------------------------------------------------------------------
+@app.get("/")
+@app.get("/dock")
+async def root_redirect():
+    return RedirectResponse(url="/control")
+
 @app.get("/control", response_class=HTMLResponse)
 async def get_control_panel():
     headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
@@ -2222,6 +3074,8 @@ async def get_control_panel():
     sel_th_nordic = "selected" if state.control_theme == "nordic" else ""
     sel_th_glass = "selected" if state.control_theme == "glass" else ""
     sel_th_obsidian = "selected" if state.control_theme == "obsidian" else ""
+    sel_th_ifes = "selected" if state.control_theme == "ifes" else ""
+    chk_yt_auto_connect = "checked" if state.youtube_auto_connect else ""
 
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
 
@@ -2231,7 +3085,9 @@ async def get_control_panel():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RNP & YouTube to OBS Bridge - Painel de Controle</title>
+    <title>RNP to OBS - Painel de Controle</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" href="/app_icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
         {CONTROL_PANEL_CSS}
@@ -2241,19 +3097,23 @@ async def get_control_panel():
     <div class="header">
         <h1><span>RNP to OBS</span> 🎛️</h1>
         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-            <div style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);">
+            <div class="header-theme-box" style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);">
                 <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">🎨 Estilo:</span>
                 <select id="selControlTheme" onchange="changeControlTheme(this.value)" style="width: auto; padding: 2px 6px; font-size: 11.5px; font-weight: 700; background: transparent; border: none; cursor: pointer; color: #f8fafc;">
                     <option value="hardware" {sel_th_hardware}>🎛️ Studio Master</option>
                     <option value="nordic" {sel_th_nordic}>🌿 Nordic Minimal</option>
                     <option value="glass" {sel_th_glass}>📺 Broadcast Titanium</option>
                     <option value="obsidian" {sel_th_obsidian}>⬛ Cyber Obsidian</option>
+                    <option value="ifes" {sel_th_ifes}>🏛️ Instituto Federal (IF Clean)</option>
                 </select>
                 <a href="/catalog" target="_blank" class="btn-copy" style="padding: 2px 7px; font-size: 10.5px; text-decoration: none; display: inline-flex; align-items: center; gap: 3px;" title="Ver Catálogo Visual de Estilos">📖 Catálogo</a>
             </div>
             <div id="saveToast" class="badge" style="display:none; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">💾 Salvo!</div>
             <div id="shieldBadge" class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">🛡️ Anti-Inatividade</div>
             <div id="statusBadge" class="badge disconnected">● Desconectado</div>
+            <button onclick="handleExitApplication()" class="btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #f87171; font-weight: 700; font-size: 11px; padding: 3px 9px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="Desconectar da sala e encerrar o servidor e aplicativo">
+                <span>🔴 Encerrar Aplicativo</span>
+            </button>
         </div>
     </div>
 
@@ -2333,6 +3193,94 @@ async def get_control_panel():
                 <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px;" onclick="loadAllConfigurations()">📂 Recarregar</button>
                 <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px;" onclick="resetAllConfigurations()">🔄 Padrões</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 🔗 CENTRAL DE FONTES DO OBS STUDIO (LINKS RÁPIDOS PARA MONTAR AS CENAS) -->
+    <div class="card" style="background: rgba(15, 23, 42, 0.9); border-color: rgba(99, 102, 241, 0.45); padding: 12px 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 16px;">🔗</span>
+                <div>
+                    <strong style="color: #a5b4fc; font-size: 13px;">Fontes para o OBS Studio (Montagem Prévia de Cenas)</strong>
+                    <div style="font-size: 11px; color: #94a3b8;">Copie os links abaixo e adicione no OBS como <strong>Navegador (Browser Source)</strong> a qualquer momento:</div>
+                </div>
+            </div>
+            <a href="/catalog" target="_blank" class="btn-copy" style="background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border-color: #6366f1; padding: 4px 10px; font-size: 11px;" title="Ver Catálogo Visual de Estilos">📖 Ver Catálogo Visual</a>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px;">
+            <!-- Enquete -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #10b981;" onclick="copyUrl('http://localhost:3333/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
+                <span style="font-size: 18px; margin-right: 6px;">📊</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Enquete / Votação</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/poll (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Palco Composto -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(168, 85, 247, 0.15); border-color: #c084fc; color: #c084fc;" onclick="copyUrl('http://localhost:3333/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
+                <span style="font-size: 18px; margin-right: 6px;">🎭</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Palco Composto</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/stage (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Janela Libras -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(6, 182, 212, 0.15); border-color: #06b6d4; color: #22d3ee;" onclick="copyUrl('http://localhost:3333/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
+                <span style="font-size: 18px; margin-right: 6px;">🤟</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Janela de Libras</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/libras (PIP / Paritária)</div>
+                </div>
+            </button>
+
+            <!-- Chat Feed -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #60a5fa;" onclick="copyUrl('http://localhost:3333/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
+                <span style="font-size: 18px; margin-right: 6px;">💬</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Feed de Chat (RNP+YT)</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/chat (Transparente)</div>
+                </div>
+            </button>
+
+            <!-- Chat Destaque -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(234, 179, 8, 0.15); border-color: #eab308; color: #fde047;" onclick="copyUrl('http://localhost:3333/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
+                <span style="font-size: 18px; margin-right: 6px;">⭐</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Chat em Destaque</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/chat/featured (Lower Third)</div>
+                </div>
+            </button>
+
+            <!-- Grid de Câmeras -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(14, 165, 233, 0.15); border-color: #0ea5e9; color: #38bdf8;" onclick="copyUrl('http://localhost:3333/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
+                <span style="font-size: 18px; margin-right: 6px;">👥</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Grid de Câmeras</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/cameras/grid (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Slides / Apresentação -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(244, 63, 94, 0.15); border-color: #f43f5e; color: #fda4af;" onclick="copyUrl('http://localhost:3333/presentation', this)" title="Copiar URL dos Slides da Apresentação">
+                <span style="font-size: 18px; margin-right: 6px;">📽️</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Slides Apresentação</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/presentation (Slides Puros)</div>
+                </div>
+            </button>
+
+            <!-- Áudio PCM Stream -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(34, 197, 94, 0.15); border-color: #22c55e; color: #86efac;" onclick="copyUrl('http://localhost:3333/audio', this)" title="Copiar URL do Stream de Áudio">
+                <span style="font-size: 18px; margin-right: 6px;">🔊</span>
+                <div style="line-height: 1.2;">
+                    <div style="font-weight: 800; font-size: 11.5px;">Áudio PCM Direto</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/audio (Controle Áudio OBS)</div>
+                </div>
+            </button>
         </div>
     </div>
 
@@ -2420,15 +3368,16 @@ async def get_control_panel():
     </div>
 
     <!-- SEÇÃO DE ENQUETE / POLL DA SALA RNP COM MONITORAMENTO E CONTROLE -->
-    <div id="pollDockCard" class="card poll-card" style="display: none; border-color: rgba(16, 185, 129, 0.35);">
+    <div id="pollDockCard" class="card poll-card" style="border-color: rgba(16, 185, 129, 0.35);">
         <div class="poll-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
             <div style="display: flex; align-items: center; gap: 6px;">
                 <span style="font-size: 14px;">📊</span>
-                <strong style="color: #10b981; font-size: 13px;" id="pollStatusTitle">Enquete Detectada</strong>
-                <span id="pollBadgeStatus" class="badge connected" style="font-size: 10px; padding: 2px 6px;">● Monitorando</span>
+                <strong style="color: #10b981; font-size: 13px;" id="pollStatusTitle">Enquete da Sala RNP</strong>
+                <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px;">⚪ Standby</span>
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981;" onclick="copyUrl('http://localhost:3333/poll')">📋 Link OBS</button>
+                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981; font-weight: 700;" onclick="copyUrl('http://localhost:3333/poll', this)">📋 Link OBS Enquete</button>
+                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
                 <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px; color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="clearPoll()">🗑️ Limpar</button>
             </div>
         </div>
@@ -2473,10 +3422,10 @@ async def get_control_panel():
         </div>
 
         <div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-            <span>📡 <strong>Modo Transmissão:</strong> Monitorando votos em tempo real (Votação desabilitada).</span>
+            <span>📡 <strong>Dica OBS:</strong> Cole o link acima em uma fonte de <em>Navegador (1920x1080 transparente)</em>. Ela se ativará automaticamente quando houver enquete.</span>
         </div>
 
-        <div class="poll-question" id="pollQuestionText" style="font-size: 13px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">Pergunta da Enquete...</div>
+        <div class="poll-question" id="pollQuestionText" style="font-size: 13px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">Aguardando início de enquete...</div>
         <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
 
@@ -2492,30 +3441,115 @@ async def get_control_panel():
             <label>Link ou ID da Transmissão do YouTube:</label>
             <input type="text" id="ytUrl" placeholder="Ex: https://youtube.com/live/xxxx ou watch?v=xxxx" value="{state.youtube_url}" onchange="autoSaveField('youtube_url', this.value)">
         </div>
+        <div style="margin-top: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="chkYtAutoConnect" {chk_yt_auto_connect} onchange="autoSaveField('youtube_auto_connect', this.checked)" style="width: 16px; height: 16px; cursor: pointer; accent-color: #ef4444;">
+            <label for="chkYtAutoConnect" style="margin: 0; font-size: 12px; cursor: pointer; color: #cbd5e1; user-select: none;">
+                Conectar chat do YouTube automaticamente ao conectar à sala
+            </label>
+        </div>
         <div class="actions">
             <button id="btnYtConnect" class="btn btn-danger" style="flex:1;" onclick="handleYtConnect()">▶️ Integrar Chat do YouTube</button>
             <button id="btnYtDisconnect" class="btn btn-ctrl" onclick="handleYtDisconnect()">⏹ Parar</button>
         </div>
     </div>
 
-    <!-- MONITOR DE ÁUDIO EM TEMPO REAL & VU METER -->
-    <div class="audio-monitor-bar">
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; flex-wrap: wrap;">
-            <button id="btnMuteMonitor" class="btn-ctrl" style="padding: 6px 10px; font-size: 12px; flex: inherit;" onclick="toggleMonitorMute()">
-                🔊 <span id="lblMonitorStatus">Som: Ligado</span>
-            </button>
-            <div style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-size: 11.5px; color: #94a3b8; font-weight: 600;">Vol:</span>
-                <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 75px; accent-color: #38bdf8; cursor: pointer;" oninput="updateMonitorVol(this.value)">
-            </div>
-            <div class="vu-label" style="margin-left: auto;">
-                <span style="font-size: 11.5px; color: #38bdf8; font-weight: 800;" id="vuDbText">0%</span>
+    <!-- SEÇÃO DEDICADA DE ÁUDIO DA SALA & TRANSMISSÃO OBS -->
+    <div class="card" id="audioDockCard">
+        <div class="section-title">
+            <span style="display: flex; align-items: center; gap: 8px;">
+                <span>🔊</span> Transmissão de Áudio da Sala & Mixer OBS
+            </span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981;" onclick="copyUrl('http://localhost:3333/audio', this)" title="Copiar URL Master para adicionar como Fonte de Navegador no OBS Studio">
+                    📋 Copiar Link Master OBS
+                </button>
+                <button class="btn-ctrl" onclick="testAudioVuMeter()" style="font-size: 11.5px; padding: 4px 10px;" title="Testar animação de todos os medidores de áudio">
+                    🧪 Testar Medidores
+                </button>
+                <a href="/audio" target="_blank" class="btn-ctrl" style="text-decoration: none; display: inline-flex; align-items: center; padding: 4px 10px; font-size: 11.5px;" title="Abrir áudio no navegador">
+                    🔗 Ouvir no Navegador
+                </a>
             </div>
         </div>
 
-        <div class="vu-container">
-            <div class="vu-track">
-                <div class="vu-fill" id="vuBar"></div>
+        <!-- Informação do Mixer Unificado -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #10b981;">
+                <span class="source-health-dot ok"></span>
+                <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte e Master geral para o OBS Studio (PCM Float32 48kHz).</span>
+            </div>
+            <span class="badge connected" style="font-size: 11px;">OBS: /audio</span>
+        </div>
+
+        <!-- MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS -->
+        <div class="audio-mixer-rack" id="audioMixerRack">
+            <!-- CANAL MASTER (GERAL) -->
+            <div class="audio-channel-strip master-channel" id="channelStripMaster">
+                <div class="channel-header">
+                    <span style="font-size: 18px;">🎛️</span>
+                    <span class="channel-title">Master Geral</span>
+                    <span class="channel-tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">OBS: /audio</span>
+                </div>
+
+                <div class="channel-meter-box">
+                    <div class="meter-scale-vertical">
+                        <span style="color:#ef4444; font-weight:bold;">0</span>
+                        <span style="color:#f59e0b;">-3</span>
+                        <span style="color:#f59e0b;">-6</span>
+                        <span>-12</span>
+                        <span>-20</span>
+                        <span>-30</span>
+                        <span>-40</span>
+                        <span>-60</span>
+                    </div>
+                    <div class="vu-track-vertical">
+                        <div class="vu-fill-vertical" id="vuMasterBar"></div>
+                        <div class="vu-peak-vertical" id="vuMasterPeak"></div>
+                    </div>
+                </div>
+
+                <div class="meter-db-readout" id="vuMasterDbText">-∞ dB (0%)</div>
+
+                <button class="channel-btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981;" onclick="copyUrl('http://localhost:3333/audio', this)" title="Copiar link do áudio Master para o OBS">
+                    📋 Link Master
+                </button>
+
+                <div class="channel-fader-box">
+                    <div style="display:flex; justify-content:space-between; width:100%; font-size:10px; color:#94a3b8;">
+                        <span>Vol:</span>
+                        <span id="lblMasterVol">100%</span>
+                    </div>
+                    <input type="range" id="rngMasterVol" min="0" max="1.5" step="0.05" value="1" style="width:100%; accent-color:#10b981; cursor:pointer;" oninput="updateMasterVol(this.value)">
+                    <button class="btn-ctrl" id="btnMuteMaster" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px;" onclick="toggleMasterMute()">
+                        🔊 Ativo
+                    </button>
+                </div>
+            </div>
+
+            <!-- FONTES INDIVIDUAIS (GERADAS DINAMICAMENTE PARA CADA CÂMERA / PARTICIPANTE) -->
+            <div id="individualChannelsContainer" style="display: flex; gap: 12px; align-items: stretch;"></div>
+
+            <!-- PLACEHOLDER QUANDO NÃO HÁ FONTES ADICIONAIS -->
+            <div class="audio-channel-strip" id="noIndividualChannelsPlaceholder" style="border-style: dashed; opacity: 0.7; justify-content: center; min-width: 140px; text-align: center;">
+                <span style="font-size: 24px; margin-bottom: 6px;">🎙️</span>
+                <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">Fontes Individuais</span>
+                <p style="font-size: 10px; color: #64748b; margin-top: 4px; line-height: 1.3;">Aguardando participantes entrarem com câmera/voz na sala RNP.</p>
+            </div>
+        </div>
+
+        <!-- Monitor Local de Áudio (Para ouvir ou mutar no computador da live) -->
+        <div class="audio-monitor-controls-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="btnMuteMonitor" class="btn-ctrl" style="padding: 6px 12px; font-size: 12px; border-radius: 6px;" onclick="toggleMonitorMute()">
+                    🔊 <span id="lblMonitorStatus">Monitor Local: Ligado</span>
+                </button>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 11.5px; color: #94a3b8; font-weight: 600;">Volume Local:</span>
+                    <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 85px; accent-color: #10b981; cursor: pointer;" oninput="updateMonitorVol(this.value)">
+                </div>
+            </div>
+            <div style="font-size: 11px; color: #64748b;">
+                💡 <em>Dica OBS: Cole a URL em uma Fonte de Navegador e marque "Controlar áudio via OBS" nas propriedades.</em>
             </div>
         </div>
     </div>
@@ -2525,9 +3559,8 @@ async def get_control_panel():
         <div class="section-title">
             <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" onclick="copyUrl('http://localhost:3333/cameras/grid')">📋 Link Grid</button>
-                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('http://localhost:3333/libras')">🤟 Janela Libras</button>
-                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981;" onclick="copyUrl('http://localhost:3333/audio')">🎧 Áudio</button>
+                <button class="btn-copy" onclick="copyUrl('http://localhost:3333/cameras/grid', this)">📋 Link Grid</button>
+                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('http://localhost:3333/libras', this)">🤟 Janela Libras</button>
             </div>
         </div>
 
@@ -2680,15 +3713,262 @@ async def get_control_panel():
         let isLocalMuted = false;
         let activeStagePreset = "side-by-side";
 
-        const vuBar = document.getElementById('vuBar');
-        const vuDbText = document.getElementById('vuDbText');
-        
+        let masterPeakHold = 0;
+        let masterPeakHoldTimer = null;
+        let currentMasterDisplayPct = 0;
+        let channelPeaks = {{}};
+
+        function updatePeakHoldUI(val) {{
+            const el = document.getElementById('vuMasterPeak');
+            if (el) el.style.bottom = Math.min(99, val) + '%';
+        }}
+
         window.onAudioPcmChunk = function(peak) {{
-            const pct = Math.min(100, Math.round(peak * 180));
-            vuBar.style.width = pct + '%';
-            vuDbText.innerText = pct + '%';
-            if (pct === 0) {{
-                setTimeout(() => {{ if (vuBar) vuBar.style.width = '0%'; }}, 100);
+            let db = -Infinity;
+            let pct = 0;
+            if (peak > 0.0001) {{
+                db = Math.max(-60, Math.min(0, 20 * Math.log10(peak)));
+                pct = Math.min(100, Math.round(((db + 60) / 60) * 100));
+            }}
+
+            if (pct >= currentMasterDisplayPct) {{
+                currentMasterDisplayPct = pct;
+            }} else {{
+                currentMasterDisplayPct = Math.max(0, currentMasterDisplayPct - 4);
+            }}
+
+            const masterBarEl = document.getElementById('vuMasterBar');
+            const masterDbEl = document.getElementById('vuMasterDbText');
+
+            if (masterBarEl) {{
+                masterBarEl.style.height = currentMasterDisplayPct + '%';
+            }}
+
+            if (masterDbEl) {{
+                if (currentMasterDisplayPct > 0) {{
+                    const dbStr = db.toFixed(1);
+                    masterDbEl.innerText = `${{dbStr}} dB (${{currentMasterDisplayPct}}%)`;
+                    masterDbEl.style.color = currentMasterDisplayPct > 85 ? '#ef4444' : (currentMasterDisplayPct > 65 ? '#f59e0b' : '#10b981');
+                }} else {{
+                    masterDbEl.innerText = '-∞ dB (0%)';
+                    masterDbEl.style.color = '#94a3b8';
+                }}
+            }}
+
+            if (pct > masterPeakHold) {{
+                masterPeakHold = pct;
+                clearTimeout(masterPeakHoldTimer);
+                masterPeakHoldTimer = setTimeout(() => {{
+                    const decay = setInterval(() => {{
+                        masterPeakHold = Math.max(0, masterPeakHold - 3);
+                        updatePeakHoldUI(masterPeakHold);
+                        if (masterPeakHold <= 0) clearInterval(decay);
+                    }}, 40);
+                }}, 1200);
+            }}
+            updatePeakHoldUI(masterPeakHold);
+
+            // Animar medidores dos canais individuais EXCLUSIVAMENTE para quem está ativamente falando
+            if (currentCameras && currentCameras.length > 0) {{
+                currentCameras.forEach((c) => {{
+                    const cid = String(c.id);
+                    const barEl = document.getElementById('vuBar_cam_' + cid);
+                    const peakEl = document.getElementById('vuPeak_cam_' + cid);
+                    const dbEl = document.getElementById('vuDb_cam_' + cid);
+                    if (barEl) {{
+                        if (c.is_speaking) {{
+                            const faderVal = sourceVolumes[cid] !== undefined ? sourceVolumes[cid] : 1.0;
+                            const isChanMuted = mutedSources.has(cid);
+                            const chPeak = isChanMuted ? 0 : (peak * faderVal);
+                            const channelPct = Math.max(0, Math.min(100, Math.round(chPeak * 100)));
+                            barEl.style.height = channelPct + '%';
+                            if (peakEl && channelPct > (channelPeaks[cid] || 0)) {{
+                                channelPeaks[cid] = channelPct;
+                                peakEl.style.bottom = channelPct + '%';
+                                setTimeout(() => {{ channelPeaks[cid] = 0; }}, 1200);
+                            }}
+                            if (dbEl) {{
+                                if (channelPct > 0) {{
+                                    const chDb = chPeak > 0.0001 ? Math.max(-60, Math.min(0, 20 * Math.log10(chPeak))) : -60;
+                                    dbEl.innerText = `${{chDb.toFixed(1)}} dB (${{channelPct}}%)`;
+                                    dbEl.style.color = channelPct > 85 ? '#ef4444' : (channelPct > 65 ? '#f59e0b' : '#10b981');
+                                }} else {{
+                                    dbEl.innerText = '-∞ dB (0%)';
+                                    dbEl.style.color = '#94a3b8';
+                                }}
+                            }}
+                        }} else {{
+                            // Quem NÃO está falando fica estritamente zerado (-∞ dB)
+                            const cur = parseFloat(barEl.style.height || '0');
+                            if (cur > 0) {{
+                                const nextVal = Math.max(0, cur - 15);
+                                barEl.style.height = nextVal + '%';
+                                if (nextVal === 0 && dbEl) {{
+                                    dbEl.innerText = '-∞ dB (0%)';
+                                    dbEl.style.color = '#94a3b8';
+                                }}
+                            }} else {{
+                                barEl.style.height = '0%';
+                                if (dbEl) {{
+                                    dbEl.innerText = '-∞ dB (0%)';
+                                    dbEl.style.color = '#94a3b8';
+                                }}
+                            }}
+                        }}
+                    }}
+                }});
+            }}
+        }};
+
+        // Atualização em tempo real de quem está falando recebida via WebSocket
+        window.onSpeakersUpdate = function(speakersMap) {{
+            if (!currentCameras || currentCameras.length === 0) return;
+            currentCameras.forEach(c => {{
+                const cid = String(c.id);
+                if (speakersMap && speakersMap[cid] !== undefined) {{
+                    c.is_speaking = !!speakersMap[cid];
+                }}
+                updateChannelVisualState(c);
+            }});
+        }};
+
+        function updateChannelVisualState(c) {{
+            const cid = String(c.id);
+            const strip = document.getElementById('channelStrip_cam_' + cid);
+            const badge = document.getElementById('voiceBadge_cam_' + cid);
+            if (!strip) return;
+            
+            if (c.is_speaking) {{
+                strip.classList.add('speaking-active');
+                if (badge) {{
+                    badge.className = 'channel-voice-badge speaking';
+                    badge.innerText = '🗣️ Falando';
+                }}
+            }} else if (c.is_muted) {{
+                strip.classList.remove('speaking-active');
+                if (badge) {{
+                    badge.className = 'channel-voice-badge muted';
+                    badge.innerText = '🔇 Mudo';
+                }}
+            }} else {{
+                strip.classList.remove('speaking-active');
+                if (badge) {{
+                    badge.className = 'channel-voice-badge open';
+                    badge.innerText = '🎙️ Aberto';
+                }}
+            }}
+        }}
+
+        // Decaimento suave contínuo dos medidores verticais
+        setInterval(() => {{
+            if (currentMasterDisplayPct > 0) {{
+                currentMasterDisplayPct = Math.max(0, currentMasterDisplayPct - 8);
+                const masterBarEl = document.getElementById('vuMasterBar');
+                const masterDbEl = document.getElementById('vuMasterDbText');
+                if (masterBarEl) masterBarEl.style.height = currentMasterDisplayPct + '%';
+                if (currentMasterDisplayPct === 0 && masterDbEl) {{
+                    masterDbEl.innerText = '-∞ dB (0%)';
+                    masterDbEl.style.color = '#94a3b8';
+                }}
+            }}
+            if (currentCameras && currentCameras.length > 0) {{
+                currentCameras.forEach(c => {{
+                    const cid = String(c.id);
+                    const barEl = document.getElementById('vuBar_cam_' + cid);
+                    const dbEl = document.getElementById('vuDb_cam_' + cid);
+                    if (barEl) {{
+                        const cur = parseFloat(barEl.style.height || '0');
+                        if (cur > 0) {{
+                            const nextVal = Math.max(0, cur - 8);
+                            barEl.style.height = nextVal + '%';
+                            if (nextVal === 0 && dbEl) {{
+                                dbEl.innerText = '-∞ dB (0%)';
+                                dbEl.style.color = '#94a3b8';
+                            }}
+                        }}
+                    }}
+                }});
+            }}
+        }}, 120);
+
+        window.testAudioVuMeter = function() {{
+            let step = 0;
+            const testSteps = [0.10, 0.28, 0.52, 0.76, 0.94, 0.82, 0.60, 0.32, 0.68, 0.92, 0.98, 0.70, 0.40, 0.15, 0];
+            // Para teste demonstrativo, ativa temporariamente a primeira câmera disponível
+            if (currentCameras && currentCameras.length > 0) {{
+                currentCameras[0].is_speaking = true;
+                updateChannelVisualState(currentCameras[0]);
+            }}
+            const interval = setInterval(() => {{
+                if (step >= testSteps.length) {{
+                    clearInterval(interval);
+                    if (currentCameras && currentCameras.length > 0) {{
+                        currentCameras[0].is_speaking = false;
+                        updateChannelVisualState(currentCameras[0]);
+                    }}
+                    return;
+                }}
+                if (window.onAudioPcmChunk) window.onAudioPcmChunk(testSteps[step]);
+                step++;
+            }}, 180);
+        }};
+
+        window.updateMasterVol = function(val) {{
+            const pct = Math.round(parseFloat(val) * 100);
+            const lbl = document.getElementById('lblMasterVol');
+            if (lbl) lbl.innerText = pct + '%';
+            if (!isLocalMuted && window.setLocalMonitorVolume) {{
+                window.setLocalMonitorVolume(parseFloat(val));
+            }}
+        }};
+
+        let isMasterMuted = false;
+        window.toggleMasterMute = function() {{
+            isMasterMuted = !isMasterMuted;
+            const btn = document.getElementById('btnMuteMaster');
+            if (isMasterMuted) {{
+                if (window.setLocalMonitorVolume) window.setLocalMonitorVolume(0);
+                if (btn) {{
+                    btn.style.background = '#ef4444';
+                    btn.style.color = '#fff';
+                    btn.innerText = '🔇 Mudo';
+                }}
+            }} else {{
+                const val = parseFloat(document.getElementById('rngMasterVol').value || '1');
+                if (window.setLocalMonitorVolume) window.setLocalMonitorVolume(val);
+                if (btn) {{
+                    btn.style.background = '#0f172a';
+                    btn.style.color = '#cbd5e1';
+                    btn.innerText = '🔊 Ativo';
+                }}
+            }}
+        }};
+
+        let sourceVolumes = {{}};
+        window.updateSourceVol = function(camId, val) {{
+            sourceVolumes[camId] = parseFloat(val);
+            const pct = Math.round(parseFloat(val) * 100);
+            const lbl = document.getElementById('lblVol_cam_' + camId);
+            if (lbl) lbl.innerText = pct + '%';
+        }};
+
+        let mutedSources = new Set();
+        window.toggleSourceMute = function(camId) {{
+            const btn = document.getElementById('btnMute_cam_' + camId);
+            if (mutedSources.has(camId)) {{
+                mutedSources.delete(camId);
+                if (btn) {{
+                    btn.style.background = '#0f172a';
+                    btn.style.color = '#cbd5e1';
+                    btn.innerText = '🔊 Ativo';
+                }}
+            }} else {{
+                mutedSources.add(camId);
+                if (btn) {{
+                    btn.style.background = '#ef4444';
+                    btn.style.color = '#fff';
+                    btn.innerText = '🔇 Mudo';
+                }}
             }}
         }};
 
@@ -2704,16 +3984,20 @@ async def get_control_panel():
             const lbl = document.getElementById('lblMonitorStatus');
             if (isLocalMuted) {{
                 if (window.setLocalMonitorVolume) window.setLocalMonitorVolume(0);
-                btn.style.background = '#ef4444';
-                btn.style.color = '#ffffff';
-                lbl.innerText = 'Mudo 🔇';
+                if (btn) {{
+                    btn.style.background = '#ef4444';
+                    btn.style.color = '#ffffff';
+                }}
+                if (lbl) lbl.innerText = 'Monitor Local: Mudo 🔇';
                 localStorage.setItem('rnp_monitor_muted', '1');
             }} else {{
                 const val = parseFloat(document.getElementById('rngMonitorVol').value);
                 if (window.setLocalMonitorVolume) window.setLocalMonitorVolume(val);
-                btn.style.background = '#0f172a';
-                btn.style.color = '#cbd5e1';
-                lbl.innerText = 'Som: Ligado 🔊';
+                if (btn) {{
+                    btn.style.background = '#0f172a';
+                    btn.style.color = '#cbd5e1';
+                }}
+                if (lbl) lbl.innerText = 'Monitor Local: Ligado 🔊';
                 localStorage.setItem('rnp_monitor_muted', '0');
             }}
         }}
@@ -2754,6 +4038,7 @@ async def get_control_panel():
                 user_name: document.getElementById('userName').value.trim(),
                 user_email: document.getElementById('userEmail').value.trim(),
                 youtube_url: document.getElementById('ytUrl').value.trim(),
+                youtube_auto_connect: document.getElementById('chkYtAutoConnect').checked,
                 show_camera_names: document.getElementById('chkShowNames').checked,
                 camera_name_style: document.getElementById('selNameStyle').value,
                 grid_layout_mode: document.getElementById('selGridLayout').value,
@@ -2783,6 +4068,7 @@ async def get_control_panel():
                 document.getElementById('userName').value = cfg.user_name || '';
                 document.getElementById('userEmail').value = cfg.user_email || '';
                 document.getElementById('ytUrl').value = cfg.youtube_url || '';
+                document.getElementById('chkYtAutoConnect').checked = !!cfg.youtube_auto_connect;
                 document.getElementById('chkShowNames').checked = !!cfg.show_camera_names;
                 document.getElementById('selNameStyle').value = cfg.camera_name_style || 'glass';
                 document.getElementById('selGridLayout').value = cfg.grid_layout_mode || 'auto';
@@ -2892,53 +4178,6 @@ async def get_control_panel():
 
         async function handleYtDisconnect() {{
             await fetch('/api/youtube/disconnect', {{ method: 'POST' }});
-        }}
-
-        async function votePoll(optIndex) {{
-            await fetch('/api/poll/vote', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ option_index: optIndex }})
-            }});
-            alert('Voto computado com sucesso!');
-        }}
-
-        function renderPoll(poll) {{
-            const card = document.getElementById('pollDockCard');
-            if (!poll || !poll.is_active) {{
-                card.style.display = 'none';
-                return;
-            }}
-
-            card.style.display = 'block';
-            document.getElementById('pollQuestionText').innerText = poll.question || 'Enquete da Sessão';
-            
-            const title = document.getElementById('pollStatusTitle');
-            if (poll.status === 'voting' && !poll.published) {{
-                title.innerText = '📊 Enquete Aberta para Votação';
-            }} else if (poll.status === 'results' || poll.published) {{
-                title.innerText = `📊 Resultados Finais da Enquete (${{poll.total_votes || 0}} votos)`;
-            }}
-
-            const cont = document.getElementById('pollOptionsContainer');
-            cont.innerHTML = '';
-
-            (poll.options || []).forEach((opt, idx) => {{
-                const btn = document.createElement('div');
-                btn.className = 'poll-opt-btn';
-                btn.onclick = () => votePoll(idx);
-
-                const pct = opt.percentage || (poll.total_votes > 0 ? Math.round((opt.votes / poll.total_votes) * 100) : 0);
-
-                btn.innerHTML = `
-                    <div class="poll-progress-bg" style="width: ${{pct}}%;"></div>
-                    <div class="poll-opt-content">
-                        <span><strong>${{opt.text}}</strong></span>
-                        <span style="font-weight: 800; color: #10b981;">${{opt.votes ? opt.votes + ' votos (' + pct + '%)' : pct + '%'}}</span>
-                    </div>
-                `;
-                cont.appendChild(btn);
-            }});
         }}
 
         async function highlightMessage(msg) {{
@@ -3288,7 +4527,91 @@ async def get_control_panel():
                 renderChatList(currentMessages);
 
                 // Cameras sync
+                currentCameras = cams;
                 document.getElementById('camTotalCount').innerText = cams.length;
+
+                // --- 🎙️ SINCRONIZAÇÃO DA MESA DE SOM VERTICAL (CANAIS INDIVIDUAIS) ---
+                const indContainer = document.getElementById('individualChannelsContainer');
+                const noIndPlaceholder = document.getElementById('noIndividualChannelsPlaceholder');
+                if (indContainer) {{
+                    if (cams.length === 0) {{
+                        if (noIndPlaceholder) noIndPlaceholder.style.display = 'flex';
+                        indContainer.innerHTML = '';
+                    }} else {{
+                        if (noIndPlaceholder) noIndPlaceholder.style.display = 'none';
+                        const existingIds = new Set(Array.from(indContainer.querySelectorAll('.audio-channel-strip')).map(el => el.getAttribute('data-cam-id')));
+                        const newIds = new Set(cams.map(c => String(c.id)));
+                        
+                        // Remover canais desconectados
+                        existingIds.forEach(id => {{
+                            if (!newIds.has(id)) {{
+                                const strip = document.getElementById('channelStrip_cam_' + id);
+                                if (strip) strip.remove();
+                            }}
+                        }});
+
+                        // Inserir ou atualizar canal de cada câmera
+                        cams.forEach(c => {{
+                            const cid = String(c.id);
+                            let strip = document.getElementById('channelStrip_cam_' + cid);
+                            if (!strip) {{
+                                strip = document.createElement('div');
+                                strip.className = 'audio-channel-strip';
+                                strip.id = 'channelStrip_cam_' + cid;
+                                strip.setAttribute('data-cam-id', cid);
+                                if (c.is_libras) strip.style.borderColor = 'rgba(6, 182, 212, 0.4)';
+                                strip.innerHTML = `
+                                    <div class="channel-header">
+                                        <span style="font-size: 18px;">${{c.is_libras ? '🤟' : '🎥'}}</span>
+                                        <span class="channel-title" title="${{c.name}}">${{c.name}}</span>
+                                        <div style="display:flex; align-items:center; justify-content:center; gap:4px; width:100%; margin-top:2px;">
+                                            <span class="channel-tag">ID: cam_${{c.id}}</span>
+                                            <span class="channel-voice-badge" id="voiceBadge_cam_${{c.id}}">${{c.is_speaking ? '🗣️ Falando' : (c.is_muted ? '🔇 Mudo' : '🎙️ Aberto')}}</span>
+                                        </div>
+                                    </div>
+                                    <div class="channel-meter-box">
+                                        <div class="meter-scale-vertical">
+                                            <span style="color:#ef4444; font-weight:bold;">0</span>
+                                            <span style="color:#f59e0b;">-3</span>
+                                            <span style="color:#f59e0b;">-6</span>
+                                            <span>-12</span>
+                                            <span>-20</span>
+                                            <span>-30</span>
+                                            <span>-40</span>
+                                            <span>-60</span>
+                                        </div>
+                                        <div class="vu-track-vertical">
+                                            <div class="vu-fill-vertical" id="vuBar_cam_${{c.id}}"></div>
+                                            <div class="vu-peak-vertical" id="vuPeak_cam_${{c.id}}"></div>
+                                        </div>
+                                    </div>
+                                    <div class="meter-db-readout" id="vuDb_cam_${{c.id}}">-∞ dB (0%)</div>
+                                    <button class="channel-btn-copy" onclick="copyUrl('http://localhost:3333/audio?source=${{c.id}}', this)" title="Copiar link de áudio exclusivo desta fonte para o OBS">
+                                        📋 Link Fonte ${{c.id}}
+                                    </button>
+                                    <div class="channel-fader-box">
+                                        <div style="display:flex; justify-content:space-between; width:100%; font-size:10px; color:#94a3b8;">
+                                            <span>Vol:</span>
+                                            <span id="lblVol_cam_${{c.id}}">100%</span>
+                                        </div>
+                                        <input type="range" id="rngVol_cam_${{c.id}}" min="0" max="1.5" step="0.05" value="1" style="width:100%; accent-color:#38bdf8; cursor:pointer;" oninput="updateSourceVol('${{c.id}}', this.value)">
+                                        <button class="btn-ctrl" id="btnMute_cam_${{c.id}}" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px;" onclick="toggleSourceMute('${{c.id}}')">
+                                            🔊 Ativo
+                                        </button>
+                                    </div>
+                                `;
+                                indContainer.appendChild(strip);
+                            }} else {{
+                                const titleEl = strip.querySelector('.channel-title');
+                                if (titleEl && titleEl.title !== c.name) {{
+                                    titleEl.title = c.name;
+                                    titleEl.innerText = c.name;
+                                }}
+                            }}
+                            updateChannelVisualState(c);
+                        }});
+                    }}
+                }}
                 
                 const grid = document.getElementById('camerasGrid');
                 grid.innerHTML = '';
@@ -3492,59 +4815,91 @@ async def get_control_panel():
             }} catch (e) {{}}
         }}
 
+        async function handleExitApplication() {{
+            if (!confirm('Deseja realmente desconectar da sala RNP e encerrar o aplicativo por completo?')) {{
+                return;
+            }}
+            document.getElementById('logBox').innerText = '> Encerrando servidor e desconectando da sala...';
+            try {{
+                await fetch('/api/server/stop', {{ method: 'POST' }});
+            }} catch (e) {{}}
+            setTimeout(() => {{
+                window.close();
+            }}, 600);
+        }}
+
         function renderPoll(poll) {{
             const card = document.getElementById('pollDockCard');
-            if (!poll) {{
-                card.style.display = 'none';
+            if (card) card.style.display = 'block';
+
+            const statusTitle = document.getElementById('pollStatusTitle');
+            const badgeStatus = document.getElementById('pollBadgeStatus');
+            const questionText = document.getElementById('pollQuestionText');
+            const optsContainer = document.getElementById('pollOptionsContainer');
+
+            if (!poll || !poll.is_active) {{
+                if (statusTitle) {{
+                    statusTitle.innerText = '📊 Enquete da Sala RNP';
+                    statusTitle.style.color = '#10b981';
+                }}
+                if (badgeStatus) {{
+                    badgeStatus.className = 'badge disconnected';
+                    badgeStatus.innerText = '⚪ Standby (Pronto para o OBS)';
+                }}
+                if (questionText) {{
+                    questionText.innerHTML = '<span style="color: #94a3b8; font-weight: normal; font-size: 12px;">Nenhuma enquete ativa na sala no momento. O link acima pode ser adicionado ao OBS como <strong>Navegador (Browser Source 1920x1080 transparente)</strong> antes da transmissão começar. Quando uma enquete for aberta na RNP, ela aparecerá na tela automaticamente!</span>';
+                }}
+                if (optsContainer) optsContainer.innerHTML = '';
                 return;
             }}
 
-            card.style.display = 'block';
             const isPublished = (poll.published || poll.status === 'published' || poll.status === 'results');
-            const statusTitle = document.getElementById('pollStatusTitle');
-            const badgeStatus = document.getElementById('pollBadgeStatus');
-
-            if (isPublished) {{
-                statusTitle.innerText = '📊 Resultados Finais (' + (poll.total_votes || 0) + ' votos)';
-                statusTitle.style.color = '#10b981';
-                if (badgeStatus) {{
+            if (statusTitle) {{
+                if (isPublished) {{
+                    statusTitle.innerText = '📊 Resultados Finais (' + (poll.total_votes || 0) + ' votos)';
+                    statusTitle.style.color = '#10b981';
+                }} else {{
+                    statusTitle.innerText = '🗳️ Enquete em Votação na Sala';
+                    statusTitle.style.color = '#eab308';
+                }}
+            }}
+            if (badgeStatus) {{
+                if (isPublished) {{
                     badgeStatus.className = 'badge connected';
                     badgeStatus.innerText = '🟢 Publicada no OBS';
-                }}
-            }} else {{
-                statusTitle.innerText = '🗳️ Enquete em Votação na Sala';
-                statusTitle.style.color = '#eab308';
-                if (badgeStatus) {{
+                }} else {{
                     badgeStatus.className = 'badge connecting';
                     badgeStatus.innerText = '🟡 Votação Aberta';
                 }}
             }}
 
-            document.getElementById('pollQuestionText').innerText = poll.question || 'Opções da Enquete';
+            if (questionText) {{
+                questionText.innerText = poll.question || 'Opções da Enquete';
+            }}
 
-            const optsContainer = document.getElementById('pollOptionsContainer');
-            optsContainer.innerHTML = '';
+            if (optsContainer) {{
+                optsContainer.innerHTML = '';
+                const totalVotes = poll.total_votes || 0;
 
-            const totalVotes = poll.total_votes || 0;
+                (poll.options || []).forEach(opt => {{
+                    const row = document.createElement('div');
+                    row.style.cssText = 'background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 10px;';
+                    
+                    const pct = opt.percentage || (totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0);
+                    const votes = opt.votes || 0;
 
-            (poll.options || []).forEach(opt => {{
-                const row = document.createElement('div');
-                row.style.cssText = 'background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 10px;';
-                
-                const pct = opt.percentage || (totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0);
-                const votes = opt.votes || 0;
-
-                row.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #ffffff; margin-bottom: 4px;">
-                        <span>${{opt.text}}</span>
-                        <span style="color: #38bdf8;">${{votes > 0 ? votes + ' votos (' + pct + '%)' : pct + '%'}}</span>
-                    </div>
-                    <div style="width: 100%; height: 5px; background: #0f172a; border-radius: 3px; overflow: hidden;">
-                        <div style="width: ${{pct}}%; height: 100%; background: linear-gradient(90deg, #06b6d4, #10b981); transition: width 0.3s ease;"></div>
-                    </div>
-                `;
-                optsContainer.appendChild(row);
-            }});
+                    row.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #ffffff; margin-bottom: 4px;">
+                            <span>${{opt.text}}</span>
+                            <span style="color: #38bdf8;">${{votes > 0 ? votes + ' votos (' + pct + '%)' : pct + '%'}}</span>
+                        </div>
+                        <div style="width: 100%; height: 5px; background: #0f172a; border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${{pct}}%; height: 100%; background: linear-gradient(90deg, #06b6d4, #10b981); transition: width 0.3s ease;"></div>
+                        </div>
+                    `;
+                    optsContainer.appendChild(row);
+                }});
+            }}
         }}
 
         async function updatePollConfig() {{
@@ -3569,9 +4924,19 @@ async def get_control_panel():
         }}
 
         async function clearPoll() {{
-            if (!confirm('Deseja limpar e ocultar a enquete atual?')) return;
+            if (!confirm('Deseja limpar e reiniciar a enquete atual?')) return;
             await fetch('/api/poll/clear', {{ method: 'POST' }});
-            document.getElementById('pollDockCard').style.display = 'none';
+            fetchStatus();
+        }}
+
+        async function simulatePoll() {{
+            await fetch('/api/poll/simulate', {{ method: 'POST' }});
+            const toast = document.getElementById('saveToast');
+            if (toast) {{
+                toast.innerText = '🧪 Enquete de Teste Exibida no OBS!';
+                toast.style.display = 'inline-block';
+                setTimeout(() => {{ toast.style.display = 'none'; }}, 2500);
+            }}
             fetchStatus();
         }}
 
@@ -3585,12 +4950,46 @@ async def get_control_panel():
             showSaveNotice();
         }}
 
-        function copyUrl(url) {{
-            navigator.clipboard.writeText(url);
-            alert('Link copiado com sucesso para o OBS Studio:\\n' + url);
+        function fallbackCopy(text) {{
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try {{ document.execCommand('copy'); }} catch(e){{}}
+            document.body.removeChild(ta);
         }}
 
-        setInterval(fetchStatus, 500);
+        function copyUrl(url, btnElement) {{
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(url).catch(() => {{
+                    fallbackCopy(url);
+                }});
+            }} else {{
+                fallbackCopy(url);
+            }}
+
+            const toast = document.getElementById('saveToast');
+            if (toast) {{
+                const endpoint = url.replace('http://localhost:3333', '');
+                toast.innerText = '📋 Link Copiado: ' + (endpoint || url);
+                toast.style.display = 'inline-block';
+                setTimeout(() => {{ toast.style.display = 'none'; }}, 2500);
+            }}
+
+            if (btnElement) {{
+                const orig = btnElement.innerHTML;
+                btnElement.innerHTML = '✅ Copiado!';
+                btnElement.style.filter = 'brightness(1.3)';
+                setTimeout(() => {{
+                    btnElement.innerHTML = orig;
+                    btnElement.style.filter = 'none';
+                }}, 1500);
+            }}
+        }}
+
+        setInterval(fetchStatus, 250);
         fetchStatus();
     </script>
 </body>
@@ -3816,7 +5215,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 </head>
 <body>
     <div id="stage-container" class="preset-side-by-side"></div>
-    {PCM_AUDIO_SCRIPT}
+    <!-- Áudio desativado no /stage para evitar saída indesejada ou eco no OBS Studio (use o endpoint /audio) -->
 
     <script>
         const container = document.getElementById('stage-container');
@@ -3855,7 +5254,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     // 1. Container do Slide / Apresentação
                     const slideFrame = document.createElement('div');
                     slideFrame.className = 'slide-frame';
-                    slideFrame.innerHTML = `<img id="stage_slide_img" src="/raw_frame/presentation?t=${{Date.now()}}">`;
+                    slideFrame.innerHTML = `<img id="stage_slide_img" src="/raw_frame/presentation">`;
 
                     // Identificar Câmeras de Libras e Outras Câmeras Reais
                     const librasCams = cams.filter(c => c.is_libras || librasIds.includes(String(c.id)));
@@ -3892,7 +5291,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         const wrapSpeaker = document.createElement('div');
                         wrapSpeaker.className = 'stage-cam-wrap';
                         wrapSpeaker.innerHTML = `
-                            <img id="stage_cam_${{mainSpeaker.id}}" src="/raw_frame/camera/${{mainSpeaker.id}}?t=${{Date.now()}}">
+                            <img id="stage_cam_${{mainSpeaker.id}}" src="/raw_frame/camera/${{mainSpeaker.id}}">
                             ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{mainSpeaker.name}}</div>` : ''}}
                         `;
                         camsCont.appendChild(wrapSpeaker);
@@ -3901,7 +5300,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         const wrapLibras = document.createElement('div');
                         wrapLibras.className = 'stage-cam-wrap is-libras-box';
                         wrapLibras.innerHTML = `
-                            <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}?t=${{Date.now()}}">
+                            <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}">
                             <div class="libras-badge-overlay">🤟 Libras</div>
                             ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
                         `;
@@ -3928,7 +5327,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 const wrap = document.createElement('div');
                                 wrap.className = 'stage-cam-wrap';
                                 wrap.innerHTML = `
-                                    <img id="stage_cam_${{c.id}}" src="/raw_frame/camera/${{c.id}}?t=${{Date.now()}}">
+                                    <img id="stage_cam_${{c.id}}" src="/raw_frame/camera/${{c.id}}">
                                     ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{c.name}}</div>` : ''}}
                                 `;
                                 camsCont.appendChild(wrap);
@@ -3944,7 +5343,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             const wrapLibras = document.createElement('div');
                             wrapLibras.className = 'stage-cam-wrap is-libras-box';
                             wrapLibras.innerHTML = `
-                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}?t=${{Date.now()}}">
+                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}">
                                 <div class="libras-badge-overlay">🤟 Libras</div>
                                 ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
                             `;
@@ -3981,7 +5380,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             }}
 
                             librasFloating.innerHTML = `
-                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}?t=${{Date.now()}}">
+                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}">
                                 <div class="libras-badge-overlay">🤟 Libras</div>
                                 ${{showNames ? `<div class="name-tag style-${{nameStyle}}" style="font-size:11px; padding:3px 8px; bottom:6px; left:6px;">${{activeLibras.name}}</div>` : ''}}
                             `;
@@ -3989,15 +5388,16 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         }}
                     }}
 
-                }} else {{
-                    const slideImg = document.getElementById('stage_slide_img');
-                    if (slideImg) slideImg.src = '/raw_frame/presentation?t=' + Date.now();
-
-                    cams.forEach(c => {{
-                        const img = document.getElementById(`stage_cam_${{c.id}}`);
-                        if (img) img.src = `/raw_frame/camera/${{c.id}}?t=` + Date.now();
-                    }});
                 }}
+
+                // Atualizar frames ao vivo diretamente da memória
+                const slideImg = document.getElementById('stage_slide_img');
+                if (slideImg) slideImg.src = '/raw_frame/presentation?t=' + Date.now();
+
+                cams.forEach(c => {{
+                    const img = document.getElementById(`stage_cam_${{c.id}}`);
+                    if (img) img.src = `/raw_frame/camera/${{c.id}}?t=` + Date.now();
+                }});
             }} catch (e) {{}}
         }}
 
@@ -4059,7 +5459,7 @@ async def get_libras_overlay(cam_id: Optional[str] = None):
         <div class="libras-badge-overlay" style="font-size: 13px; padding: 4px 10px;">🤟 Intérprete de Libras</div>
         <div id="librasNameTag" class="name-tag style-glass" style="display: none;"></div>
     </div>
-    {PCM_AUDIO_SCRIPT}
+    <!-- Áudio desativado no /libras para evitar saída indesejada ou eco no OBS Studio (use o endpoint /audio) -->
 
     <script>
         const img = document.getElementById('librasFeed');
@@ -4081,6 +5481,8 @@ async def get_libras_overlay(cam_id: Optional[str] = None):
                     targetCam = cams.find(c => String(c.id) === urlOverrideCam);
                 }} else if (librasIds.length > 0) {{
                     targetCam = cams.find(c => c.is_libras || librasIds.includes(String(c.id)));
+                }} else {{
+                    targetCam = cams.find(c => c.is_libras);
                 }}
 
                 const card = document.querySelector('.libras-card');
@@ -4665,7 +6067,7 @@ async def get_cameras_grid_overlay(
                 const focusedId = data.focused_camera_id;
                 const librasIds = data.libras_camera_ids || [];
 
-                const sig = cams.map(c => c.id + '_' + (c.name || '')).join(',') + '::' + showNames + '::' + nameStyle + '::' + layoutMode + '::' + focusedId;
+                const sig = cams.map(c => c.id + '_' + (c.name || '') + '_' + (librasIds.includes(String(c.id)) ? '1' : '0')).join(',') + '::' + showNames + '::' + nameStyle + '::' + layoutMode + '::' + focusedId;
 
                 if (cams.length === 0) {{
                     if (currentSig !== 'empty') {{
@@ -4715,7 +6117,10 @@ async def get_cameras_grid_overlay(
 
                         const img = document.createElement('img');
                         img.id = 'camImg_' + cam.id;
-                        img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now();
+                        img.src = '/raw_frame/camera/' + cam.id;
+                        img.onerror = () => {{
+                            setTimeout(() => {{ if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now(); }}, 1500);
+                        }};
                         card.appendChild(img);
 
                         if (showNames) {{
@@ -4730,12 +6135,13 @@ async def get_cameras_grid_overlay(
 
                         container.appendChild(card);
                     }});
-                }} else {{
-                    cams.forEach(cam => {{
-                        const img = document.getElementById('camImg_' + cam.id);
-                        if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now();
-                    }});
                 }}
+
+                // Atualizar imagens ao vivo diretamente da memória
+                cams.forEach(cam => {{
+                    const img = document.getElementById('camImg_' + cam.id);
+                    if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now();
+                }});
             }} catch (e) {{}}
         }}
 
@@ -5224,9 +6630,11 @@ async def get_presentation_overlay():
     <img id="presImg" src="/raw_frame/presentation">
     <script>
         const img = document.getElementById('presImg');
-        setInterval(() => {
-            img.src = '/raw_frame/presentation?t=' + Date.now();
-        }, 66);
+        function updatePres() {
+            if (img) img.src = '/raw_frame/presentation?t=' + Date.now();
+        }
+        setInterval(updatePres, 66);
+        updatePres();
     </script>
 </body>
 </html>
@@ -5236,62 +6644,243 @@ async def get_presentation_overlay():
 # OBS OVERLAY: RECEPTOR DE ÁUDIO PCM (/audio)
 # --------------------------------------------------------------------------
 @app.get("/audio")
-async def get_audio_receiver():
-    return HTMLResponse("""
+async def get_audio_receiver(source: Optional[str] = None, vol: Optional[float] = 1.0):
+    source_label = f"Fonte: {source}" if source else "Master Geral"
+    return HTMLResponse(f"""
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RNP Live Audio Bridge (OBS Audio)</title>
     <style>
-        body { background: transparent; color: #38bdf8; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; font-size: 14px; font-weight: bold; }
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+        body {{ 
+            background: transparent; 
+            color: #38bdf8; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+            overflow: hidden; 
+        }}
+        .audio-receiver-card {{
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            border-radius: 12px;
+            padding: 12px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+        }}
+        .audio-icon-box {{
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background: rgba(56, 189, 248, 0.15);
+            border-radius: 8px;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }}
+        .audio-meta {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        .audio-title {{
+            font-size: 12.5px;
+            font-weight: 800;
+            color: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }}
+        .audio-status {{
+            font-size: 10.5px;
+            color: #10b981;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }}
+        .audio-mini-vu {{
+            width: 80px;
+            height: 7px;
+            background: #020617;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            margin-top: 3px;
+        }}
+        .audio-mini-bar {{
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #10b981 0%, #f59e0b 70%, #ef4444 100%);
+            transition: width 0.05s linear;
+        }}
     </style>
 </head>
 <body>
-    <div id="status">🎧 RNP Audio Bridge Ativo</div>
+    <div class="audio-receiver-card" id="audioCard">
+        <div class="audio-icon-box" id="audioIcon">🎧</div>
+        <div class="audio-meta">
+            <div class="audio-title">
+                <span>RNP Audio Bridge</span>
+                <span style="font-size: 10px; background: rgba(56, 189, 248, 0.2); padding: 1px 6px; border-radius: 4px; color: #38bdf8;">{source_label}</span>
+            </div>
+            <div class="audio-status">
+                <span id="statusDot">🟢</span>
+                <span id="statusText">48kHz PCM Ativo</span>
+            </div>
+            <div class="audio-mini-vu">
+                <div class="audio-mini-bar" id="miniVuBar"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let audioCtx = null;
+        let gainNode = null;
+        let nextStartTime = 0;
         let ws = null;
+        const initialVol = {vol if vol is not None else 1.0};
+        const targetSource = "{source or ''}";
 
-        function initAudio() {
-            if (audioCtx) return;
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioCtx = new AudioContext({ sampleRate: 48000 });
-            
+        function initAudioContext() {{
+            if (!audioCtx) {{
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext({{ sampleRate: 48000 }});
+                gainNode = audioCtx.createGain();
+                gainNode.gain.setValueAtTime(initialVol, audioCtx.currentTime);
+                gainNode.connect(audioCtx.destination);
+            }}
+            if (audioCtx.state === 'suspended') {{
+                audioCtx.resume().catch(() => {{}});
+            }}
+            return audioCtx;
+        }}
+
+        function unlockAudio() {{
+            const ctx = initAudioContext();
+            if (ctx.state === 'suspended') {{
+                ctx.resume().catch(() => {{}});
+            }}
+            try {{
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                g.gain.setValueAtTime(0.00001, ctx.currentTime);
+                osc.connect(g);
+                g.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.05);
+            }} catch(e) {{}}
+        }}
+
+        function connectWs() {{
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(protocol + '//' + window.location.host + '/ws/pcm_out');
             ws.binaryType = 'arraybuffer';
 
-            let nextStartTime = audioCtx.currentTime;
+            ws.onopen = () => {{
+                const st = document.getElementById('statusText');
+                if (st) st.innerText = 'Conectado (48kHz)';
+                const dot = document.getElementById('statusDot');
+                if (dot) dot.innerText = '🟢';
+                unlockAudio();
+            }};
 
-            ws.onmessage = (event) => {
+            ws.onmessage = (event) => {{
+                if (typeof event.data === 'string') {{
+                    try {{
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'speakers' && targetSource) {{
+                            const isSpeaking = !!(msg.speakers && msg.speakers[targetSource]);
+                            if (gainNode && audioCtx) {{
+                                const targetGain = isSpeaking ? initialVol : 0.0;
+                                gainNode.gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.05);
+                            }}
+                            const dot = document.getElementById('statusDot');
+                            const st = document.getElementById('statusText');
+                            if (isSpeaking) {{
+                                if (dot) dot.innerText = '🗣️';
+                                if (st) st.innerText = 'Falando (Ao Vivo)';
+                            }} else {{
+                                if (dot) dot.innerText = '💤';
+                                if (st) st.innerText = 'Silêncio / Standby';
+                            }}
+                        }}
+                    }} catch(e) {{}}
+                    return;
+                }}
                 if (!(event.data instanceof ArrayBuffer)) return;
                 const float32Array = new Float32Array(event.data);
                 if (float32Array.length === 0) return;
 
-                const buffer = audioCtx.createBuffer(1, float32Array.length, 48000);
+                const ctx = initAudioContext();
+                if (ctx.state === 'suspended') {{
+                    ctx.resume().catch(() => {{}});
+                }}
+
+                const buffer = ctx.createBuffer(1, float32Array.length, 48000);
                 buffer.copyToChannel(float32Array, 0);
 
-                const source = audioCtx.createBufferSource();
+                const source = ctx.createBufferSource();
                 source.buffer = buffer;
-                source.connect(audioCtx.destination);
+                source.connect(gainNode);
 
-                const currentTime = audioCtx.currentTime;
-                if (nextStartTime < currentTime) {
-                    nextStartTime = currentTime;
-                }
+                const currentTime = ctx.currentTime;
+                if (nextStartTime < currentTime) {{
+                    nextStartTime = currentTime + 0.015;
+                }}
                 source.start(nextStartTime);
                 nextStartTime += buffer.duration;
-            };
 
-            ws.onclose = () => {
-                setTimeout(() => { ws = null; initAudio(); }, 2000);
-            };
-        }
+                let peak = 0;
+                for (let i = 0; i < float32Array.length; i += 4) {{
+                    const val = Math.abs(float32Array[i]);
+                    if (val > peak) peak = val;
+                }}
+                const pct = Math.min(100, Math.round(peak * 100));
+                const bar = document.getElementById('miniVuBar');
+                if (bar) bar.style.width = pct + '%';
+            }};
 
-        window.addEventListener('click', initAudio);
-        window.addEventListener('load', initAudio);
-        initAudio();
+            ws.onclose = () => {{
+                const st = document.getElementById('statusText');
+                if (st) st.innerText = 'Reconectando...';
+                const dot = document.getElementById('statusDot');
+                if (dot) dot.innerText = '🟡';
+                setTimeout(connectWs, 2000);
+            }};
+
+            ws.onerror = () => {{
+                try {{ ws.close(); }} catch(e) {{}}
+            }};
+        }}
+
+        setInterval(() => {{
+            const bar = document.getElementById('miniVuBar');
+            if (bar) {{
+                const cur = parseFloat(bar.style.width || '0');
+                if (cur > 0) bar.style.width = Math.max(0, cur - 10) + '%';
+            }}
+        }}, 100);
+
+        window.addEventListener('load', unlockAudio);
+        window.addEventListener('click', unlockAudio);
+        window.addEventListener('pointerdown', unlockAudio);
+        window.addEventListener('keydown', unlockAudio);
+        document.addEventListener('visibilitychange', () => {{
+            if (!document.hidden) unlockAudio();
+        }});
+
+        unlockAudio();
+        connectWs();
     </script>
 </body>
 </html>
@@ -5301,10 +6890,8 @@ async def get_audio_receiver():
 @app.get("/raw_frame/camera/{cam_id}")
 async def get_raw_camera_frame(cam_id: str):
     frame = state.latest_camera_frames.get(str(cam_id))
-    if not frame and state.latest_camera_frames:
-        frame = list(state.latest_camera_frames.values())[0]
     if frame:
-        return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+        return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
     
     display_name = state.custom_camera_names.get(str(cam_id), f"Câmera {cam_id}")
     is_libras = (str(cam_id) in [str(x) for x in state.libras_camera_ids])
@@ -5324,7 +6911,7 @@ async def get_raw_camera_frame(cam_id: str):
 @app.get("/raw_frame/presentation")
 async def get_raw_presentation_frame():
     if state.latest_presentation_frame:
-        return Response(content=state.latest_presentation_frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+        return Response(content=state.latest_presentation_frame, media_type="image/jpeg", headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
     
     placeholder_svg = '''<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
       <rect width="1920" height="1080" fill="none"/>
@@ -5335,6 +6922,56 @@ async def get_raw_presentation_frame():
       <text x="960" y="625" fill="#94a3b8" font-size="20" font-family="sans-serif" text-anchor="middle">Aguardando compartilhamento de tela ou slides do palestrante</text>
     </svg>'''
     return Response(content=placeholder_svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+# --------------------------------------------------------------------------
+# STREAMS MJPEG CONTÍNUOS DE ALTA PERFORMANCE PARA OBS STUDIO
+# --------------------------------------------------------------------------
+@app.get("/stream/camera/{cam_id}")
+async def stream_camera(cam_id: str):
+    cid = str(cam_id)
+    async def frame_generator():
+        last_frame_bytes = None
+        try:
+            while True:
+                frame = state.latest_camera_frames.get(cid)
+                if frame and frame != last_frame_bytes:
+                    last_frame_bytes = frame
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n"
+                           b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
+                           frame + b"\r\n")
+                await asyncio.sleep(0.025)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+    )
+
+@app.get("/stream/presentation")
+async def stream_presentation():
+    async def frame_generator():
+        last_frame_bytes = None
+        try:
+            while True:
+                frame = state.latest_presentation_frame
+                if frame and frame != last_frame_bytes:
+                    last_frame_bytes = frame
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n"
+                           b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
+                           frame + b"\r\n")
+                await asyncio.sleep(0.033)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+    )
 
 # --------------------------------------------------------------------------
 # CATÁLOGO VISUAL DE ESTILOS & TEMAS (/catalog e /themes)
@@ -5655,6 +7292,51 @@ async def get_themes_catalog():
             border-radius: 4px;
         }}
 
+        /* --- THEME 5: INSTITUTO FEDERAL (IF CLEAN) --- */
+        .card-ifes {{
+            background: #ffffff;
+            border: 2px solid #e2e8f0;
+            border-top: 5px solid #15803d;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            color: #0f172a;
+        }}
+        .card-ifes .theme-meta h2 {{ color: #15803d; font-family: 'Outfit', sans-serif; font-weight: 800; }}
+        .card-ifes .inspiration {{ color: #dc2626; font-weight: 700; }}
+        .card-ifes .theme-desc {{ color: #334155; }}
+        .card-ifes .theme-demo-box {{
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }}
+        .ifes-btn {{
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #334155;
+            padding: 7px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }}
+        .ifes-btn.active {{
+            background: #15803d;
+            color: #ffffff;
+            border-color: #166534;
+            box-shadow: 0 2px 8px rgba(22, 163, 74, 0.35);
+        }}
+        .ifes-pill {{
+            padding: 3px 9px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 800;
+        }}
+        .card-ifes .btn-apply-theme {{
+            background: linear-gradient(135deg, #15803d 0%, #16a34a 100%);
+            color: #ffffff;
+            border-radius: 6px;
+            font-weight: 800;
+        }}
+
         /* TOAST CONFIRMATION */
         #toastNotice {{
             position: fixed;
@@ -5818,6 +7500,40 @@ async def get_themes_catalog():
                 </div>
 
                 <button class="btn-apply-theme" onclick="applyTheme('obsidian')">⚡ Ativar Cyber Obsidian no Painel</button>
+            </div>
+
+            <!-- 5. INSTITUTO FEDERAL (IF CLEAN) -->
+            <div class="theme-card card-ifes">
+                <div class="theme-card-header">
+                    <div class="theme-meta">
+                        <h2>🏛️ Instituto Federal (IF Clean / Ifes)</h2>
+                        <span class="inspiration">Identidade Visual IF • Cefor / Ifes • Branco, Verde e Vermelho</span>
+                    </div>
+                    <div class="color-palette">
+                        <div class="color-dot" style="background: #ffffff; border: 1px solid #cbd5e1;" title="Branco Puro"></div>
+                        <div class="color-dot" style="background: #15803d;" title="Verde Institucional"></div>
+                        <div class="color-dot" style="background: #dc2626;" title="Vermelho Oficial"></div>
+                        <div class="color-dot" style="background: #0f172a;" title="Grafite Texto"></div>
+                    </div>
+                </div>
+
+                <div class="theme-desc">
+                    Tema institucional claro, elegante e profissional alinhado à <strong>identidade visual oficial dos Institutos Federais (IF / Ifes)</strong>. Fundo branco/off-white que harmoniza perfeitamente com monitores de estúdio claros, títulos e destaques em verde esmeralda e botões de ação e alertas em vermelho vivo.
+                </div>
+
+                <div class="theme-demo-box">
+                    <div class="demo-row">
+                        <span class="ifes-pill" style="background: #f0fdf4; color: #15803d; border: 1px solid #22c55e;">● Conectado RNP</span>
+                        <span class="ifes-pill" style="background: #fef2f2; color: #dc2626; border: 1px solid #ef4444;">● Transmissão Ativa</span>
+                    </div>
+                    <div class="demo-row">
+                        <button class="ifes-btn active">Lado a Lado</button>
+                        <button class="ifes-btn">Palco Principal</button>
+                        <button class="ifes-btn">Câmeras</button>
+                    </div>
+                </div>
+
+                <button class="btn-apply-theme" onclick="applyTheme('ifes')">⚡ Ativar Instituto Federal no Painel</button>
             </div>
         </div>
     </div>
