@@ -4,10 +4,6 @@
     if (!container) return;
     const rows = new Map();
     let busy = false;
-    const link = document.createElement('a');
-    link.href = '/webrtc'; link.target = '_blank'; link.rel = 'noopener';
-    link.textContent = 'Abrir teste WebRTC (vídeo e áudio individual)';
-    container.parentElement.insertBefore(link, container);
 
     function makeRow(channel) {
         const row = document.createElement('div');

@@ -152,6 +152,16 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_dock_sem_link_de_teste_webrtc(self):
+        # WebRTC hoje é o transporte padrão, não um experimento: o link "Abrir teste
+        # WebRTC" no topo da mesa só adicionava ruído. O /webrtc em si permanece
+        # (os links individuais do OBS apontam para ele), só o atalho de "teste" sai.
+        js = self.client.get('/assets/audio-mixer.js').text
+        self.assertNotIn('Abrir teste WebRTC', js,
+                         'O atalho de teste WebRTC não deve mais ser injetado na mesa.')
+        self.assertIn('/webrtc', js,
+                      'Os links individuais do OBS continuam usando /webrtc.')
+
     def test_dock_sem_cores_inline_no_markup(self):
         # Style inline vence qualquer folha de estilo: enquanto o markup pintar cor
         # por atributo style, os tokens não têm como valer e o tema não aparece.
