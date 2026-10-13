@@ -115,6 +115,7 @@ body.theme-broadcast {
     --danger-border: #a13838;
     --vu-off: #2e2e2e;
     --accent-top: transparent;
+    --accent-top-width: 0px;
     --label-weight: 700;
 }
 
@@ -139,6 +140,7 @@ body.theme-ifes {
     --danger-border: #991b1b;
     --vu-off: #ded8c9;
     --accent-top: #15803d;
+    --accent-top-width: 3px;
     --label-weight: 800;
 }
 ```
@@ -503,13 +505,14 @@ body {
 .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-top: 3px solid var(--accent-top);
+    border-top: var(--accent-top-width) solid var(--accent-top);
     border-radius: var(--radius);
     padding: var(--space-4);
     margin-bottom: var(--space-4);
 }
-/* Sem --accent-top (broadcast) o filete não deve ocupar espaço. */
-body.theme-broadcast .card { border-top-width: 1px; }
+/* O filete institucional do Ifes vem inteiramente dos tokens --accent-top-width /
+   --accent-top. NÃO escrever `body.theme-X .card`: o teste da Task 7 proíbe qualquer
+   seletor de componente por tema. */
 
 .section-title {
     color: var(--text);
@@ -701,7 +704,10 @@ input[type="text"], input[type="email"], select {
                 ? `${cams.length} cam · ${Math.round(minFps)} fps`
                 : 'sem câmera';
         }
-        applyTabForState(!!data.connected);
+        // NÃO chamar applyTabForState aqui: renderStatus roda a cada 250 ms e isso
+        // reconduziria o operador à aba Conexão 4x por segundo enquanto a sala estiver
+        // desconectada, impedindo o uso de qualquer outra aba. A escolha forçada é só
+        // no init() (spec §4.2: "força Conexão ao carregar").
     }
 
     function renderVu(peak) {
