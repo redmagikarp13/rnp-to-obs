@@ -70,6 +70,10 @@ def register_media_routes(app, get_state, get_frame):
     async def dock_script():
         return FileResponse(WEB_DIR / 'dock.js', media_type='text/javascript', headers={'Cache-Control': 'no-store'})
 
+    @app.get('/assets/ifes-logo.png')
+    async def ifes_logo():
+        return FileResponse(WEB_DIR / 'ifes-logo.png', media_type='image/png', headers={'Cache-Control': 'no-store'})
+
     @app.get('/assets/audio-mixer.js')
     async def mixer_script():
         return FileResponse(WEB_DIR / 'audio-mixer.js', media_type='text/javascript', headers={'Cache-Control': 'no-store'})

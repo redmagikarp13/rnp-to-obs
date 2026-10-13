@@ -139,6 +139,19 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400,
                          'Tema aposentado precisa ser rejeitado por /api/theme/set.')
 
+    def test_logo_ifes_servido_como_asset(self):
+        response = self.client.get('/assets/ifes-logo.png')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('image/png', response.headers['content-type'])
+
+    def test_logo_aparece_so_no_tema_ifes(self):
+        self.state.control_theme = 'ifes'
+        self.assertIn('ifes-logo.png', self.client.get('/control').text,
+                      'O logo institucional deve aparecer no tema Ifes.')
+        self.state.control_theme = 'broadcast'
+        self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
+                         'O logo Ifes não deve aparecer no tema broadcast.')
+
     def test_dock_tem_controle_de_sensibilidade_de_fala(self):
         # O ganho do microfone varia por sala/operador; o limiar precisa ser ajustável
         # sem editar config.json na mão.

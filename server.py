@@ -3247,6 +3247,12 @@ async def get_control_panel():
 
     sel_th_broadcast = "selected" if state.control_theme == "broadcast" else ""
     sel_th_ifes = "selected" if state.control_theme == "ifes" else ""
+    # Marca institucional só no tema Ifes; no broadcast o cabeçalho fica neutro.
+    ifes_logo = (
+        '<img src="/assets/ifes-logo.png" alt="Ifes" '
+        'title="Instituto Federal do Espírito Santo" '
+        'style="height: 30px; width: auto; margin-right: 9px; vertical-align: -9px;">'
+        if state.control_theme == "ifes" else '')
     chk_yt_auto_connect = "checked" if state.youtube_auto_connect else ""
 
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
@@ -3270,7 +3276,7 @@ async def get_control_panel():
 </head>
 <body class="theme-{state.control_theme}">
     <div class="header">
-        <h1><span>RNP to OBS</span> 🎛️</h1>
+        <h1>{ifes_logo}<span>RNP to OBS</span> 🎛️</h1>
         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <div class="header-theme-box" style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);">
                 <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">🎨 Estilo:</span>
