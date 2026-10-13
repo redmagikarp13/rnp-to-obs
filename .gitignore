@@ -47,6 +47,7 @@ page_dump.html
 *.lnk
 !app_icon.png
 !app_icon.ico
+!web/ifes-logo.png
 
 # IDE & Antigravity
 node_modules/
