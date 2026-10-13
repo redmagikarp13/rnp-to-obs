@@ -75,9 +75,6 @@
                     if (document.activeElement !== slider) slider.value = channel.volume ?? 1;
                     row.querySelector('[data-action=mute]').textContent = channel.muted ? 'Reativar áudio' : 'Silenciar';
                 }
-                const db = channel.peak > .0001 ? 20 * Math.log10(channel.peak) : -Infinity;
-                row.querySelector('.vu-fill-vertical').style.height = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%';
-                row.querySelector('output').textContent = Number.isFinite(db) ? db.toFixed(1) + ' dB' : '−∞ dB';
             }
         } catch (e) {
             for (const state of rows.values()) {state.row.remove();}
@@ -85,6 +82,27 @@
             if (placeholder) {placeholder.style.display = 'flex'; placeholder.textContent = e.message;}
         } finally {busy = false;}
     }
+    // Medidores por push: os picos por trilha chegam na cadência do sampler (60ms)
+    // via /ws/peaks_out, então o VU individual sobe em tempo real como o master.
+    // O poll de /api/media acima cuida apenas de estrutura, volume e mute.
+    function connectPeaks() {
+        const pws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/peaks_out');
+        pws.onmessage = (event) => {
+            let picos;
+            try { picos = JSON.parse(event.data); } catch (_) { return; }
+            for (const [id, peak] of Object.entries(picos)) {
+                const estado = rows.get(id);
+                if (!estado) continue;
+                const db = peak > .0001 ? 20 * Math.log10(peak) : -Infinity;
+                estado.row.querySelector('.vu-fill-vertical').style.height =
+                    Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%';
+                estado.row.querySelector('output').textContent =
+                    Number.isFinite(db) ? db.toFixed(1) + ' dB' : '−∞ dB';
+            }
+        };
+        pws.onclose = () => setTimeout(connectPeaks, 2000);
+    }
+    connectPeaks();
     setInterval(refresh, 500);
     refresh();
 })();

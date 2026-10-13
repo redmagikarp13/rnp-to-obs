@@ -140,6 +140,11 @@
         window._rnpAudioNodes = nodes;
         const ws = new WebSocket(url);
         ws.binaryType = 'arraybuffer';
+        // Canal de picos por trilha: empurra o peakHold de cada canal individual na
+        // cadência do sampler (60ms) para a ponte repassar à mesa do dock em tempo
+        // real. Sem isto o medidor individual ficaria refém de um poll de 500ms.
+        const pws = new WebSocket(url.replace('/ws/pcm_in', '/ws/peaks_in'));
+        pws.onerror = () => pws.close();
         proc.onaudioprocess = event => {
             if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000 * 4 / 4) {
                 ws.send(event.inputBuffer.getChannelData(0).buffer);
@@ -175,6 +180,7 @@
                 }
                 const control = window._rnpAudioControls?.[entry.id] || {};
                 node.gain.gain.setTargetAtTime(control.muted ? 0 : (control.volume ?? 1), ctx.currentTime, .01);
+                node.entryId = entry.id;
             }
         };
         window._rnpApplyAudioControls = scan;
@@ -194,11 +200,19 @@
                 node.lastPeakAt = now;
                 node.peakHold = Math.max(instant, node.peakHold * Math.exp(-dt / PEAK_TAU));
             }
+            if (pws.readyState === WebSocket.OPEN && nodes.size) {
+                const picos = {};
+                for (const node of nodes.values()) {
+                    if (node.entryId) picos[node.entryId] = +node.peakHold.toFixed(4);
+                }
+                pws.send(JSON.stringify(picos));
+            }
         };
         const peakInterval = setInterval(samplePeaks, 60);
         ws.onclose = () => {
             clearInterval(interval);
             clearInterval(peakInterval);
+            pws.close();
             for (const node of nodes.values()) {
                 node.input.disconnect(); node.gain.disconnect(); node.analyser.disconnect();
             }

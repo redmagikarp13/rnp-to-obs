@@ -4,6 +4,7 @@ import io
 import os
 import socket
 import struct
+import json
 import tempfile
 import time
 import unittest
@@ -884,6 +885,34 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
             samples = struct.unpack('<' + 'f' * (len(data) // 4), data)
             self.assertGreater(max(abs(v) for v in samples), .1)
         self.assertEqual(len(await self.producer.evaluate('() => RnpMedia.audioInfo()')), 2)
+
+    async def test_picos_individuais_sao_empurrados_por_websocket(self):
+        # O medidor individual não pode esperar um poll de 500ms: os picos por trilha
+        # devem ser EMPURRADOS na cadência do sampler (60ms) via /ws/peaks_in -> out.
+        await self.producer.evaluate('(url) => RnpMedia.startPcm(url)',
+                                     self.url.replace('http:', 'ws:') + '/ws/pcm_in')
+        await self.producer.wait_for_function("RnpMedia.audioInfo().every(a => a.peak > 0.05)", timeout=10000)
+        async with connect_websocket(self.url.replace('http:', 'ws:') + '/ws/peaks_out') as sock:
+            mensagem = await asyncio.wait_for(sock.recv(), timeout=3)
+        picos = json.loads(mensagem)
+        self.assertGreater(picos.get('audio-w_a', 0), 0.05,
+                           'O pico empurrado deve refletir a trilha tocando, não zerar.')
+
+    async def test_mesa_do_dock_atualiza_vu_por_push(self):
+        # A mesa individual deve assinar /ws/peaks_out e erguer o VU por push,
+        # independente do poll de /api/media (que só cuida de estrutura/volume/mute).
+        ws_urls = []
+        self.receiver.on('websocket', lambda ws: ws_urls.append(ws.url))
+        await self.producer.evaluate('(url) => RnpMedia.startPcm(url)',
+                                     self.url.replace('http:', 'ws:') + '/ws/pcm_in')
+        await self.producer.wait_for_function("RnpMedia.audioInfo().every(a => a.peak > 0.05)", timeout=10000)
+        await self.receiver.goto(self.url + '/control')
+        await self.receiver.wait_for_selector('[data-audio-id="audio-w_a"]', timeout=10000)
+        await self.receiver.wait_for_function(
+            "parseFloat(document.querySelector('[data-audio-id=audio-w_a] .vu-fill-vertical').style.height || '0') > 5",
+            timeout=5000)
+        self.assertTrue(any('/ws/peaks_out' in u for u in ws_urls),
+                        'A mesa precisa assinar o canal de picos empurrados.')
 
     async def test_mixer_controla_canal_real_sem_afetar_outro(self):
         await self.producer.evaluate('(url) => RnpMedia.startPcm(url)', self.url.replace('http:', 'ws:') + '/ws/pcm_in')

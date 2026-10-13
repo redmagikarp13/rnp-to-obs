@@ -231,6 +231,7 @@ class BridgeState:
         self.latest_camera_frames: Dict[str, bytes] = {}
         self.latest_presentation_frame: Optional[bytes] = None
         self.pcm_clients: Set[WebSocket] = set()
+        self.peaks_clients: Set[WebSocket] = set()
         self.last_speaker_map: Dict[str, bool] = {}
         self.audio_channels: List[dict] = []
         self.audio_controls: Dict[str, dict] = {}
@@ -1590,6 +1591,33 @@ async def ws_pcm_out(websocket: WebSocket):
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
         state.pcm_clients.discard(websocket)
+
+@app.websocket("/ws/peaks_in")
+async def ws_peaks_in(websocket: WebSocket):
+    # Picos por trilha empurrados pelo adaptador (media-source.js) na cadência do
+    # sampler (60ms). A ponte só repassa o pacote aos clientes da mesa do dock,
+    # sem interpretar: o medidor individual deixa de depender de poll de 500ms.
+    await websocket.accept()
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            for client in list(state.peaks_clients):
+                try:
+                    await client.send_text(msg)
+                except Exception:
+                    state.peaks_clients.discard(client)
+    except (WebSocketDisconnect, Exception):
+        pass
+
+@app.websocket("/ws/peaks_out")
+async def ws_peaks_out(websocket: WebSocket):
+    await websocket.accept()
+    state.peaks_clients.add(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except (WebSocketDisconnect, Exception):
+        state.peaks_clients.discard(websocket)
 
 # --------------------------------------------------------------------------
 # API REST
