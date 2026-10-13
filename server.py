@@ -89,7 +89,24 @@ app.add_middleware(
 CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'esticado')
 
 # Pico de áudio (0..1) acima do qual consideramos que o participante está falando.
-SPEAK_PEAK_THRESHOLD = 0.05
+# É configurável por sala/operador (campo `speak_peak_threshold` em config.json, ajustável
+# no dock) porque o ganho do microfone varia muito: medição ao vivo com um participante
+# real deu mediana 0,063 e piso de silêncio 0,0013 — o valor antigo 0,05 ficava exatamente
+# na mediana, então o indicador acendia em só metade das amostras de fala.
+DEFAULT_SPEAK_PEAK_THRESHOLD = 0.02
+SPEAK_PEAK_MIN = 0.005
+SPEAK_PEAK_MAX = 0.5
+
+
+def parse_speak_threshold(value):
+    """Devolve o limiar como float dentro da faixa, ou None se inválido."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not (SPEAK_PEAK_MIN <= parsed <= SPEAK_PEAK_MAX):
+        return None
+    return parsed
 
 # Temas do dock /control. `hardware`, `nordic`, `glass` e `obsidian` foram aposentados no
 # redesign de 2026-10; configs antigos migram para o padrão em vez de quebrar.
@@ -112,6 +129,7 @@ DEFAULT_CONFIG = {
     "camera_name_style": "glass",
     "grid_layout_mode": "auto",
     "camera_format": "original",
+    "speak_peak_threshold": DEFAULT_SPEAK_PEAK_THRESHOLD,
     "stage_preset": "side-by-side",
     "libras_size": "equal",
     "libras_auto_detect": True,
@@ -234,6 +252,9 @@ class BridgeState:
         self.camera_name_style: str = cfg.get("camera_name_style", "glass")
         _fmt = cfg.get("camera_format", "original")
         self.camera_format: str = _fmt if _fmt in CAMERA_FORMATS else "original"
+        _limiar = parse_speak_threshold(cfg.get("speak_peak_threshold"))
+        self.speak_peak_threshold: float = (
+            _limiar if _limiar is not None else DEFAULT_SPEAK_PEAK_THRESHOLD)
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
         self.custom_camera_names: Dict[str, str] = cfg.get("custom_camera_names", {})
@@ -325,6 +346,7 @@ class BridgeState:
             "show_camera_names": self.show_camera_names,
             "camera_name_style": self.camera_name_style,
             "camera_format": self.camera_format,
+            "speak_peak_threshold": self.speak_peak_threshold,
             "grid_layout_mode": self.grid_layout_mode,
             "stage_preset": self.stage_preset,
             "libras_size": self.libras_size,
@@ -1005,6 +1027,9 @@ async def sync_loop():
             state.youtube = cam_data.get('youtube')
 
             # Fala por pico real do microfone (independe dos indicadores de DOM do BBB).
+            # O limiar vem do estado, não de constante: cada sala/operador tem um ganho
+            # de microfone diferente e o dock permite ajustar em runtime.
+            limiar_fala = state.speak_peak_threshold
             peaks = {}
             for a in cam_data.get('audio', []):
                 pid = a.get('participant_id')
@@ -1012,7 +1037,7 @@ async def sync_loop():
                     peaks[pid] = max(peaks.get(pid, 0.0), float(a.get('peak') or 0.0))
             for cam in cam_data['cameras']:
                 pid = cam.get('participant_id')
-                if pid and peaks.get(pid, 0.0) > SPEAK_PEAK_THRESHOLD:
+                if pid and peaks.get(pid, 0.0) > limiar_fala:
                     cam['is_speaking'] = True
             cam_pids = {c.get('participant_id') for c in cam_data['cameras'] if c.get('participant_id')}
             state.voice_speakers = [
@@ -1020,7 +1045,7 @@ async def sync_loop():
                 for a in cam_data.get('audio', [])
                 if a.get('participant_id')
                 and not str(a.get('id', '')).startswith('screen-audio-')
-                and float(a.get('peak') or 0.0) > SPEAK_PEAK_THRESHOLD
+                and float(a.get('peak') or 0.0) > limiar_fala
                 and a['participant_id'] not in cam_pids
             ]
 
@@ -1719,6 +1744,16 @@ async def api_debug_screenshot():
 @app.post("/api/grid/config")
 async def api_grid_config(req: Request):
     data = await req.json()
+    # Valida antes de mutar qualquer campo: um valor inválido não pode deixar metade
+    # do payload aplicada e a outra metade salva em disco.
+    if "speak_peak_threshold" in data:
+        limiar = parse_speak_threshold(data["speak_peak_threshold"])
+        if limiar is None:
+            return JSONResponse(
+                {"status": "error",
+                 "message": f"speak_peak_threshold deve ser um número entre {SPEAK_PEAK_MIN} e {SPEAK_PEAK_MAX}"},
+                status_code=400)
+        data["speak_peak_threshold"] = limiar
     if "focused_camera_id" in data:
         state.focused_camera_id = str(data["focused_camera_id"]) if data["focused_camera_id"] is not None else None
     if "pinned_camera_ids" in data:
@@ -1737,6 +1772,8 @@ async def api_grid_config(req: Request):
         fmt = str(data["camera_format"])
         if fmt in CAMERA_FORMATS:
             state.camera_format = fmt
+    if "speak_peak_threshold" in data:
+        state.speak_peak_threshold = data["speak_peak_threshold"]
     if "stage_preset" in data:
         state.stage_preset = data["stage_preset"]
     if "custom_name" in data and "cam_id" in data:
@@ -1877,6 +1914,7 @@ async def api_status():
             "webrtc_only": state.webrtc_only,
             "youtube": state.youtube,
             "voice_speakers": state.voice_speakers,
+            "speak_peak_threshold": state.speak_peak_threshold,
             "focused_camera_id": state.focused_camera_id,
             "pinned_camera_ids": state.pinned_camera_ids,
             "libras_camera_ids": state.libras_camera_ids,
@@ -3601,6 +3639,27 @@ async def get_control_panel():
             <span class="badge connected" style="font-size: 11px;">OBS: /stage</span>
         </div>
 
+        <!-- SENSIBILIDADE DA DETECÇÃO DE FALA -->
+        <div style="background: rgba(56, 189, 248, 0.07); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 8px; padding: 9px 12px; margin-bottom: 12px;">
+            <label for="speakThreshold" style="display: block; font-size: 11.5px; font-weight: 700; color: #cbd5e1; margin-bottom: 5px;">
+                Sensibilidade da detecção de fala
+            </label>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <input type="number" id="speakThreshold" min="0.005" max="0.5" step="0.005"
+                       value="{state.speak_peak_threshold}" onchange="saveSpeakThreshold(this)"
+                       style="width: 96px;">
+                <span id="speakThresholdHint" style="font-size: 11px; color: #94a3b8;">
+                    Pico mínimo do microfone (0,005 a 0,5) para marcar alguém como falando.
+                </span>
+            </div>
+            <div style="font-size: 10.5px; color: #94a3b8; margin-top: 6px; line-height: 1.55;">
+                O indicador acende pouco enquanto a pessoa fala? <strong>Baixe</strong> o valor.
+                Acende sozinho com ruído da sala? <strong>Aumente</strong>.
+                Referência medida em sala real: silêncio ≈ 0,001 · fala ≈ 0,02 a 0,15.
+                Vale para o indicador na name-tag e para os chips de voz de quem fala sem câmera.
+            </div>
+        </div>
+
         <!-- MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS -->
         <div class="audio-mixer-rack" id="audioMixerRack">
             <!-- CANAL MASTER (GERAL) -->
@@ -4086,6 +4145,38 @@ async def get_control_panel():
                 body: JSON.stringify(payload)
             }});
             showSaveNotice();
+        }}
+
+        // Handler dedicado: posta na rota que VALIDA o limiar (/api/grid/config) e, ao
+        // contrário de autoSaveField, confere response.ok antes de sinalizar sucesso —
+        // falha de gravação não pode fingir que salvou (spec §6).
+        async function saveSpeakThreshold(el) {{
+            const hint = document.getElementById('speakThresholdHint');
+            try {{
+                const res = await fetch('/api/grid/config', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ speak_peak_threshold: parseFloat(el.value) }})
+                }});
+                if (!res.ok) {{
+                    const corpo = await res.json().catch(() => ({{}}));
+                    throw new Error(corpo.message || ('HTTP ' + res.status));
+                }}
+                if (hint) hint.textContent = 'Aplicado — vale para o indicador de fala e para os chips de voz.';
+                showSaveNotice();
+            }} catch (erro) {{
+                if (hint) {{
+                    hint.textContent = 'Não aplicado: ' + erro.message;
+                    hint.style.color = '#f87171';
+                }}
+                // Reverte para o valor que continua valendo no servidor.
+                try {{
+                    const st = await (await fetch('/api/status?t=' + Date.now())).json();
+                    if (st && st.speak_peak_threshold != null) el.value = st.speak_peak_threshold;
+                }} catch (_) {{}}
+                return;
+            }}
+            if (hint) hint.style.color = '';
         }}
 
         async function saveAllConfigurations() {{

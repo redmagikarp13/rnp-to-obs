@@ -566,6 +566,35 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
+    async def test_limiar_de_fala_vem_do_estado_nao_da_constante(self):
+        # O ganho do microfone muda por sala e por operador; o limiar precisa ser
+        # ajustável em runtime. Aqui o tom do fixture tem pico ~1.0, então um limiar
+        # acima disso prova que o sync_loop está lendo o estado.
+        await self.producer.evaluate('(url) => RnpMedia.startPcm(url)', self.url.replace('http:', 'ws:') + '/ws/pcm_in')
+        await self.producer.wait_for_function("RnpMedia.audioInfo().every(a => a.peak > 0.5)", timeout=10000)
+        self.state.speak_peak_threshold = 1.5
+        task = asyncio.create_task(server.sync_loop())
+        try:
+            for _ in range(60):
+                if len(self.state.cameras_list) == 2:
+                    break
+                await asyncio.sleep(.1)
+            self.assertEqual(len(self.state.cameras_list), 2)
+            self.assertFalse(any(c.get('is_speaking') for c in self.state.cameras_list),
+                             'Com limiar acima do pico real, ninguém pode ser marcado como falando.')
+            self.assertEqual(self.state.voice_speakers, [],
+                             'Chip de voz também deve respeitar o limiar configurado.')
+            self.state.speak_peak_threshold = 0.001
+            for _ in range(60):
+                if all(c.get('is_speaking') for c in self.state.cameras_list):
+                    break
+                await asyncio.sleep(.1)
+            self.assertTrue(all(c.get('is_speaking') for c in self.state.cameras_list),
+                            'Com limiar baixo, o mesmo pico real deve marcar fala.')
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
     async def test_pico_de_fala_decai_suavemente_ao_silenciar(self):
         # O pico instantâneo (~42ms) some entre sílabas e faz o indicador piscar.
         # audioInfo() precisa segurar o pico recente e decair suavemente.

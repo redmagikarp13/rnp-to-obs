@@ -139,6 +139,43 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400,
                          'Tema aposentado precisa ser rejeitado por /api/theme/set.')
 
+    def test_dock_tem_controle_de_sensibilidade_de_fala(self):
+        # O ganho do microfone varia por sala/operador; o limiar precisa ser ajustável
+        # sem editar config.json na mão.
+        html = self.client.get('/control').text
+        campo = re.search(r'<input[^>]*id="speakThreshold"[^>]*>', html)
+        self.assertIsNotNone(campo, 'O dock precisa expor o limiar de detecção de fala.')
+        attrs = campo.group(0)
+        self.assertIn('value="0.02"', attrs, 'Deve refletir o valor vigente do estado.')
+        self.assertIn('min="0.005"', attrs)
+        self.assertIn('max="0.5"', attrs)
+        self.assertIn('saveSpeakThreshold', html,
+                      'Handler dedicado: autoSaveField posta em /api/config/save, que não valida o limiar.')
+
+    def test_limiar_de_fala_tem_default_e_persiste(self):
+        self.assertEqual(server.DEFAULT_CONFIG['speak_peak_threshold'], 0.02,
+                         '0,05 ficava na mediana de fala de um microfone real (medido ao vivo).')
+        self.assertEqual(self.state.speak_peak_threshold, 0.02)
+        response = self.client.post('/api/grid/config', json={'speak_peak_threshold': 0.01})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.state.speak_peak_threshold, 0.01)
+        self.assertEqual(self.client.get('/api/status').json()['speak_peak_threshold'], 0.01)
+        self.assertEqual(self.state.export_config()['speak_peak_threshold'], 0.01,
+                         'O limiar precisa persistir em config.json.')
+
+    def test_limiar_de_fala_rejeita_valor_invalido(self):
+        self.state.speak_peak_threshold = 0.02
+        for invalido in (0, -0.1, 0.6, 5, 'abc', None):
+            response = self.client.post('/api/grid/config', json={'speak_peak_threshold': invalido})
+            self.assertEqual(response.status_code, 400, f'{invalido!r} deveria ser rejeitado.')
+            self.assertEqual(self.state.speak_peak_threshold, 0.02,
+                             f'{invalido!r} não pode alterar o limiar vigente.')
+        # Limites válidos inclusive.
+        for valido in (0.005, 0.5):
+            self.assertEqual(
+                self.client.post('/api/grid/config', json={'speak_peak_threshold': valido}).status_code,
+                200, f'{valido} está dentro da faixa e deveria ser aceito.')
+
     def test_seletor_de_tema_do_dock_oferece_so_temas_validos(self):
         # /api/theme/set só aceita CONTROL_THEMES. Um seletor que ainda oferece temas
         # aposentados leva o operador a escolher algo que falha com 400 — e o JS legado
