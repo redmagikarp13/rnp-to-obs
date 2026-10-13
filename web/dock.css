@@ -81,3 +81,103 @@ body.theme-ifes {
     --accent-top-width: 3px;
     --label-weight: 800;
 }
+
+/* ==========================================================================
+   CAMADA DE COMPONENTES
+   Estiliza os componentes do dock consumindo SOMENTE tokens. Fica depois do
+   CSS legado (CONTROL_PANEL_CSS) na cascata, então vence por ordem — sem
+   !important. Quando a Task 4 apagar o legado, esta camada vira a única fonte.
+   ========================================================================== */
+
+body {
+    background: var(--bg);
+    color: var(--text);
+}
+
+h1, .header h1 { color: var(--text); }
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: var(--accent-top-width) solid var(--accent-top);
+    border-radius: var(--radius);
+}
+
+.section-title {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--label-tracking);
+    font-size: var(--label-size);
+    font-weight: var(--label-weight);
+}
+
+label, .input-group label {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+input[type="text"], input[type="email"], input[type="number"], select {
+    background: var(--surface-inset);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+}
+input[type="text"]:focus, input[type="email"]:focus, input[type="number"]:focus, select:focus {
+    border-color: var(--text-muted);
+}
+input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
+
+.btn, .btn-ctrl, .btn-copy, .channel-btn-copy, .poll-opt-btn {
+    background: var(--primary);
+    border: 1px solid var(--primary-border);
+    color: var(--primary-text);
+    border-radius: var(--radius-sm);
+}
+.btn-ctrl:hover, .btn-copy:hover, .channel-btn-copy:hover, .poll-opt-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+.btn-ctrl.active-focus {
+    background: var(--danger-surface);
+    border-color: var(--danger-border);
+    color: #ffffff;
+}
+.btn-ctrl.active-pin, .btn-ctrl.active-libras, .btn-ctrl.active-preset {
+    background: var(--ok);
+    border-color: var(--ok);
+    color: #ffffff;
+}
+.btn-primary, .btn-success {
+    background: var(--ok);
+    border-color: var(--ok);
+    color: #ffffff;
+}
+.btn-danger {
+    background: var(--danger-surface);
+    border-color: var(--danger-border);
+    color: #ffffff;
+}
+
+.badge { background: var(--surface-2); color: var(--text-muted); }
+.badge.connected { background: var(--ok); color: #ffffff; }
+.badge.disconnected { background: var(--danger); color: #ffffff; }
+.badge.connecting { background: var(--warn); color: #1a1a1a; }
+
+.log-box, .mod-box, .thumb-box, .source-tag {
+    background: var(--surface-inset);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+
+/* Rack de áudio e listas: superfícies aninhadas em tokens. */
+.audio-mixer-rack, .chat-manager-list, .poll-progress-bg {
+    background: var(--surface-inset);
+    border: 1px solid var(--border);
+}
+.audio-channel-strip, .chat-msg-row, .poll-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+}
+.channel-title, .poll-question { color: var(--text); }
+.channel-tag, .meter-db-readout, .mod-title { color: var(--text-muted); }

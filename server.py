@@ -2779,403 +2779,6 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
    ========================================================================== */
 
 /* 1. 🎛️ STUDIO MASTER / HARDWARE CONSOLE (Default) */
-body.theme-hardware {
-    background: #101318 !important;
-    color: #e2e8f0;
-}
-body.theme-hardware .card {
-    background: #171a21 !important;
-    border: 1px solid #282f3d !important;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.6);
-}
-body.theme-hardware .section-title {
-    color: #f1f5f9 !important;
-    font-family: 'JetBrains Mono', 'Outfit', monospace;
-    font-size: 13px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-}
-body.theme-hardware .btn-primary {
-    background: linear-gradient(180deg, #242a36 0%, #171b23 100%) !important;
-    border: 1px solid #3b4559 !important;
-    border-bottom: 2.5px solid #0d1015 !important;
-    color: #38bdf8 !important;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
-}
-body.theme-hardware .btn-primary:hover {
-    background: linear-gradient(180deg, #2d3545 0%, #1e2430 100%) !important;
-    color: #7dd3fc !important;
-}
-body.theme-hardware .btn-ctrl {
-    background: #12151c !important;
-    border: 1px solid #2a3140 !important;
-    border-bottom: 2px solid #0b0d12 !important;
-    color: #94a3b8 !important;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-}
-body.theme-hardware .btn-ctrl:hover {
-    color: #f8fafc !important;
-    border-color: #475569 !important;
-}
-body.theme-hardware .btn-ctrl.active-focus {
-    background: #1a1e27 !important;
-    border-color: #f59e0b !important;
-    color: #fbbf24 !important;
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
-}
-body.theme-hardware .btn-ctrl.active-pin {
-    background: #1a1e27 !important;
-    border-color: #10b981 !important;
-    color: #34d399 !important;
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
-}
-body.theme-hardware .btn-ctrl.active-libras {
-    background: #1a1e27 !important;
-    border-color: #06b6d4 !important;
-    color: #22d3ee !important;
-    box-shadow: 0 0 12px rgba(6, 182, 212, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
-}
-body.theme-hardware .btn-ctrl.active-preset {
-    background: #1a1e27 !important;
-    border-color: #38bdf8 !important;
-    color: #38bdf8 !important;
-    box-shadow: 0 0 12px rgba(56, 189, 248, 0.4), inset 0 1px 3px rgba(0,0,0,0.8);
-}
-body.theme-hardware input[type="text"], body.theme-hardware input[type="email"], body.theme-hardware select {
-    background: #12151c !important;
-    border: 1px solid #282f3d !important;
-    color: #f1f5f9 !important;
-}
-
-/* 2. 🌿 NORDIC MINIMAL / WARM SLATE & CLAY */
-body.theme-nordic {
-    background: #141518 !important;
-    color: #e6e2dd;
-}
-body.theme-nordic .card {
-    background: #1b1d22 !important;
-    border: 1px solid rgba(244, 241, 222, 0.08) !important;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-    border-radius: 14px !important;
-}
-body.theme-nordic .section-title {
-    color: #f4f1de !important;
-    font-weight: 700;
-}
-body.theme-nordic .btn-primary {
-    background: #e07a5f !important;
-    color: #ffffff !important;
-    border-radius: 10px !important;
-}
-body.theme-nordic .btn-primary:hover {
-    background: #d46b50 !important;
-}
-body.theme-nordic .btn-ctrl {
-    background: #23262d !important;
-    border: 1px solid rgba(244, 241, 222, 0.08) !important;
-    color: #d1cbc1 !important;
-    border-radius: 9px !important;
-}
-body.theme-nordic .btn-ctrl.active-focus {
-    background: #e07a5f !important;
-    color: #ffffff !important;
-    border-color: #e07a5f !important;
-    box-shadow: 0 4px 14px rgba(224, 122, 95, 0.4);
-}
-body.theme-nordic .btn-ctrl.active-pin {
-    background: #81b29a !important;
-    color: #141518 !important;
-    border-color: #81b29a !important;
-    box-shadow: 0 4px 14px rgba(129, 178, 154, 0.4);
-}
-body.theme-nordic .btn-ctrl.active-libras {
-    background: #3d5a80 !important;
-    color: #ffffff !important;
-    border-color: #3d5a80 !important;
-    box-shadow: 0 4px 14px rgba(61, 90, 128, 0.4);
-}
-body.theme-nordic .btn-ctrl.active-preset {
-    background: #81b29a !important;
-    color: #141518 !important;
-    border-color: #81b29a !important;
-    box-shadow: 0 4px 14px rgba(129, 178, 154, 0.4);
-}
-body.theme-nordic input[type="text"], body.theme-nordic input[type="email"], body.theme-nordic select {
-    background: #23262d !important;
-    border: 1px solid rgba(244, 241, 222, 0.1) !important;
-    color: #f4f1de !important;
-    border-radius: 9px !important;
-}
-
-/* 3. 📺 BROADCAST TITANIUM / CLEAN GLASS PRO */
-body.theme-glass {
-    background: #0b1120 !important;
-    color: #f8fafc;
-}
-body.theme-glass .card {
-    background: rgba(15, 23, 42, 0.88) !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(56, 189, 248, 0.25) !important;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-}
-body.theme-glass .section-title {
-    color: #38bdf8 !important;
-}
-body.theme-glass .btn-primary {
-    background: #38bdf8 !important;
-    color: #0f172a !important;
-    box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
-}
-
-/* 4. ⬛ CYBER OBSIDIAN / DEEP MONOLITH */
-body.theme-obsidian {
-    background: #050507 !important;
-    color: #f4f4f5;
-}
-body.theme-obsidian .card {
-    background: #0c0d11 !important;
-    border: 1px solid #22252e !important;
-    border-radius: 6px !important;
-    box-shadow: none !important;
-}
-body.theme-obsidian .section-title {
-    color: #ffffff !important;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-body.theme-obsidian .btn-primary {
-    background: #22c55e !important;
-    color: #050507 !important;
-    border-radius: 4px !important;
-    font-weight: 900;
-}
-body.theme-obsidian .btn-ctrl {
-    background: #111318 !important;
-    border: 1px solid #27272a !important;
-    border-radius: 4px !important;
-    color: #a1a1aa !important;
-}
-body.theme-obsidian .btn-ctrl.active-focus {
-    background: #eab308 !important;
-    color: #000000 !important;
-    border-color: #eab308 !important;
-}
-body.theme-obsidian .btn-ctrl.active-pin {
-    background: #22c55e !important;
-    color: #000000 !important;
-    border-color: #22c55e !important;
-}
-body.theme-obsidian .btn-ctrl.active-libras {
-    background: #06b6d4 !important;
-    color: #000000 !important;
-    border-color: #06b6d4 !important;
-}
-body.theme-obsidian .btn-ctrl.active-preset {
-    background: #ffffff !important;
-    color: #000000 !important;
-    border-color: #ffffff !important;
-}
-body.theme-obsidian input[type="text"], body.theme-obsidian input[type="email"], body.theme-obsidian select {
-    background: #0d0e12 !important;
-    border: 1px solid #27272a !important;
-    border-radius: 4px !important;
-    color: #ffffff !important;
-}
-
-/* 5. 🏛️ INSTITUTO FEDERAL (IF CLEAN / IFES - BRANCO, VERDE E VERMELHO) */
-body.theme-ifes {
-    background: #f1f5f9 !important;
-    color: #0f172a !important;
-}
-body.theme-ifes .card {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-top: 3.5px solid #15803d !important;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04) !important;
-    border-radius: 12px !important;
-}
-body.theme-ifes .section-title {
-    color: #15803d !important;
-    font-weight: 800;
-    font-size: 13.5px;
-    letter-spacing: -0.2px;
-}
-body.theme-ifes .section-title span {
-    color: #15803d !important;
-}
-body.theme-ifes .btn-primary {
-    background: linear-gradient(135deg, #15803d 0%, #16a34a 100%) !important;
-    color: #ffffff !important;
-    border: 1px solid #166534 !important;
-    font-weight: 800 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25) !important;
-}
-body.theme-ifes .btn-primary:hover {
-    background: linear-gradient(135deg, #166534 0%, #15803d 100%) !important;
-    box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35) !important;
-    transform: translateY(-1px);
-}
-body.theme-ifes .btn-danger {
-    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%) !important;
-    color: #ffffff !important;
-    border: 1px solid #b91c1c !important;
-    font-weight: 800 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important;
-}
-body.theme-ifes .btn-danger:hover {
-    background: linear-gradient(135deg, #b91c1c 0%, #dc2626 100%) !important;
-    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
-}
-body.theme-ifes .btn-ctrl {
-    background: #f8fafc !important;
-    border: 1px solid #cbd5e1 !important;
-    color: #334155 !important;
-    border-radius: 8px !important;
-    font-weight: 600;
-}
-body.theme-ifes .btn-ctrl:hover {
-    background: #f0fdf4 !important;
-    border-color: #16a34a !important;
-    color: #15803d !important;
-}
-body.theme-ifes .btn-ctrl.active-focus {
-    background: #dc2626 !important;
-    color: #ffffff !important;
-    border-color: #b91c1c !important;
-    box-shadow: 0 2px 10px rgba(220, 38, 38, 0.3) !important;
-}
-body.theme-ifes .btn-ctrl.active-pin {
-    background: #15803d !important;
-    color: #ffffff !important;
-    border-color: #166534 !important;
-    box-shadow: 0 2px 10px rgba(22, 163, 74, 0.3) !important;
-}
-body.theme-ifes .btn-ctrl.active-libras {
-    background: #0284c7 !important;
-    color: #ffffff !important;
-    border-color: #0369a1 !important;
-    box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3) !important;
-}
-body.theme-ifes .btn-ctrl.active-preset {
-    background: #15803d !important;
-    color: #ffffff !important;
-    border-color: #166534 !important;
-    box-shadow: 0 2px 10px rgba(22, 163, 74, 0.3) !important;
-}
-body.theme-ifes input[type="text"], 
-body.theme-ifes input[type="email"], 
-body.theme-ifes select {
-    background: #ffffff !important;
-    border: 1.5px solid #cbd5e1 !important;
-    color: #0f172a !important;
-    border-radius: 8px !important;
-}
-body.theme-ifes input[type="text"]:focus, 
-body.theme-ifes input[type="email"]:focus, 
-body.theme-ifes select:focus {
-    border-color: #15803d !important;
-    box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15) !important;
-    outline: none;
-}
-body.theme-ifes label {
-    color: #475569 !important;
-    font-weight: 600;
-}
-body.theme-ifes .log-box {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #15803d !important;
-    font-weight: 600;
-}
-body.theme-ifes .source-health-pill {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #0f172a !important;
-}
-body.theme-ifes .audio-monitor-bar, body.theme-ifes #audioDockCard {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.04) !important;
-}
-body.theme-ifes .audio-mixer-rack { background: #f8fafc !important; border-color: #cbd5e1 !important; }
-body.theme-ifes .audio-channel-strip { background: #ffffff !important; border-color: #e2e8f0 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important; }
-body.theme-ifes .audio-channel-strip.master-channel { background: #f0fdf4 !important; border-color: #86efac !important; }
-body.theme-ifes .audio-channel-strip.speaking-active { border-color: #16a34a !important; box-shadow: 0 0 16px rgba(22, 163, 74, 0.3) !important; }
-body.theme-ifes .channel-voice-badge.speaking { background: #16a34a !important; color: #ffffff !important; }
-body.theme-ifes .channel-voice-badge.muted { background: rgba(239, 68, 68, 0.15) !important; color: #dc2626 !important; }
-body.theme-ifes .channel-voice-badge.open { background: rgba(14, 165, 233, 0.15) !important; color: #0284c7 !important; }
-body.theme-ifes .channel-title { color: #0f172a !important; }
-body.theme-ifes .channel-tag { color: #475569 !important; background: #f1f5f9 !important; }
-body.theme-ifes .vu-track-vertical { background: #e2e8f0 !important; border-color: #cbd5e1 !important; }
-body.theme-ifes .channel-btn-copy { background: rgba(21, 128, 61, 0.1) !important; border-color: rgba(21, 128, 61, 0.3) !important; color: #15803d !important; }
-body.theme-ifes .channel-btn-copy:hover { background: #15803d !important; color: #ffffff !important; }
-body.theme-ifes .meter-db-readout { color: #15803d !important; }
-body.theme-ifes .audio-monitor-controls-bar {
-    background: #f1f5f9 !important;
-    border: 1px solid #e2e8f0 !important;
-}
-body.theme-ifes .audio-monitor-controls-bar span,
-body.theme-ifes .audio-monitor-controls-bar div {
-    color: #334155 !important;
-}
-body.theme-ifes #btnMuteMonitor {
-    background: #ffffff !important;
-    color: #1e293b !important;
-    border-color: #cbd5e1 !important;
-}
-body.theme-ifes .btn-copy {
-    background: #f0fdf4 !important;
-    border-color: #86efac !important;
-    color: #15803d !important;
-}
-body.theme-ifes .btn-copy:hover {
-    background: #dcfce7 !important;
-    border-color: #4ade80 !important;
-}
-body.theme-ifes .badge {
-    background: #f1f5f9 !important;
-    border-color: #cbd5e1 !important;
-    color: #475569 !important;
-}
-body.theme-ifes .badge.connected {
-    background: #f0fdf4 !important;
-    border-color: #22c55e !important;
-    color: #15803d !important;
-}
-body.theme-ifes .badge.disconnected {
-    background: #fef2f2 !important;
-    border-color: #ef4444 !important;
-    color: #dc2626 !important;
-}
-body.theme-ifes #shieldBadge {
-    background: #eff6ff !important;
-    border-color: #93c5fd !important;
-    color: #1d4ed8 !important;
-}
-body.theme-ifes h1 {
-    color: #0f172a !important;
-}
-body.theme-ifes h1 span {
-    color: #15803d !important;
-}
-body.theme-ifes .header-theme-box {
-    background: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
-}
-body.theme-ifes #selControlTheme {
-    color: #0f172a !important;
-}
-body.theme-ifes .poll-question {
-    color: #0f172a !important;
-}
-body.theme-ifes .obs-grid-preview-box {
-    background: #f8fafc !important;
-    border-color: #e2e8f0 !important;
-}
 """
 
 # --------------------------------------------------------------------------
@@ -3252,7 +2855,7 @@ async def get_control_panel():
     ifes_logo = (
         '<img src="/assets/ifes-logo.png" alt="Ifes" '
         'title="Instituto Federal do Espírito Santo" '
-        'style="height: 30px; width: auto; margin-left: 9px; vertical-align: -9px;">'
+        'style="height: 30px; width: auto; margin-left: 9px; vertical-align: -9px">'
         if state.control_theme == "ifes" else '')
     chk_yt_auto_connect = "checked" if state.youtube_auto_connect else ""
 
@@ -3278,34 +2881,34 @@ async def get_control_panel():
 <body class="theme-{state.control_theme}">
     <div class="header">
         <h1><span>RNP to OBS</span>{ifes_logo}</h1>
-        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-            <div class="header-theme-box" style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);">
-                <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">🎨 Estilo:</span>
-                <select id="selControlTheme" onchange="changeControlTheme(this.value)" style="width: auto; padding: 2px 6px; font-size: 11.5px; font-weight: 700; background: transparent; border: none; cursor: pointer; color: #f8fafc;">
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+            <div class="header-theme-box" style="display: flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 8px; border: 1px solid">
+                <span style="font-size: 11px; font-weight: 700">🎨 Estilo:</span>
+                <select id="selControlTheme" onchange="changeControlTheme(this.value)" style="width: auto; padding: 2px 6px; font-size: 11.5px; font-weight: 700; border: none; cursor: pointer">
                     <option value="broadcast" {sel_th_broadcast}>Broadcast (padrão)</option>
                     <option value="ifes" {sel_th_ifes}>Ifes (papel quente)</option>
                 </select>
             </div>
-            <div id="saveToast" class="badge" style="display:none; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">💾 Salvo!</div>
-            <div id="shieldBadge" class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">🛡️ Anti-Inatividade</div>
+            <div id="saveToast" class="badge" style="display:none; border: 1px solid">💾 Salvo!</div>
+            <div id="shieldBadge" class="badge" style="border: 1px solid">🛡️ Anti-Inatividade</div>
             <div id="statusBadge" class="badge disconnected">● Desconectado</div>
-            <button onclick="handleExitApplication()" class="btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.5); color: #f87171; font-weight: 700; font-size: 11px; padding: 3px 9px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="Desconectar da sala e encerrar o servidor e aplicativo">
+            <button onclick="handleExitApplication()" class="btn btn-danger" style="font-weight: 700; font-size: 11px; padding: 3px 9px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px" title="Desconectar da sala e encerrar o servidor e aplicativo">
                 <span>🔴 Encerrar Aplicativo</span>
             </button>
         </div>
     </div>
 
     <!-- MONITOR ATIVO DE FONTES & CONEXÃO (LIVE HEALTH MONITOR) -->
-    <div class="card" style="background: rgba(15, 23, 42, 0.85); border-color: rgba(56, 189, 248, 0.35); padding: 10px 14px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #38bdf8; font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+    <div class="card" style="padding: 10px 14px">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+            <span style="font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px">
                 <span class="live-pulse-dot"></span>
                 <span>Monitor de Fontes em Tempo Real</span>
             </span>
-            <span id="healthHeartbeat" style="font-size: 10.5px; color: #94a3b8; font-family: monospace;">● Ativo (500ms)</span>
+            <span id="healthHeartbeat" style="font-size: 10.5px; font-family: monospace">● Ativo (500ms)</span>
         </div>
 
-        <div class="sources-health-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px;">
+        <div class="sources-health-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px">
             <div class="source-health-pill" id="healthPillRnp">
                 <span class="pill-dot disconnected" id="dotRnp"></span>
                 <div class="pill-info">
@@ -3356,97 +2959,97 @@ async def get_control_panel():
         </div>
         
         <!-- BANNER DE EVENTO / NOTIFICAÇÃO AO VIVO (EX: NOVA CÂMERA ENTROU / SAIU) -->
-        <div id="liveSourceEventBanner" style="display: none; margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px;"></div>
+        <div id="liveSourceEventBanner" style="display: none; margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px"></div>
     </div>
 
     <!-- SALVAR / CARREGAR CONFIGURAÇÕES -->
-    <div class="card" style="background: rgba(15, 23, 42, 0.75); border-color: rgba(56, 189, 248, 0.2);">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+    <div class="card" >
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
             <div>
-                <strong style="color: #38bdf8; font-size: 13px;">💾 Memória & Persistência</strong>
-                <p style="font-size: 11px; color: #94a3b8;">Salvo em disco e restaurado no F5.</p>
+                <strong style="font-size: 13px">💾 Memória & Persistência</strong>
+                <p style="font-size: 11px">Salvo em disco e restaurado no F5.</p>
             </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn btn-success" style="padding: 5px 10px; font-size: 11.5px;" onclick="saveAllConfigurations()">💾 Salvar</button>
-                <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px;" onclick="loadAllConfigurations()">📂 Recarregar</button>
-                <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px;" onclick="resetAllConfigurations()">🔄 Padrões</button>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button class="btn btn-success" style="padding: 5px 10px; font-size: 11.5px" onclick="saveAllConfigurations()">💾 Salvar</button>
+                <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px" onclick="loadAllConfigurations()">📂 Recarregar</button>
+                <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px" onclick="resetAllConfigurations()">🔄 Padrões</button>
             </div>
         </div>
     </div>
 
     <!-- 🔗 CENTRAL DE FONTES DO OBS STUDIO (LINKS RÁPIDOS PARA MONTAR AS CENAS) -->
-    <div class="card" style="background: rgba(15, 23, 42, 0.9); border-color: rgba(99, 102, 241, 0.45); padding: 12px 14px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 16px;">🔗</span>
+    <div class="card" style="padding: 12px 14px">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px">
+            <div style="display: flex; align-items: center; gap: 8px">
+                <span style="font-size: 16px">🔗</span>
                 <div>
-                    <strong style="color: #a5b4fc; font-size: 13px;">Fontes para o OBS Studio (Montagem Prévia de Cenas)</strong>
-                    <div style="font-size: 11px; color: #94a3b8;">Copie os links abaixo e adicione no OBS como <strong>Navegador (Browser Source)</strong> a qualquer momento:</div>
+                    <strong style="font-size: 13px">Fontes para o OBS Studio (Montagem Prévia de Cenas)</strong>
+                    <div style="font-size: 11px">Copie os links abaixo e adicione no OBS como <strong>Navegador (Browser Source)</strong> a qualquer momento:</div>
                 </div>
             </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px">
             <!-- Enquete -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #10b981;" onclick="copyUrl('/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
-                <span style="font-size: 18px; margin-right: 6px;">📊</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Enquete / Votação</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/poll (1920x1080)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
+                <span style="font-size: 18px; margin-right: 6px">📊</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Enquete / Votação</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/poll (1920x1080)</div>
                 </div>
             </button>
 
             <!-- Palco Composto -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(168, 85, 247, 0.15); border-color: #c084fc; color: #c084fc;" onclick="copyUrl('/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
-                <span style="font-size: 18px; margin-right: 6px;">🎭</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Palco Composto</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/stage (1920x1080)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
+                <span style="font-size: 18px; margin-right: 6px">🎭</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Palco Composto</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/stage (1920x1080)</div>
                 </div>
             </button>
 
             <!-- Janela Libras -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(6, 182, 212, 0.15); border-color: #06b6d4; color: #22d3ee;" onclick="copyUrl('/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
-                <span style="font-size: 18px; margin-right: 6px;">🤟</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Janela de Libras</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/libras (PIP / Paritária)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
+                <span style="font-size: 18px; margin-right: 6px">🤟</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Janela de Libras</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/libras (PIP / Paritária)</div>
                 </div>
             </button>
 
             <!-- Chat Feed -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #60a5fa;" onclick="copyUrl('/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
-                <span style="font-size: 18px; margin-right: 6px;">💬</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Feed de Chat (RNP+YT)</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/chat (Transparente)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
+                <span style="font-size: 18px; margin-right: 6px">💬</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Feed de Chat (RNP+YT)</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/chat (Transparente)</div>
                 </div>
             </button>
 
             <!-- Chat Destaque -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(234, 179, 8, 0.15); border-color: #eab308; color: #fde047;" onclick="copyUrl('/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
-                <span style="font-size: 18px; margin-right: 6px;">⭐</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Chat em Destaque</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/chat/featured (Lower Third)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
+                <span style="font-size: 18px; margin-right: 6px">⭐</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Chat em Destaque</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/chat/featured (Lower Third)</div>
                 </div>
             </button>
 
             <!-- Grid de Câmeras -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(14, 165, 233, 0.15); border-color: #0ea5e9; color: #38bdf8;" onclick="copyUrl('/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
-                <span style="font-size: 18px; margin-right: 6px;">👥</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Grid de Câmeras</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/cameras/grid (1920x1080)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
+                <span style="font-size: 18px; margin-right: 6px">👥</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Grid de Câmeras</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/cameras/grid (1920x1080)</div>
                 </div>
             </button>
 
             <!-- Slides / Apresentação -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(244, 63, 94, 0.15); border-color: #f43f5e; color: #fda4af;" onclick="copyUrl('/presentation', this)" title="Copiar URL dos Slides da Apresentação">
-                <span style="font-size: 18px; margin-right: 6px;">📽️</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Slides Apresentação</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/presentation (Slides Puros)</div>
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/presentation', this)" title="Copiar URL dos Slides da Apresentação">
+                <span style="font-size: 18px; margin-right: 6px">📽️</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Slides Apresentação</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/presentation (Slides Puros)</div>
                 </div>
             </button>
 
@@ -3479,18 +3082,18 @@ async def get_control_panel():
     </div>
 
     <!-- 🎭 PRESETS DE CENA AO VIVO (SLIDES + CÂMERAS) -->
-    <div class="card" style="border-color: rgba(168, 85, 247, 0.35);">
+    <div class="card" >
         <div class="section-title">
-            <span style="color: #c084fc; display: flex; align-items: center; gap: 6px;">
+            <span style="display: flex; align-items: center; gap: 6px">
                 <span>🎭 Palco Composto (Slides + Câmeras)</span>
             </span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: #c084fc;" onclick="copyUrl('/stage')">📋 Link Palco OBS</button>
-                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('/libras')">🤟 Link Janela Libras</button>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button class="btn-copy"  onclick="copyUrl('/stage')">📋 Link Palco OBS</button>
+                <button class="btn-copy"  onclick="copyUrl('/libras')">🤟 Link Janela Libras</button>
             </div>
         </div>
 
-        <div class="obs-grid-preview-box" style="height: 180px; border-color: rgba(168, 85, 247, 0.35); background: transparent;">
+        <div class="obs-grid-preview-box" style="height: 180px">
             <iframe id="stagePreviewIframe" src="/stage?audio=0"></iframe>
         </div>
 
@@ -3516,55 +3119,55 @@ async def get_control_panel():
         </div>
 
         <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
-        <div class="grid-options-bar" style="margin-top: 8px;">
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between;">
-                <label style="margin: 0; color: #22d3ee; font-size: 12px; font-weight: 700;">🤟 Tamanho Libras:</label>
-                <select id="selLibrasSize" style="width: auto; padding: 4px 8px; font-size: 12px; border-color: #06b6d4;" onchange="updateLibrasSizeConfig()">
+        <div class="grid-options-bar" style="margin-top: 8px">
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
+                <label style="margin: 0; font-size: 12px; font-weight: 700">🤟 Tamanho Libras:</label>
+                <select id="selLibrasSize" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateLibrasSizeConfig()">
                     <option value="equal" {sel_lib_equal}>👥 Igual ao Palestrante (Padrão IFES)</option>
                     <option value="huge" {sel_lib_huge}>📐 Gigante Flutuante (560x315)</option>
                     <option value="large" {sel_lib_large}>📺 Grande Flutuante (480x270)</option>
                     <option value="medium" {sel_lib_med}>▫️ Médio Flutuante (380x214)</option>
                 </select>
             </div>
-            <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px; flex-wrap: wrap; gap: 6px;">
-                <button id="btnAutoLibras" class="btn-ctrl active-pin" style="padding: 3px 8px; font-size: 11px;" onclick="toggleLibrasAutoDetect()">
+            <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px; flex-wrap: wrap; gap: 6px">
+                <button id="btnAutoLibras" class="btn-ctrl active-pin" style="padding: 3px 8px; font-size: 11px" onclick="toggleLibrasAutoDetect()">
                     🛡️ Auto-Reconhecimento: ATIVO
                 </button>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <span id="savedInterpretersCount" style="color:#38bdf8; font-size: 11px;">0 salvos</span>
-                    <button class="btn-ctrl" style="padding: 2px 6px; font-size: 10.5px; color: #f87171;" onclick="clearSavedLibras()" title="Limpar lista de nomes de intérpretes salvos">🗑️ Limpar</button>
+                <div style="display: flex; align-items: center; gap: 6px">
+                    <span id="savedInterpretersCount" style="font-size: 11px">0 salvos</span>
+                    <button class="btn-ctrl" style="padding: 2px 6px; font-size: 10.5px" onclick="clearSavedLibras()" title="Limpar lista de nomes de intérpretes salvos">🗑️ Limpar</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- SEÇÃO DE ENQUETE / POLL DA SALA RNP COM MONITORAMENTO E CONTROLE -->
-    <div id="pollDockCard" class="card poll-card" style="border-color: rgba(16, 185, 129, 0.35);">
-        <div class="poll-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-                <span style="font-size: 14px;">📊</span>
-                <strong style="color: #10b981; font-size: 13px;" id="pollStatusTitle">Enquete da Sala RNP</strong>
-                <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px;">⚪ Standby</span>
+    <div id="pollDockCard" class="card poll-card" >
+        <div class="poll-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px">
+            <div style="display: flex; align-items: center; gap: 6px">
+                <span style="font-size: 14px">📊</span>
+                <strong style="font-size: 13px" id="pollStatusTitle">Enquete da Sala RNP</strong>
+                <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px">⚪ Standby</span>
             </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981; font-weight: 700;" onclick="copyUrl('/poll', this)">📋 Link OBS Enquete</button>
-                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
-                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px; color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="clearPoll()">🗑️ Limpar</button>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button class="btn-copy" style="font-weight: 700" onclick="copyUrl('/poll', this)">📋 Link OBS Enquete</button>
+                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
+                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="clearPoll()">🗑️ Limpar</button>
             </div>
         </div>
 
-        <div class="grid-options-bar" style="margin-bottom: 10px; background: rgba(11, 17, 32, 0.85); border-color: rgba(16, 185, 129, 0.3);">
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between;">
-                <label style="margin: 0; color: #10b981; font-size: 12px; font-weight: 700;">🎯 Exibir no OBS:</label>
-                <select id="selPollDisplayMode" style="width: auto; padding: 4px 8px; font-size: 12px; border-color: #10b981;" onchange="updatePollConfig()">
+        <div class="grid-options-bar" style="margin-bottom: 10px">
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
+                <label style="margin: 0; font-size: 12px; font-weight: 700">🎯 Exibir no OBS:</label>
+                <select id="selPollDisplayMode" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
                     <option value="results_only" {sel_pm_results}>📊 Somente Resultados Finais (Recomendado)</option>
                     <option value="always" {sel_pm_always}>🗳️ Votação Ao Vivo + Resultados</option>
                     <option value="hidden" {sel_pm_hidden}>❌ Ocultar no OBS</option>
                 </select>
             </div>
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px;">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px; font-weight: 600;">⏱️ Tempo na Tela:</label>
-                <select id="selPollDuration" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updatePollConfig()">
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
+                <label style="margin: 0; font-size: 12px; font-weight: 600">⏱️ Tempo na Tela:</label>
+                <select id="selPollDuration" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
                     <option value="10" {sel_pd_10}>⏱️ 10 segundos</option>
                     <option value="15" {sel_pd_15}>⏱️ 15 segundos (Padrão)</option>
                     <option value="30" {sel_pd_30}>⏱️ 30 segundos</option>
@@ -3572,9 +3175,9 @@ async def get_control_panel():
                     <option value="0" {sel_pd_inf}>♾️ Fixo (Até Fechar)</option>
                 </select>
             </div>
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px;">
-                <label style="margin: 0; color: #38bdf8; font-size: 12px; font-weight: 600;">🎨 Estilo da Enquete:</label>
-                <select id="selPollStyle" style="width: auto; padding: 4px 8px; font-size: 12px; border-color: #38bdf8;" onchange="updatePollConfig()">
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
+                <label style="margin: 0; font-size: 12px; font-weight: 600">🎨 Estilo da Enquete:</label>
+                <select id="selPollStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
                     <option value="neon" {sel_pstyle_neon}>⚡ Neon Glow</option>
                     <option value="glass" {sel_pstyle_glass}>💎 Glassmorphism</option>
                     <option value="bubbles" {sel_pstyle_bubbles}>💬 Discord Bubbles</option>
@@ -3582,44 +3185,44 @@ async def get_control_panel():
                     <option value="minimal" {sel_pstyle_min}>📄 Minimal Slate</option>
                 </select>
             </div>
-            <div style="width: 100%; display: flex; gap: 6px; margin-top: 6px;">
-                <button id="btnForcePollShow" class="btn-ctrl" style="flex:1; border-color: #10b981; color: #10b981;" onclick="toggleForcePoll(true)">
+            <div style="width: 100%; display: flex; gap: 6px; margin-top: 6px">
+                <button id="btnForcePollShow" class="btn-ctrl" style="flex:1" onclick="toggleForcePoll(true)">
                     ✨ Mostrar no OBS Agora
                 </button>
-                <button id="btnForcePollHide" class="btn-ctrl" style="flex:1;" onclick="toggleForcePoll(false)">
+                <button id="btnForcePollHide" class="btn-ctrl" style="flex:1" onclick="toggleForcePoll(false)">
                     ❌ Ocultar Agora
                 </button>
             </div>
         </div>
 
-        <div style="font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+        <div style="font-size: 11px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px">
             <span>📡 <strong>Dica OBS:</strong> Cole o link acima em uma fonte de <em>Navegador (1920x1080 transparente)</em>. Ela se ativará automaticamente quando houver enquete.</span>
         </div>
 
-        <div class="poll-question" id="pollQuestionText" style="font-size: 13px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">Aguardando início de enquete...</div>
-        <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px;"></div>
+        <div class="poll-question" id="pollQuestionText" style="font-size: 13px; font-weight: 800; margin-bottom: 8px">Aguardando início de enquete...</div>
+        <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px"></div>
     </div>
 
     <!-- INTEGRAÇÃO COM YOUTUBE LIVE CHAT -->
-    <div class="card" style="border-color: rgba(239, 68, 68, 0.3);">
+    <div class="card" >
         <div class="section-title">
-            <span style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
+            <span style="display: flex; align-items: center; gap: 6px">
                 <span>🔴 YouTube Live Chat</span>
             </span>
-            <div id="ytStatusBadge" class="badge disconnected" style="font-size: 10.5px;">● Desconectado</div>
+            <div id="ytStatusBadge" class="badge disconnected" style="font-size: 10.5px">● Desconectado</div>
         </div>
         <div class="input-group">
             <label>Link ou ID da Transmissão do YouTube:</label>
             <input type="text" id="ytUrl" placeholder="Ex: https://youtube.com/live/xxxx ou watch?v=xxxx" value="{state.youtube_url}" onchange="autoSaveField('youtube_url', this.value)">
         </div>
-        <div style="margin-top: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="chkYtAutoConnect" {chk_yt_auto_connect} onchange="autoSaveField('youtube_auto_connect', this.checked)" style="width: 16px; height: 16px; cursor: pointer; accent-color: #ef4444;">
-            <label for="chkYtAutoConnect" style="margin: 0; font-size: 12px; cursor: pointer; color: #cbd5e1; user-select: none;">
+        <div style="margin-top: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px">
+            <input type="checkbox" id="chkYtAutoConnect" {chk_yt_auto_connect} onchange="autoSaveField('youtube_auto_connect', this.checked)" style="width: 16px; height: 16px; cursor: pointer">
+            <label for="chkYtAutoConnect" style="margin: 0; font-size: 12px; cursor: pointer; user-select: none">
                 Conectar chat do YouTube automaticamente ao conectar à sala
             </label>
         </div>
         <div class="actions">
-            <button id="btnYtConnect" class="btn btn-danger" style="flex:1;" onclick="handleYtConnect()">▶️ Integrar Chat do YouTube</button>
+            <button id="btnYtConnect" class="btn btn-danger" style="flex:1" onclick="handleYtConnect()">▶️ Integrar Chat do YouTube</button>
             <button id="btnYtDisconnect" class="btn btn-ctrl" onclick="handleYtDisconnect()">⏹ Parar</button>
         </div>
     </div>
@@ -3627,39 +3230,39 @@ async def get_control_panel():
     <!-- SEÇÃO DEDICADA DE ÁUDIO DA SALA & TRANSMISSÃO OBS -->
     <div class="card" id="audioDockCard">
         <div class="section-title">
-            <span style="display: flex; align-items: center; gap: 8px;">
+            <span style="display: flex; align-items: center; gap: 8px">
                 <span>🔊</span> Transmissão de Áudio da Sala & Mixer OBS
             </span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-ctrl" onclick="testAudioVuMeter()" style="font-size: 11.5px; padding: 4px 10px;" title="Testar animação de todos os medidores de áudio">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button class="btn-ctrl" onclick="testAudioVuMeter()" style="font-size: 11.5px; padding: 4px 10px" title="Testar animação de todos os medidores de áudio">
                     🧪 Testar Medidores
                 </button>
             </div>
         </div>
 
         <!-- Informação do Mixer Unificado -->
-        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #10b981;">
+        <div style="border: 1px solid; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
                 <span class="source-health-dot ok"></span>
                 <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte. O master geral sai pelo <strong>/stage</strong> (PCM Float32 48kHz) — marque "Controlar áudio via OBS" nessa fonte.</span>
             </div>
-            <span class="badge connected" style="font-size: 11px;">OBS: /stage</span>
+            <span class="badge connected" style="font-size: 11px">OBS: /stage</span>
         </div>
 
         <!-- SENSIBILIDADE DA DETECÇÃO DE FALA -->
-        <div style="background: rgba(56, 189, 248, 0.07); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 8px; padding: 9px 12px; margin-bottom: 12px;">
-            <label for="speakThreshold" style="display: block; font-size: 11.5px; font-weight: 700; color: #cbd5e1; margin-bottom: 5px;">
+        <div style="border: 1px solid; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px">
+            <label for="speakThreshold" style="display: block; font-size: 11.5px; font-weight: 700; margin-bottom: 5px">
                 Sensibilidade da detecção de fala
             </label>
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
                 <input type="number" id="speakThreshold" min="0.005" max="0.5" step="0.005"
                        value="{state.speak_peak_threshold}" onchange="saveSpeakThreshold(this)"
-                       style="width: 96px;">
-                <span id="speakThresholdHint" style="font-size: 11px; color: #94a3b8;">
+                       style="width: 96px">
+                <span id="speakThresholdHint" style="font-size: 11px">
                     Pico mínimo do microfone (0,005 a 0,5) para marcar alguém como falando.
                 </span>
             </div>
-            <div style="font-size: 10.5px; color: #94a3b8; margin-top: 6px; line-height: 1.55;">
+            <div style="font-size: 10.5px; margin-top: 6px; line-height: 1.55">
                 O indicador acende pouco enquanto a pessoa fala? <strong>Baixe</strong> o valor.
                 Acende sozinho com ruído da sala? <strong>Aumente</strong>.
                 Referência medida em sala real: silêncio ≈ 0,001 · fala ≈ 0,02 a 0,15.
@@ -3672,16 +3275,16 @@ async def get_control_panel():
             <!-- CANAL MASTER (GERAL) -->
             <div class="audio-channel-strip master-channel" id="channelStripMaster">
                 <div class="channel-header">
-                    <span style="font-size: 18px;">🎛️</span>
+                    <span style="font-size: 18px">🎛️</span>
                     <span class="channel-title">Master Geral</span>
-                    <span class="channel-tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">OBS: /stage</span>
+                    <span class="channel-tag" >OBS: /stage</span>
                 </div>
 
                 <div class="channel-meter-box">
                     <div class="meter-scale-vertical">
-                        <span style="color:#ef4444; font-weight:bold;">0</span>
-                        <span style="color:#f59e0b;">-3</span>
-                        <span style="color:#f59e0b;">-6</span>
+                        <span style="font-weight:bold">0</span>
+                        <span >-3</span>
+                        <span >-6</span>
                         <span>-12</span>
                         <span>-20</span>
                         <span>-30</span>
@@ -3699,40 +3302,40 @@ async def get_control_panel():
                 <div class="channel-tag" title="O master é reproduzido pela fonte /stage no OBS">Master via /stage</div>
 
                 <div class="channel-fader-box">
-                    <div style="display:flex; justify-content:space-between; width:100%; font-size:10px; color:#94a3b8;">
+                    <div style="display:flex; justify-content:space-between; width:100%; font-size:10px">
                         <span>Vol:</span>
                         <span id="lblMasterVol">100%</span>
                     </div>
-                    <input type="range" id="rngMasterVol" min="0" max="1.5" step="0.05" value="1" style="width:100%; accent-color:#10b981; cursor:pointer;" oninput="updateMasterVol(this.value)">
-                    <button class="btn-ctrl" id="btnMuteMaster" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px;" onclick="toggleMasterMute()">
+                    <input type="range" id="rngMasterVol" min="0" max="1.5" step="0.05" value="1" style="width:100%; cursor:pointer" oninput="updateMasterVol(this.value)">
+                    <button class="btn-ctrl" id="btnMuteMaster" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px" onclick="toggleMasterMute()">
                         🔊 Ativo
                     </button>
                 </div>
             </div>
 
             <!-- FONTES INDIVIDUAIS (GERADAS DINAMICAMENTE PARA CADA CÂMERA / PARTICIPANTE) -->
-            <div id="individualChannelsContainer" style="display: flex; gap: 12px; align-items: stretch;"></div>
+            <div id="individualChannelsContainer" style="display: flex; gap: 12px; align-items: stretch"></div>
 
             <!-- PLACEHOLDER QUANDO NÃO HÁ FONTES ADICIONAIS -->
-            <div class="audio-channel-strip" id="noIndividualChannelsPlaceholder" style="border-style: dashed; opacity: 0.7; justify-content: center; min-width: 140px; text-align: center;">
-                <span style="font-size: 24px; margin-bottom: 6px;">🎙️</span>
-                <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">Fontes Individuais</span>
-                <p style="font-size: 10px; color: #64748b; margin-top: 4px; line-height: 1.3;">Aguardando participantes entrarem com câmera/voz na sala RNP.</p>
+            <div class="audio-channel-strip" id="noIndividualChannelsPlaceholder" style="border-style: dashed; opacity: 0.7; justify-content: center; min-width: 140px; text-align: center">
+                <span style="font-size: 24px; margin-bottom: 6px">🎙️</span>
+                <span style="font-size: 11px; font-weight: 700">Fontes Individuais</span>
+                <p style="font-size: 10px; margin-top: 4px; line-height: 1.3">Aguardando participantes entrarem com câmera/voz na sala RNP.</p>
             </div>
         </div>
 
         <!-- Monitor Local de Áudio (Para ouvir ou mutar no computador da live) -->
-        <div class="audio-monitor-controls-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button id="btnMuteMonitor" class="btn-ctrl" style="padding: 6px 12px; font-size: 12px; border-radius: 6px;" onclick="toggleMonitorMute()">
+        <div class="audio-monitor-controls-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+            <div style="display: flex; align-items: center; gap: 10px">
+                <button id="btnMuteMonitor" class="btn-ctrl" style="padding: 6px 12px; font-size: 12px; border-radius: 6px" onclick="toggleMonitorMute()">
                     🔊 <span id="lblMonitorStatus">Monitor Local: Ligado</span>
                 </button>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: 11.5px; color: #94a3b8; font-weight: 600;">Volume Local:</span>
-                    <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 85px; accent-color: #10b981; cursor: pointer;" oninput="updateMonitorVol(this.value)">
+                <div style="display: flex; align-items: center; gap: 6px">
+                    <span style="font-size: 11.5px; font-weight: 600">Volume Local:</span>
+                    <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 85px; cursor: pointer" oninput="updateMonitorVol(this.value)">
                 </div>
             </div>
-            <div style="font-size: 11px; color: #64748b;">
+            <div style="font-size: 11px">
                 💡 <em>Dica OBS: Cole a URL em uma Fonte de Navegador e marque "Controlar áudio via OBS" nas propriedades.</em>
             </div>
         </div>
@@ -3742,9 +3345,9 @@ async def get_control_panel():
     <div class="card">
         <div class="section-title">
             <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
                 <button class="btn-copy" onclick="copyUrl('/cameras/grid', this)">📋 Link Grid</button>
-                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('/libras', this)">🤟 Janela Libras</button>
+                <button class="btn-copy"  onclick="copyUrl('/libras', this)">🤟 Janela Libras</button>
             </div>
         </div>
 
@@ -3754,15 +3357,15 @@ async def get_control_panel():
 
         <div class="grid-options-bar">
             <div class="grid-opt-group">
-                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; color: #f8fafc; font-size: 12px;">
+                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px">
                     <input type="checkbox" id="chkShowNames" {chk_show_names} onchange="updateGridConfig()">
                     <span>Exibir Nomes</span>
                 </label>
             </div>
 
             <div class="grid-opt-group">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Estilo:</label>
-                <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateGridConfig()">
+                <label style="margin: 0; font-size: 12px">Estilo:</label>
+                <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
                     <option value="glass" {sel_glass}>Glass (Vidro)</option>
                     <option value="pill" {sel_pill}>Pill (Pílula)</option>
                     <option value="minimal" {sel_min}>Minimal Dark</option>
@@ -3771,8 +3374,8 @@ async def get_control_panel():
             </div>
 
             <div class="grid-opt-group">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Layout:</label>
-                <select id="selGridLayout" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateGridConfig()">
+                <label style="margin: 0; font-size: 12px">Layout:</label>
+                <select id="selGridLayout" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
                     <option value="auto" {sel_layout_auto}>🤖 Auto (1920x600)</option>
                     <option value="row" {sel_layout_row}>➡️ Linha Horizontal</option>
                     <option value="column" {sel_layout_col}>⬇️ Coluna Vertical</option>
@@ -3781,8 +3384,8 @@ async def get_control_panel():
             </div>
 
             <div class="grid-opt-group">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Formato Câmera:</label>
-                <select id="selCamFormat" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateGridConfig()">
+                <label style="margin: 0; font-size: 12px">Formato Câmera:</label>
+                <select id="selCamFormat" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
                     <option value="original" {sel_fmt_original}>📐 Original (sem corte)</option>
                     <option value="paisagem" {sel_fmt_paisagem}>🖼️ Paisagem 16:9</option>
                     <option value="quadrada" {sel_fmt_quadrada}>⬜ Quadrada 1:1</option>
@@ -3792,8 +3395,8 @@ async def get_control_panel():
                 </select>
             </div>
 
-            <div class="grid-opt-group" style="width: 100%;">
-                <button class="btn-ctrl" style="width: 100%;" onclick="clearFocusAndPins()">🔄 Restaurar Grid Equilibrado</button>
+            <div class="grid-opt-group" style="width: 100%">
+                <button class="btn-ctrl" style="width: 100%" onclick="clearFocusAndPins()">🔄 Restaurar Grid Equilibrado</button>
             </div>
         </div>
 
@@ -3802,7 +3405,7 @@ async def get_control_panel():
         </div>
 
         <div class="preview-grid" id="camerasGrid">
-            <div style="color: #64748b; font-size: 12px; padding: 10px;">Nenhuma câmera ligada no momento.</div>
+            <div style="font-size: 12px; padding: 10px">Nenhuma câmera ligada no momento.</div>
         </div>
     </div>
 
@@ -3810,29 +3413,29 @@ async def get_control_panel():
     <div class="card">
         <div class="section-title">
             <span>💬 Chat & Destaque (Lower-Third)</span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
                 <button class="btn-copy" onclick="copyUrl('/chat')">📋 Link Feed</button>
-                <button class="btn-copy" style="background: rgba(234, 179, 8, 0.2); color: #eab308; border-color: #eab308;" onclick="copyUrl('/chat/featured')">🌟 Link Destaque</button>
+                <button class="btn-copy"  onclick="copyUrl('/chat/featured')">🌟 Link Destaque</button>
             </div>
         </div>
 
         <!-- BANNER DE MENSAGEM EM DESTAQUE ATUAL -->
-        <div id="featuredBox" class="featured-active-banner" style="display: none;">
-            <div style="flex: 1;">
-                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
-                    <span style="font-size: 11px; font-weight: 800; color: #eab308;">🌟 EM DESTAQUE NA TRANSMISSÃO:</span>
+        <div id="featuredBox" class="featured-active-banner" style="display: none">
+            <div style="flex: 1">
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px">
+                    <span style="font-size: 11px; font-weight: 800">🌟 EM DESTAQUE NA TRANSMISSÃO:</span>
                     <span id="featSourceBadge" class="source-tag rnp">RNP</span>
                 </div>
-                <div style="font-size: 12.5px; font-weight: 700; color: #ffffff;" id="featUser">Nome</div>
-                <div style="font-size: 12px; color: #fef08a;" id="featText">Texto da mensagem em destaque...</div>
+                <div style="font-size: 12.5px; font-weight: 700" id="featUser">Nome</div>
+                <div style="font-size: 12px" id="featText">Texto da mensagem em destaque...</div>
             </div>
-            <button class="btn btn-danger" style="padding: 6px 10px; font-size: 11.5px;" onclick="clearFeaturedMessage()">❌ Ocultar Destaque</button>
+            <button class="btn btn-danger" style="padding: 6px 10px; font-size: 11.5px" onclick="clearFeaturedMessage()">❌ Ocultar Destaque</button>
         </div>
 
         <div class="grid-options-bar">
             <div class="grid-opt-group">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Tema:</label>
-                <select id="selChatTheme" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateChatConfig()">
+                <label style="margin: 0; font-size: 12px">Tema:</label>
+                <select id="selChatTheme" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateChatConfig()">
                     <option value="glass" {sel_chat_glass}>💎 StreamYard Glass</option>
                     <option value="streamer" {sel_chat_streamer}>🔴 Streamer Avatar</option>
                     <option value="broadcast" {sel_chat_bcast}>🎬 Broadcast News</option>
@@ -3843,8 +3446,8 @@ async def get_control_panel():
             </div>
 
             <div class="grid-opt-group">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Fonte:</label>
-                <select id="selChatSize" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateChatConfig()">
+                <label style="margin: 0; font-size: 12px">Fonte:</label>
+                <select id="selChatSize" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateChatConfig()">
                     <option value="small" {sel_size_small}>Pequena</option>
                     <option value="medium" {sel_size_med}>Média</option>
                     <option value="large" {sel_size_large}>Grande</option>
@@ -3852,8 +3455,8 @@ async def get_control_panel():
             </div>
 
             <div class="grid-opt-group">
-                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Máx:</label>
-                <select id="selChatMax" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateChatConfig()">
+                <label style="margin: 0; font-size: 12px">Máx:</label>
+                <select id="selChatMax" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateChatConfig()">
                     <option value="4" {sel_max_4}>4 msgs</option>
                     <option value="6" {sel_max_6}>6 msgs</option>
                     <option value="8" {sel_max_8}>8 msgs</option>
@@ -3861,9 +3464,9 @@ async def get_control_panel():
                 </select>
             </div>
 
-            <div class="grid-opt-group" style="width: 100%; margin-top: 4px;">
-                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; color: #f8fafc; font-size: 12px;">
-                    <input type="checkbox" id="chkShowAvatars" {chk_chat_avatars} onchange="updateChatConfig()" style="width: 15px; height: 15px; accent-color: #38bdf8;">
+            <div class="grid-opt-group" style="width: 100%; margin-top: 4px">
+                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px">
+                    <input type="checkbox" id="chkShowAvatars" {chk_chat_avatars} onchange="updateChatConfig()" style="width: 15px; height: 15px">
                     <span>👤 Exibir Avatares dos Usuários (YouTube / RNP)</span>
                 </label>
             </div>
@@ -3874,13 +3477,13 @@ async def get_control_panel():
         </div>
 
         <!-- LISTA INTERATIVA DE MENSAGENS PARA DESTACAR COM 1 CLIQUE -->
-        <div style="margin-top: 14px;">
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <label style="font-size: 12px; font-weight: 700; color: #38bdf8;">Mensagens Recentes (Clique para Destacar na Tela):</label>
-                <span id="chatTotalCount" style="font-size: 11px; color: #94a3b8;">0 msgs</span>
+        <div style="margin-top: 14px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+                <label style="font-size: 12px; font-weight: 700">Mensagens Recentes (Clique para Destacar na Tela):</label>
+                <span id="chatTotalCount" style="font-size: 11px">0 msgs</span>
             </div>
             <div class="chat-manager-list" id="chatListContainer">
-                <div style="color: #64748b; font-size: 12px; padding: 8px;">Nenhuma mensagem recebida ainda.</div>
+                <div style="font-size: 12px; padding: 8px">Nenhuma mensagem recebida ainda.</div>
             </div>
         </div>
     </div>
@@ -3891,13 +3494,13 @@ async def get_control_panel():
             <span>📊 Apresentação / Slides</span>
             <button class="btn-copy" onclick="copyUrl('/presentation')">📋 Link Slides</button>
         </div>
-        <div class="thumb-box" style="height: 200px; background: transparent;">
+        <div class="thumb-box" style="height: 200px">
             <img id="thumbScreen" src="/raw_frame/presentation" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
         </div>
     </div>
 
     {PCM_AUDIO_SCRIPT}
-    {'<p style="color:#fbbf24">Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
+    {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
 
     <script src="/assets/audio-mixer.js"></script>
     <script>
@@ -4381,7 +3984,7 @@ async def get_control_panel():
             document.getElementById('chatTotalCount').innerText = msgs.length + ' msgs';
             
             if (msgs.length === 0) {{
-                container.innerHTML = '<div style="color: #64748b; font-size: 12px; padding: 8px;">Nenhuma mensagem recebida ainda.</div>';
+                container.innerHTML = '<div style="font-size: 12px; padding: 8px">Nenhuma mensagem recebida ainda.</div>';
                 return;
             }}
 
@@ -4397,18 +4000,18 @@ async def get_control_panel():
                 const srcBadge = isYt ? '<span class="source-tag yt">YT</span>' : '<span class="source-tag rnp">RNP</span>';
 
                 row.innerHTML = `
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+                    <div style="flex: 1; min-width: 0">
+                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px">
                             ${{srcBadge}}
-                            <strong style="font-size: 12px; color: ${{isYt ? '#f87171' : '#38bdf8'}};">${{m.user}}</strong>
-                            <span style="font-size: 10px; color: #64748b;">${{m.time || ''}}</span>
+                            <strong style="font-size: 12px">${{m.user}}</strong>
+                            <span style="font-size: 10px">${{m.time || ''}}</span>
                         </div>
-                        <div style="font-size: 12px; color: #e2e8f0; word-break: break-word;">${{m.text}}</div>
+                        <div style="font-size: 12px; word-break: break-word">${{m.text}}</div>
                     </div>
-                    <div style="flex-shrink: 0;">
+                    <div style="flex-shrink: 0">
                         ${{isFeatured ? 
-                            `<button class="btn-ctrl active-focus" style="padding: 4px 8px; font-size: 11px;" onclick="clearFeaturedMessage()">❌ Desfocar</button>` :
-                            `<button class="btn-ctrl" style="padding: 4px 8px; font-size: 11px;" onclick='highlightMessage(${{JSON.stringify(m)}})'>🌟 Destacar</button>`
+                            `<button class="btn-ctrl active-focus" style="padding: 4px 8px; font-size: 11px" onclick="clearFeaturedMessage()">❌ Desfocar</button>` :
+                            `<button class="btn-ctrl" style="padding: 4px 8px; font-size: 11px" onclick='highlightMessage(${{JSON.stringify(m)}})'>🌟 Destacar</button>`
                         }}
                     </div>
                 `;
@@ -4691,7 +4294,7 @@ async def get_control_panel():
                 grid.innerHTML = '';
 
                 if (cams.length === 0) {{
-                    grid.innerHTML = '<div style="color: #64748b; font-size: 12px; padding: 10px;">Nenhuma câmera ligada no momento.</div>';
+                    grid.innerHTML = '<div style="font-size: 12px; padding: 10px">Nenhuma câmera ligada no momento.</div>';
                 }} else {{
                     cams.forEach(c => {{
                         const cid = String(c.id);
@@ -4707,11 +4310,11 @@ async def get_control_panel():
 
                         box.innerHTML = `
                             <div class="mod-title">
-                                <span style="display:flex; align-items:center; gap:5px;">
+                                <span style="display:flex; align-items:center; gap:5px">
                                     ${{isLibras ? '🤟' : (isFocus ? '🌟' : (isPin ? '📌' : '🎥'))}} <strong>${{c.name}}</strong>
                                 </span>
-                                <span style="font-size: 10.5px; color: #10b981;">● ${{c.width}}x${{c.height}}</span>
-                                <span class="cam-fps" style="font-size: 10.5px; color: ${{(c.fps >= 20 ? '#10b981' : (c.fps >= 10 ? '#eab308' : '#ef4444'))}};">${{Math.round(c.fps || 0)}} FPS</span>
+                                <span style="font-size: 10.5px">● ${{c.width}}x${{c.height}}</span>
+                                <span class="cam-fps" style="font-size: 10.5px">${{Math.round(c.fps || 0)}} FPS</span>
                             </div>
                             <div class="thumb-box">
                                 <img src="/raw_frame/camera/${{c.id}}?t=${{Date.now()}}" id="thumbCam_${{c.id}}" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
@@ -4930,7 +4533,7 @@ async def get_control_panel():
                     badgeStatus.innerText = '⚪ Standby (Pronto para o OBS)';
                 }}
                 if (questionText) {{
-                    questionText.innerHTML = '<span style="color: #94a3b8; font-weight: normal; font-size: 12px;">Nenhuma enquete ativa na sala no momento. O link acima pode ser adicionado ao OBS como <strong>Navegador (Browser Source 1920x1080 transparente)</strong> antes da transmissão começar. Quando uma enquete for aberta na RNP, ela aparecerá na tela automaticamente!</span>';
+                    questionText.innerHTML = '<span style="font-weight: normal; font-size: 12px">Nenhuma enquete ativa na sala no momento. O link acima pode ser adicionado ao OBS como <strong>Navegador (Browser Source 1920x1080 transparente)</strong> antes da transmissão começar. Quando uma enquete for aberta na RNP, ela aparecerá na tela automaticamente!</span>';
                 }}
                 if (optsContainer) optsContainer.innerHTML = '';
                 return;
@@ -4972,12 +4575,12 @@ async def get_control_panel():
                     const votes = opt.votes || 0;
 
                     row.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #ffffff; margin-bottom: 4px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; margin-bottom: 4px">
                             <span>${{opt.text}}</span>
-                            <span style="color: #38bdf8;">${{votes > 0 ? votes + ' votos (' + pct + '%)' : pct + '%'}}</span>
+                            <span >${{votes > 0 ? votes + ' votos (' + pct + '%)' : pct + '%'}}</span>
                         </div>
-                        <div style="width: 100%; height: 5px; background: #0f172a; border-radius: 3px; overflow: hidden;">
-                            <div style="width: ${{pct}}%; height: 100%; background: linear-gradient(90deg, #06b6d4, #10b981); transition: width 0.3s ease;"></div>
+                        <div style="width: 100%; height: 5px; border-radius: 3px; overflow: hidden">
+                            <div style="width: ${{pct}}%; height: 100%; transition: width 0.3s ease"></div>
                         </div>
                     `;
                     optsContainer.appendChild(row);

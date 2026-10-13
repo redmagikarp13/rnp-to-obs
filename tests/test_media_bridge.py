@@ -152,6 +152,37 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_dock_sem_cores_inline_no_markup(self):
+        # Style inline vence qualquer folha de estilo: enquanto o markup pintar cor
+        # por atributo style, os tokens não têm como valer e o tema não aparece.
+        html = self.client.get('/control').text
+        estilos = re.findall(r'style="([^"]*)"', html)
+        com_cor = [s for s in estilos
+                   if re.search(r'(?<![-\w])(?:background|color|border-color)\s*:', s)
+                   or re.search(r'border(?:-(?:top|bottom|left|right))?\s*:[^;]*(?:#[0-9a-fA-F]{3,8}|rgba?\()', s)]
+        self.assertEqual(com_cor, [],
+                         f'{len(com_cor)} inline styles ainda pintam cor por cima dos tokens.')
+
+    def test_css_legado_sem_blocos_de_tema(self):
+        # Os 5 blocos `body.theme-X .component` eram o mecanismo legado de tema; com
+        # tokens, tema é só override de variável — bloco de tema em CSS é defeito.
+        self.assertNotIn('body.theme-', server.CONTROL_PANEL_CSS,
+                         'CONTROL_PANEL_CSS não pode mais conter overrides por tema.')
+
+    def test_dock_css_estiliza_componentes_com_tokens(self):
+        css = self.client.get('/assets/dock.css').text
+        for seletor, token in (('.card', 'var(--surface)'),
+                               ('.section-title', 'var(--text-muted)'),
+                               ('.btn-ctrl', 'var(--primary)'),
+                               ('input[type="text"]', 'var(--surface-inset)')):
+            self.assertIn(seletor, css, f'Camada de componentes deve cobrir {seletor}.')
+            self.assertIn(token, css, f'{seletor} deve consumir o token {token}.')
+        # Componente nunca é escopado por tema: tema é só override de token.
+        # (Remove comentários antes: prosa que CITA o padrão proibido não é violação.)
+        sem_comentarios = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+        self.assertIsNone(re.search(r'body\.theme-\w+\s+\.[\w-]+', sem_comentarios),
+                          'dock.css não pode escopar componentes por tema.')
+
     def test_logo_substitui_o_emoji_do_titulo(self):
         # O pedido era SUBSTITUIR o 🎛️ do título pela marca do If, não somar os dois.
         for tema in ('ifes', 'broadcast'):
