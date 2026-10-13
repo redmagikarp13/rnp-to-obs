@@ -138,6 +138,17 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400,
                          'Tema aposentado precisa ser rejeitado por /api/theme/set.')
 
+    def test_vitrine_de_temas_removida(self):
+        for rota in ('/catalog', '/themes'):
+            self.assertEqual(self.client.get(rota).status_code, 404,
+                             f'{rota} deveria ter sido removida; o seletor de tema vive na barra de status.')
+
+    def test_dock_nao_tem_link_morto_para_a_vitrine(self):
+        # Remover a rota sem remover os <a href="/catalog"> deixaria link morto no dock.
+        html = self.client.get('/control').text
+        self.assertNotIn('href="/catalog"', html)
+        self.assertNotIn('href="/themes"', html)
+
     def test_api_theme_set_exige_campo_theme(self):
         # Sem isto, um POST {} gravava o tema padrão por cima da preferência do usuário.
         self.state.control_theme = 'ifes'

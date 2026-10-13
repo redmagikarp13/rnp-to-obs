@@ -1230,7 +1230,7 @@ Get-NetTCPConnection -LocalPort 3333,3334 -State Listen -ErrorAction SilentlyCon
 python -u .test_runtime\run_suite.py
 ```
 
-Expected: `Ran 109 tests ... OK` (79 iniciais + 30 novos: 2 na Task 1, 7 na Task 2, 1 na Task 3, 12 na Task 4, 4 na Task 5, 2 na Task 6, 2 na Task 7). Confirmar também que `config.json` **não** foi alterado pela rodada:
+Expected: `Ran 110 tests ... OK` (79 iniciais + 31 novos: 2 na Task 1, 7 na Task 2, 2 na Task 3, 12 na Task 4, 4 na Task 5, 2 na Task 6, 2 na Task 7). Confirmar também que `config.json` **não** foi alterado pela rodada:
 
 ```powershell
 git diff --stat config.json
@@ -1275,7 +1275,7 @@ git commit -m "feat(dock): tema Ifes em tokens, validacao de contraste, build e 
 
 ## Verificação final
 
-- [ ] `python -u .test_runtime\run_suite.py` → **109 testes OK**, `config.json` intacto.
+- [ ] `python -u .test_runtime\run_suite.py` → **110 testes OK**, `config.json` intacto.
 - [ ] `Select-String -Path server.py -Pattern 'CONTROL_PANEL_CSS|theme-hardware|theme-nordic|theme-glass|theme-obsidian|get_themes_catalog'` → **nenhuma ocorrência**.
 - [ ] `server.py` reduziu ~1.600 linhas (786 de `CONTROL_PANEL_CSS` + ~800 do HTML/JS inline do dock).
 - [ ] Dock conferido a 330px e 480px nos dois temas, sem rolagem horizontal.
