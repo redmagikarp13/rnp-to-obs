@@ -248,7 +248,7 @@ somente quando a lista de nomes muda (assinatura em `dataset.sig`).
 
 ## 6. Validação
 
-**Sala real** (`conferenciaweb.rnp.br/sala/leonardo-da-silva-coutinho`, porta 3334):
+**Sala real** (URL omitida por privacidade; validada numa sala autorizada, porta 3334):
 - `/api/media` listou **2 fontes de vídeo** do mesmo `participant_id`, com
   `track_id` distintos.
 - No `/stage`, dois elementos `video[data-source-id^="cam-"]` reproduziram com
