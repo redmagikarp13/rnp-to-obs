@@ -3207,10 +3207,7 @@ async def get_control_panel():
     sel_max_8 = "selected" if state.chat_max_messages == 8 else ""
     sel_max_12 = "selected" if state.chat_max_messages == 12 else ""
 
-    sel_th_hardware = "selected" if state.control_theme == "hardware" else ""
-    sel_th_nordic = "selected" if state.control_theme == "nordic" else ""
-    sel_th_glass = "selected" if state.control_theme == "glass" else ""
-    sel_th_obsidian = "selected" if state.control_theme == "obsidian" else ""
+    sel_th_broadcast = "selected" if state.control_theme == "broadcast" else ""
     sel_th_ifes = "selected" if state.control_theme == "ifes" else ""
     chk_yt_auto_connect = "checked" if state.youtube_auto_connect else ""
 
@@ -3240,11 +3237,8 @@ async def get_control_panel():
             <div class="header-theme-box" style="display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.35); padding: 3px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);">
                 <span style="font-size: 11px; font-weight: 700; color: #94a3b8;">🎨 Estilo:</span>
                 <select id="selControlTheme" onchange="changeControlTheme(this.value)" style="width: auto; padding: 2px 6px; font-size: 11.5px; font-weight: 700; background: transparent; border: none; cursor: pointer; color: #f8fafc;">
-                    <option value="hardware" {sel_th_hardware}>🎛️ Studio Master</option>
-                    <option value="nordic" {sel_th_nordic}>🌿 Nordic Minimal</option>
-                    <option value="glass" {sel_th_glass}>📺 Broadcast Titanium</option>
-                    <option value="obsidian" {sel_th_obsidian}>⬛ Cyber Obsidian</option>
-                    <option value="ifes" {sel_th_ifes}>🏛️ Instituto Federal (IF Clean)</option>
+                    <option value="broadcast" {sel_th_broadcast}>Broadcast (padrão)</option>
+                    <option value="ifes" {sel_th_ifes}>Ifes (papel quente)</option>
                 </select>
             </div>
             <div id="saveToast" class="badge" style="display:none; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">💾 Salvo!</div>

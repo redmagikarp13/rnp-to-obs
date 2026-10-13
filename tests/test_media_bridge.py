@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -137,6 +138,18 @@ class MediaRoutesTests(unittest.TestCase):
         response = self.client.post('/api/theme/set', json={'theme': 'glass'})
         self.assertEqual(response.status_code, 400,
                          'Tema aposentado precisa ser rejeitado por /api/theme/set.')
+
+    def test_seletor_de_tema_do_dock_oferece_so_temas_validos(self):
+        # /api/theme/set só aceita CONTROL_THEMES. Um seletor que ainda oferece temas
+        # aposentados leva o operador a escolher algo que falha com 400 — e o JS legado
+        # mostrava "Salvo!" mesmo assim. Olha só o bloco do #selControlTheme: `glass` e
+        # `broadcast` também são valores legítimos de chat_style/poll_style.
+        html = self.client.get('/control').text
+        bloco = re.search(r'<select id="selControlTheme".*?</select>', html, re.S)
+        self.assertIsNotNone(bloco, 'Seletor de tema do painel não encontrado.')
+        valores = re.findall(r'<option value="([^"]+)"', bloco.group(0))
+        self.assertEqual(sorted(valores), sorted(server.CONTROL_THEMES),
+                         'O seletor de tema deve oferecer exatamente os temas válidos.')
 
     def test_vitrine_de_temas_removida(self):
         for rota in ('/catalog', '/themes'):
