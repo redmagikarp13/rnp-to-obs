@@ -1786,7 +1786,11 @@ async def api_chat_config(req: Request):
 @app.post("/api/theme/set")
 async def api_theme_set(req: Request):
     data = await req.json()
-    theme = data.get("theme", DEFAULT_CONTROL_THEME)
+    theme = data.get("theme")
+    if theme is None:
+        # Sem campo explícito não se aplica o padrão: isso sobrescreveria a
+        # preferência vigente do operador numa chamada acidental.
+        return JSONResponse({"status": "error", "message": "Campo 'theme' obrigatório"}, status_code=400)
     if theme in CONTROL_THEMES:
         state.control_theme = theme
         save_disk_config(state.export_config())

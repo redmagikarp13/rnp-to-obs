@@ -138,6 +138,14 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400,
                          'Tema aposentado precisa ser rejeitado por /api/theme/set.')
 
+    def test_api_theme_set_exige_campo_theme(self):
+        # Sem isto, um POST {} gravava o tema padrão por cima da preferência do usuário.
+        self.state.control_theme = 'ifes'
+        response = self.client.post('/api/theme/set', json={})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.state.control_theme, 'ifes',
+                         'POST sem campo theme não pode sobrescrever o tema vigente.')
+
     def test_assets_do_dock_servidos_com_no_store(self):
         css = self.client.get('/assets/dock.css')
         self.assertEqual(css.status_code, 200, 'web/dock.css precisa ser servido como asset.')

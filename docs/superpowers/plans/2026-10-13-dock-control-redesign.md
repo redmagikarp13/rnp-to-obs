@@ -483,6 +483,42 @@ Em `tests/test_media_browser.py`, dentro de `BrowserMediaTests`. Todos abrem o d
             return alvos.filter(el => re.test(el.textContent)).map(el => el.textContent.trim().slice(0, 40));
         }""")
         self.assertEqual(com_emoji, [], f'Títulos ainda com emoji decorativo: {com_emoji}')
+
+    async def test_seletor_de_tema_usa_api_theme_set_e_persiste(self):
+        # Não pode postar em /api/grid/config: aquela rota ignora control_theme.
+        capturas = []
+        await self.receiver.context.route('**/api/theme/set', lambda route: (
+            capturas.append((route.request.url, route.request.post_data)),
+            route.fulfill(status=200, body='{"status":"ok","control_theme":"ifes"}')))
+        await self.open_dock()
+        await self.receiver.select_option('#themeSelect', 'ifes')
+        await self.receiver.wait_for_function(
+            "() => document.body.classList.contains('theme-ifes')", timeout=15000)
+        self.assertEqual(len(capturas), 1, 'A troca de tema deve chamar /api/theme/set uma vez.')
+        self.assertIn('"theme": "ifes"', capturas[0][1].replace('"theme":"ifes"', '"theme": "ifes"'))
+
+    async def test_falha_ao_trocar_tema_nao_finge_sucesso(self):
+        # Spec §6: falha de gravação não pode fingir sucesso. O seletor legado
+        # aplicava a classe e mostrava "Salvo!" mesmo com o backend devolvendo 400.
+        await self.receiver.context.route('**/api/theme/set',
+            lambda route: route.fulfill(status=400, body='{"status":"error"}'))
+        await self.open_dock()
+        antes = await self.receiver.evaluate("() => document.body.className")
+        await self.receiver.select_option('#themeSelect', 'ifes')
+        await self.receiver.wait_for_timeout(600)
+        depois = await self.receiver.evaluate("() => document.body.className")
+        self.assertEqual(depois, antes,
+                         'Com o backend rejeitando, o tema aplicado no body não pode mudar.')
+        self.assertEqual(await self.receiver.evaluate("() => document.getElementById('themeSelect').value"),
+                         antes.replace('theme-', ''), 'O seletor deve reverter para o tema vigente.')
+
+    async def test_seletor_de_tema_legado_foi_removido(self):
+        await self.open_dock()
+        self.assertEqual(await self.receiver.locator('#selControlTheme').count(), 0,
+                         'Dois seletores de tema não podem coexistir; o legado listava temas aposentados.')
+        html = await self.receiver.content()
+        self.assertNotIn('changeControlTheme', html)
+        self.assertNotIn('theme-hardware', html)
 ```
 
 - [ ] **Step 2: Rodar e confirmar que falham**
@@ -829,17 +865,33 @@ No Python, substituir as 5 variáveis `sel_th_*` por apenas:
     theme = normalize_theme(state.control_theme)
 ```
 
-O `#themeSelect` grava via endpoint existente, no `dock.js` ou em `onclick` inline:
+O `#themeSelect` grava via **`/api/theme/set`** — que é a rota que trata `control_theme`
+e valida contra `CONTROL_THEMES`. **Não** usar `/api/grid/config`: aquela rota não trata
+`control_theme` e ignoraria o campo silenciosamente. E é obrigatório checar `response.ok`
+antes de sinalizar sucesso (spec §6: falha de gravação não pode fingir sucesso):
 
 ```javascript
 document.getElementById('themeSelect').addEventListener('change', async (e) => {
-    await fetch('/api/grid/config', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({control_theme: e.target.value})
-    });
-    location.reload();
+    const escolhido = e.target.value;
+    try {
+        const res = await fetch('/api/theme/set', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({theme: escolhido})
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        location.reload();          // aplica o tema já persistido
+    } catch (err) {
+        if (typeof showSaveNotice === 'function') showSaveNotice('Falha ao aplicar tema', true);
+        // Reverte a seleção para o tema que continua valendo no servidor.
+        e.target.value = document.body.className.replace('theme-', '') || 'broadcast';
+    }
 });
 ```
+
+O `#selControlTheme` antigo (que lista os 5 temas e chama `changeControlTheme`) é **removido**
+junto com a função `changeControlTheme`. Sem essa remoção, ficam dois seletores de tema e o
+antigo ainda ofereceria `hardware`/`glass`, que o backend agora rejeita com 400 — e o JS
+legado mostrava "Salvo!" sem checar `response.ok`.
 
 O `<link rel="stylesheet" href="/assets/dock.css">` fica no **`<head>`** (já adicionado na
 Task 1); o sketch acima o mostra junto ao `<body>` apenas para indicar ordem de cascata —
@@ -907,7 +959,7 @@ E alimentar o VU da barra com o mesmo pico que já alimenta `vuMasterBar` (local
 - [ ] **Step 8: Rodar os testes novos**
 
 Run: `python -u .test_runtime\run_tests.py test_dock_tem_cinco_abas_e_uma_visivel test_dock_troca_de_aba test_dock_persiste_aba_ativa test_dock_forca_aba_conexao_sem_sala test_barra_de_status_reflete_conexao test_parar_exige_confirmacao_em_duas_etapas test_dock_preserva_todos_os_ids_de_contrato test_dock_nao_tem_mais_css_inline_de_painel test_dock_nao_tem_emoji_decorativo_em_titulos`
-Expected: PASS nos 9.
+Expected: PASS nos 12.
 
 - [ ] **Step 9: Rodar os testes de dock pré-existentes (regressão)**
 
@@ -1178,7 +1230,7 @@ Get-NetTCPConnection -LocalPort 3333,3334 -State Listen -ErrorAction SilentlyCon
 python -u .test_runtime\run_suite.py
 ```
 
-Expected: `Ran 103 tests ... OK` (79 iniciais + 24 novos: 2 na Task 1, 4 na Task 2, 1 na Task 3, 9 na Task 4, 4 na Task 5, 2 na Task 6, 2 na Task 7). Confirmar também que `config.json` **não** foi alterado pela rodada:
+Expected: `Ran 109 tests ... OK` (79 iniciais + 30 novos: 2 na Task 1, 7 na Task 2, 1 na Task 3, 12 na Task 4, 4 na Task 5, 2 na Task 6, 2 na Task 7). Confirmar também que `config.json` **não** foi alterado pela rodada:
 
 ```powershell
 git diff --stat config.json
@@ -1223,7 +1275,7 @@ git commit -m "feat(dock): tema Ifes em tokens, validacao de contraste, build e 
 
 ## Verificação final
 
-- [ ] `python -u .test_runtime\run_suite.py` → **103 testes OK**, `config.json` intacto.
+- [ ] `python -u .test_runtime\run_suite.py` → **109 testes OK**, `config.json` intacto.
 - [ ] `Select-String -Path server.py -Pattern 'CONTROL_PANEL_CSS|theme-hardware|theme-nordic|theme-glass|theme-obsidian|get_themes_catalog'` → **nenhuma ocorrência**.
 - [ ] `server.py` reduziu ~1.600 linhas (786 de `CONTROL_PANEL_CSS` + ~800 do HTML/JS inline do dock).
 - [ ] Dock conferido a 330px e 480px nos dois temas, sem rolagem horizontal.
