@@ -91,13 +91,23 @@ CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'estica
 # Pico de áudio (0..1) acima do qual consideramos que o participante está falando.
 SPEAK_PEAK_THRESHOLD = 0.05
 
+# Temas do dock /control. `hardware`, `nordic`, `glass` e `obsidian` foram aposentados no
+# redesign de 2026-10; configs antigos migram para o padrão em vez de quebrar.
+CONTROL_THEMES = ('broadcast', 'ifes')
+DEFAULT_CONTROL_THEME = 'broadcast'
+
+
+def normalize_theme(value) -> str:
+    """Devolve um tema válido; qualquer valor desconhecido vira o padrão."""
+    return value if value in CONTROL_THEMES else DEFAULT_CONTROL_THEME
+
 DEFAULT_CONFIG = {
     "room_url": "https://conferenciaweb.rnp.br/ifes/ifes-cefor-01",
     "user_name": "OBS Studio",
     "user_email": "obs@obs.com",
     "youtube_url": "",
     "youtube_auto_connect": False,
-    "control_theme": "hardware",
+    "control_theme": DEFAULT_CONTROL_THEME,
     "show_camera_names": True,
     "camera_name_style": "glass",
     "grid_layout_mode": "auto",
@@ -125,6 +135,8 @@ def load_disk_config() -> dict:
                 data = json.load(f)
                 cfg = DEFAULT_CONFIG.copy()
                 cfg.update(data)
+                # Tema aposentado em config.json antigo não pode subir como valor inválido.
+                cfg["control_theme"] = normalize_theme(cfg.get("control_theme"))
                 return cfg
         except Exception as e:
             print(f"[Config] Erro ao carregar config.json: {e}")
@@ -174,7 +186,7 @@ class BridgeState:
         self.youtube_auto_connect = bool(cfg.get("youtube_auto_connect", False))
         self.youtube_connected = False
         self.youtube_status = "Desconectado"
-        self.control_theme = cfg.get("control_theme", "hardware")
+        self.control_theme = normalize_theme(cfg.get("control_theme"))
         
         self.cameras_list: List[dict] = []
         self.chat_messages: List[dict] = []
@@ -1774,8 +1786,8 @@ async def api_chat_config(req: Request):
 @app.post("/api/theme/set")
 async def api_theme_set(req: Request):
     data = await req.json()
-    theme = data.get("theme", "hardware")
-    if theme in ["hardware", "nordic", "glass", "obsidian", "ifes"]:
+    theme = data.get("theme", DEFAULT_CONTROL_THEME)
+    if theme in CONTROL_THEMES:
         state.control_theme = theme
         save_disk_config(state.export_config())
         return JSONResponse({"status": "ok", "control_theme": state.control_theme})
@@ -1789,7 +1801,7 @@ async def api_config_save(req: Request):
     if "user_email" in data: state.user_email = data["user_email"].strip()
     if "youtube_url" in data: state.youtube_url = data["youtube_url"].strip()
     if "youtube_auto_connect" in data: state.youtube_auto_connect = bool(data["youtube_auto_connect"])
-    if "control_theme" in data: state.control_theme = data["control_theme"]
+    if "control_theme" in data: state.control_theme = normalize_theme(data["control_theme"])
     if "show_camera_names" in data: state.show_camera_names = bool(data["show_camera_names"])
     if "camera_name_style" in data: state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data: state.grid_layout_mode = data["grid_layout_mode"]

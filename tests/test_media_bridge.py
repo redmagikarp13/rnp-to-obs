@@ -106,6 +106,38 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn("copyUrl('/audio'", response.text,
                          'O dock não deve mais oferecer o master de /audio; o master vem do /stage.')
 
+    def test_tema_padrao_e_broadcast(self):
+        self.assertEqual(server.DEFAULT_CONFIG['control_theme'], 'broadcast')
+
+    def test_temas_aposentados_migram_para_broadcast(self):
+        for antigo in ('hardware', 'nordic', 'glass', 'obsidian', '', None, 'inexistente', 123):
+            self.assertEqual(server.normalize_theme(antigo), 'broadcast',
+                             f'{antigo!r} deveria migrar para broadcast')
+
+    def test_temas_validos_permanecem(self):
+        self.assertEqual(server.normalize_theme('ifes'), 'ifes')
+        self.assertEqual(server.normalize_theme('broadcast'), 'broadcast')
+
+    def test_estado_normaliza_tema_vindo_do_disco(self):
+        with patch.object(server, 'load_disk_config', lambda: {**server.DEFAULT_CONFIG, 'control_theme': 'glass'}):
+            st = server.BridgeState()
+        self.assertEqual(st.control_theme, 'broadcast',
+                         'Config com tema aposentado não pode subir com valor inválido.')
+
+    def test_api_theme_set_aceita_os_dois_temas(self):
+        for tema in ('broadcast', 'ifes'):
+            response = self.client.post('/api/theme/set', json={'theme': tema})
+            self.assertEqual(response.status_code, 200, f'/api/theme/set deveria aceitar {tema}.')
+            self.assertEqual(response.json()['control_theme'], tema)
+            self.assertEqual(self.state.control_theme, tema)
+
+    def test_api_theme_set_rejeita_tema_aposentado(self):
+        # A rota validava contra a lista antiga; sem corrigir, aceitaria `glass`
+        # e rejeitaria `broadcast` — o oposto do pretendido.
+        response = self.client.post('/api/theme/set', json={'theme': 'glass'})
+        self.assertEqual(response.status_code, 400,
+                         'Tema aposentado precisa ser rejeitado por /api/theme/set.')
+
     def test_assets_do_dock_servidos_com_no_store(self):
         css = self.client.get('/assets/dock.css')
         self.assertEqual(css.status_code, 200, 'web/dock.css precisa ser servido como asset.')
