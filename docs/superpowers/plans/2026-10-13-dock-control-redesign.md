@@ -20,7 +20,9 @@
 - **Endpoints não mudam:** `/api/status`, `/api/config`, `/api/grid/config`, `/api/connect`, `/api/disconnect`, `/api/audio/control`, `/api/media`, `/api/libras/toggle_auto`, `/api/server/stop`.
 - **`body` continua com classe `theme-<control_theme>`.**
 - **Sem `window.confirm`** — dentro do dock do OBS o diálogo nativo é pouco confiável; confirmação é inline em duas etapas.
-- **Contraste:** todo texto informativo ≥ 4,5:1 nos dois temas. `--text-disabled` é exclusivo de aba inativa / controle desabilitado / separador.
+- **Contraste:** todo texto informativo ≥ 4,5:1 nos dois temas **sobre qualquer superfície** (`--bg`, `--surface`, `--surface-2`, `--surface-inset`). `--text-disabled` é exclusivo de aba inativa / controle desabilitado / separador.
+- **`--text-muted` do broadcast é `#8f8f8f`** (não `#8a8a8a`, que dava 4,44:1 sobre `--surface-2`). Ver spec §6.
+- **`--ok`, `--warn` e `--danger` são cores de preenchimento e borda, nunca de texto.** Rótulo de estado usa `--text`/`--text-muted`; a cor vai no ponto/quadrado ao lado.
 - **Alvo de clique:** altura mínima 26px para botões e campos.
 - **Como rodar um teste:** `python -u .test_runtime\run_tests.py <nome_do_teste>` (arquivo já existe; faz `sys.path.insert(0,'tests')`). Suíte inteira: `python -u .test_runtime\run_suite.py`. **Nunca** `python -m unittest tests.test_x` — `tests/` não é pacote.
 - **Nunca rodar a suíte com uma instância da ponte no ar** (3333/3334): contenção de CPU faz testes aleatórios travarem. Verificar com `Get-NetTCPConnection -LocalPort 3333,3334 -State Listen` antes.
@@ -103,7 +105,7 @@ body.theme-broadcast {
     --border-strong: #3d3d3d;
     --border-soft: #2c2c2c;
     --text: #e0e0e0;
-    --text-muted: #8a8a8a;
+    --text-muted: #8f8f8f;   /* #8a8a8a dava 4,44:1 sobre --surface-2; ver spec §6 */
     --text-disabled: #6b6b6b;
     --primary: #2d2d2d;
     --primary-border: #3d3d3d;

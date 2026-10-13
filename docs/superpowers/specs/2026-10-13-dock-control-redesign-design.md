@@ -100,7 +100,7 @@ Tokens (nomes e papéis):
 ```
 --bg #1a1a1a        --surface #202020     --surface-2 #252525   --surface-inset #141414
 --border #2e2e2e    --border-strong #3d3d3d  --border-soft #2c2c2c
---text #e0e0e0      --text-muted #8a8a8a  --text-disabled #6b6b6b
+--text #e0e0e0      --text-muted #8f8f8f  --text-disabled #6b6b6b
 --primary #2d2d2d   --primary-border #3d3d3d  --primary-text #e0e0e0
 --ok #3d8b43        --warn #b5a63c        --danger #c0392b
 --danger-surface #8b2f2f   --danger-border #a13838
@@ -247,20 +247,31 @@ O `config.json` do usuário em produção já contém `ifes`, que é válido —
 - **Estado nunca silencioso:** toda ação assíncrona mostra resultado no toast existente
   (`#saveToast`) — sucesso e falha. Falha de gravação de config continua **sem** fingir
   sucesso (comportamento já coberto por `test_dock_nao_confirma_libras_quando_gravacao_falha`).
-- **Contraste:** ≥ 4,5:1 em todo texto informativo, nos dois temas. Valores **já medidos**
-  com os tokens do §3.2 (luminância relativa WCAG):
+- **Contraste:** ≥ 4,5:1 em todo texto informativo, **sobre qualquer superfície do tema**
+  (`--bg`, `--surface`, `--surface-2`, `--surface-inset`). Valores medidos com luminância
+  relativa WCAG:
 
   | Par | Broadcast | Ifes |
   | :-- | :-- | :-- |
   | `--text` sobre `--surface` | 12,3:1 ✓ | 14,9:1 ✓ |
-  | `--text-muted` sobre `--surface` | 4,7:1 ✓ | 9,2:1 ✓ |
+  | `--text` sobre `--surface-2` | 11,6:1 ✓ | 13,9:1 ✓ |
+  | `--text-muted` sobre `--surface` | 5,0:1 ✓ | 9,2:1 ✓ |
+  | `--text-muted` sobre `--surface-2` | 4,7:1 ✓ | 8,6:1 ✓ |
+  | `--text-muted` sobre `--bg` | 5,4:1 ✓ | 8,1:1 ✓ |
   | `--primary-text` sobre `--primary` | 10,4:1 ✓ | 5,0:1 ✓ |
   | `--text-disabled` sobre `--surface` | 3,1:1 — só estado inativo | 4,5:1 — só estado inativo |
 
-  Pares a re-conferir na implementação (por dependerem da superfície final):
-  `--text` sobre `--bg` e `--surface-2`; texto do botão `Parar` sobre `--danger-surface`.
-  Se algum par informativo ficar abaixo de 4,5:1, ajustar o token — **não** rebaixar o
-  requisito.
+  **`--text-muted` do broadcast é `#8f8f8f`, não `#8a8a8a`.** O valor original dava 4,44:1
+  sobre `--surface-2` — abaixo do piso deste próprio §6, apesar de constar em §3.2. Como
+  `--text-muted` carrega **todo** metadado informativo (dB, FPS, contagem de câmeras), o
+  requisito prevalece sobre o valor e o token foi ajustado; a diferença visual é
+  imperceptível.
+
+- **`--ok`, `--warn` e `--danger` são cores de preenchimento e borda**, nunca de texto
+  (ponto de estado, filete, segmento de VU). Como texto elas ficam abaixo de 4,5:1 nas
+  superfícies escuras (`--ok` broadcast sobre `--surface` = 3,9:1; `--danger` ifes sobre
+  `--surface` = 4,4:1). Rótulos de estado usam `--text` ou `--text-muted`; a cor do estado
+  vai no ponto/quadrado ao lado.
 - **Alvo de clique:** altura mínima 26px para botões e campos, mesmo no tema denso.
 
 ## 7. Contratos preservados (não podem quebrar)
