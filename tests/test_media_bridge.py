@@ -152,6 +152,16 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_logo_substitui_o_emoji_do_titulo(self):
+        # O pedido era SUBSTITUIR o 🎛️ do título pela marca do If, não somar os dois.
+        for tema in ('ifes', 'broadcast'):
+            self.state.control_theme = tema
+            html = self.client.get('/control').text
+            h1 = re.search(r'<h1.*?</h1>', html, re.S)
+            self.assertIsNotNone(h1, f'Título do dock não encontrado (tema {tema}).')
+            self.assertNotIn('\U0001F39B', h1.group(0),
+                             f'O emoji do mixer não pode sobrar no título (tema {tema}).')
+
     def test_dock_tem_controle_de_sensibilidade_de_fala(self):
         # O ganho do microfone varia por sala/operador; o limiar precisa ser ajustável
         # sem editar config.json na mão.
