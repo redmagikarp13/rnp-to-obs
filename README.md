@@ -18,7 +18,7 @@ Desenvolvida especialmente para eventos institucionais, aulas magnas e transmiss
 ### 🎚️ 2. Rack de Áudio com VU Meters Verticais e Detecção de Voz Ativa
 - **Mixer Visual em Tempo Real:** Medição precisa de volume no painel de controle com rack vertical de medidores estéreo.
 - **Isolamento de Áudio Ativo:** Indicadores visuais dinâmicos que destacam o participante que está falando no momento (`activeTalkers`).
-- **Prevenção de Eco no OBS:** O áudio é transmitido exclusivamente pelo endpoint `/audio`. Os overlays de vídeo (`/stage`, `/libras`, etc.) mantêm a saída de áudio mutada para evitar duplicações e microfonia no OBS Studio.
+- **Prevenção de Eco no OBS:** o master de áudio é transmitido por **uma única** fonte, o `/stage` (com "Controlar áudio via OBS" marcado). Os demais overlays de vídeo (`/libras`, `/cameras/grid`, `/presentation`) mantêm a saída mutada, evitando duplicação e microfonia.
 
 ### 🤟 3. Janela de Libras Paritária & Acessibilidade (`/libras`)
 - **Conformidade ABNT / Cefor / Ifes:** Suporte à visualização paritária (`equal`, 50% de proporção em relação ao palestrante) ou janelas flutuantes (`huge` 560x315, `large` 480x270, `medium` 380x214).
@@ -61,14 +61,14 @@ Todos os endpoints operam em `http://localhost:3333` com transparência total (`
 | Endpoint | Tipo no OBS Studio | Dimensões Recomendadas | Descrição e Finalidade |
 | :--- | :--- | :--- | :--- |
 | `http://localhost:3333/control` | **Dock de Navegador** | Painel Livre | Painel de controle e monitoramento para o operador. |
-| `http://localhost:3333/stage` | **Browser Source** | `1920 x 1080` | Palco principal completo (Slides + Câmeras + Libras). |
+| `http://localhost:3333/stage` | **Browser Source** | `1920 x 1080` | Palco principal completo (Slides + Câmeras + Libras) **e master de áudio** — marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible". |
 | `http://localhost:3333/cameras/grid` | **Browser Source** | `1920 x 1080` ou `1920 x 600` | Grid dinâmico com todas as webcams ativas. |
 | `http://localhost:3333/libras` | **Browser Source** | `560 x 315` | Janela isolada dedicada para o Intérprete de Libras. |
 | `http://localhost:3333/presentation` | **Browser Source** | `1920 x 1080` | Slides da apresentação ou vídeo compartilhado. |
 | `http://localhost:3333/chat` | **Browser Source** | `460 x 700` | Feed de mensagens com rolagem automática. |
 | `http://localhost:3333/chat/featured` | **Browser Source** | `1920 x 1080` | Tarja de mensagem em destaque (*Lower-Third*). |
 | `http://localhost:3333/poll` | **Browser Source** | `1920 x 1080` | Card animado de resultado da enquete ao vivo. |
-| `http://localhost:3333/audio` | **Browser Source** | `200 x 200` | Receptor digital de áudio PCM Float32 (48 kHz). |
+| `http://localhost:3333/audio?source=<canal>` | **Browser Source** | `200 x 200` | Áudio **individual** de um participante (redireciona ao receptor WebRTC). O master não fica mais aqui — sai pelo `/stage`. Links prontos no rack de áudio do `/control`. |
 | `http://localhost:3333/catalog` | **Navegador Web** | — | Vitrine visual interativa com demonstração de todos os temas. |
 
 ---
@@ -128,13 +128,15 @@ Acesse `http://localhost:3333/control` no seu navegador.
 2. Marque *Criar nova* e dê um nome (ex: `Palco RNP`).
 3. Cole a URL correspondente (ex: `http://localhost:3333/stage`).
 4. Configure a resolução: **Largura:** `1920`, **Altura:** `1080`.
-5. Deixe desmarcado "Controlar áudio via OBS" nas fontes de vídeo para evitar sobreposição sonora.
+5. Nas demais fontes de vídeo (`/libras`, `/cameras/grid`, `/presentation`), deixe **desmarcado** "Controlar áudio via OBS" para evitar sobreposição sonora.
 
-### 3. Inserir a Fonte de Áudio Digital
-1. Adicione uma fonte do tipo **Navegador** com a URL: `http://localhost:3333/audio`.
-2. Configure **Largura:** `200`, **Altura:** `200`.
-3. Marque a opção: **Controlar áudio via OBS**.
-4. No Mixer de Áudio do OBS, essa fonte fornecerá o som digital transparente da sala em 48 kHz.
+### 3. Áudio da sala (vem junto com o `/stage`)
+1. Na fonte do **`/stage`**, marque **"Controlar áudio via OBS"** — é ela que entrega o master digital da sala (participantes + apresentações + som do YouTube) em PCM Float32 48 kHz.
+2. Ainda na fonte do `/stage`, **desligue** "Shutdown source when not visible". Como o áudio agora é acoplado ao palco, essa opção ligada faria o som sumir sempre que o palco não estivesse visível na cena.
+3. No Mixer de Áudio do OBS, o som aparecerá como uma fonte de navegador comum, aceitando ganho, compressor e monitoramento.
+
+### 4. Áudio individual por participante (opcional)
+O master já cobre a transmissão. Se precisar de uma trilha separada (ex.: gravar somente o palestrante), copie o link individual no **rack de áudio do painel** (`/control`): cada canal traz VU, volume, mute e botão de copiar, apontando para `/webrtc?source=<canal>&kind=audio`.
 
 ---
 
@@ -156,10 +158,10 @@ Acesse `http://localhost:3333/control` no seu navegador.
                         │ HTTP / WebSocket (Porta 3333)
 ┌───────────────────────▼─────────────────────────────────────┐
 │                      OBS Studio (CEF)                       │
-│  - /control (Dock)     - /stage (Palco 70/30, PIP, etc.)    │
+│  - /control (Dock)     - /stage (Palco + Master PCM 48kHz)  │
 │  - /libras (Acessib.)  - /cameras/grid (Grade de Câmeras)   │
 │  - /chat (Overlay)     - /poll (Enquetes BBB)               │
-│  - /audio (PCM 48kHz)  - /chat/featured (Lower-Third)       │
+│  - /audio?source=N     - /chat/featured (Lower-Third)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 

@@ -39,5 +39,7 @@ Para obter 60 FPS estáveis e transparência perfeita:
 
 ## 🎧 Roteamento de Áudio
 
-- Se você adicionar o link `/stage` ou `/audio` como Browser Source, marque a opção **"Controlar áudio via OBS"** na propriedade da fonte.
+- O master de áudio da conferência sai **apenas** pela Browser Source do `/stage`: marque **"Controlar áudio via OBS"** nessa fonte e deixe **desmarcado** nas demais (`/libras`, `/cameras/grid`, `/presentation`, `/chat`). Duas fontes com áudio ligado geram eco.
+- Na mesma fonte do `/stage`, **desligue** "Shutdown source when not visible". Como o áudio é acoplado ao palco, essa opção ligada suspende a página e derruba o som em cenas sem o palco.
 - Assim, o canal de som da conferência RNP aparecerá diretamente no **Mixer de Áudio do OBS**, permitindo aplicar filtros de ganho, compressor e monitoramento de fone de ouvido.
+- Precisa de uma trilha separada por pessoa (ex.: gravar só o palestrante)? Use os links individuais do rack de áudio no `/control` (`/audio?source=<canal>` → receptor WebRTC).

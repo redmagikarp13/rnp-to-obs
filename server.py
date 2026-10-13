@@ -6,14 +6,16 @@ import re
 import sys
 import time
 import urllib.parse
+import unicodedata
 from typing import Dict, List, Optional, Set
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Frame
 import pytchat
 import emoji
+from media_bridge import MEDIA_SOURCE_JS, ensure_media_adapter, register_media_routes
 
 class SafeLogWriter:
     def __init__(self, filepath=None):
@@ -72,7 +74,7 @@ def emojize_text(text: str) -> str:
     except Exception:
         return text
 
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+CONFIG_FILE = os.environ.get('RNP_CONFIG_FILE', os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"))
 
 app = FastAPI(title="RNP & YouTube to OBS Bridge Server")
 
@@ -84,6 +86,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'esticado')
+
+# Pico de áudio (0..1) acima do qual consideramos que o participante está falando.
+SPEAK_PEAK_THRESHOLD = 0.05
+
 DEFAULT_CONFIG = {
     "room_url": "https://conferenciaweb.rnp.br/ifes/ifes-cefor-01",
     "user_name": "OBS Studio",
@@ -94,6 +101,7 @@ DEFAULT_CONFIG = {
     "show_camera_names": True,
     "camera_name_style": "glass",
     "grid_layout_mode": "auto",
+    "camera_format": "original",
     "stage_preset": "side-by-side",
     "libras_size": "equal",
     "libras_auto_detect": True,
@@ -124,11 +132,15 @@ def load_disk_config() -> dict:
 
 def save_disk_config(cfg: dict):
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(CONFIG_FILE + '.tmp', "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(CONFIG_FILE + '.tmp', CONFIG_FILE)
         print(f"[Config] Configurações salvas com sucesso em {CONFIG_FILE}")
     except Exception as e:
         print(f"[Config] Erro ao salvar config.json: {e}")
+        raise
 
 def extract_youtube_video_id(url_or_id: str) -> str:
     if not url_or_id:
@@ -141,11 +153,19 @@ def extract_youtube_video_id(url_or_id: str) -> str:
         return url_or_id
     return url_or_id
 
+def normalized_name(name: str) -> str:
+    return ' '.join(unicodedata.normalize('NFC', name).casefold().split())
+
+
 class BridgeState:
     def __init__(self):
         cfg = load_disk_config()
         self.connected = False
         self.connecting = False
+        # WebRTC é o modo de produção (validado ao vivo em vídeo, YouTube nativo e
+        # compartilhamento com áudio): liga por padrão em qualquer caminho de boot
+        # (start.bat, app.pyw, .exe). Só o opt-out explícito mantém o legado JPEG.
+        self.webrtc_only = os.environ.get('RNP_WEBRTC_ONLY', '1') != '0'
         self.status_message = "Pronto para conectar."
         self.room_url = cfg.get("room_url", "https://conferenciaweb.rnp.br/ifes/ifes-cefor-01")
         self.user_name = cfg.get("user_name", "OBS Studio")
@@ -182,17 +202,26 @@ class BridgeState:
         self.latest_presentation_frame: Optional[bytes] = None
         self.pcm_clients: Set[WebSocket] = set()
         self.last_speaker_map: Dict[str, bool] = {}
+        self.audio_channels: List[dict] = []
+        self.audio_controls: Dict[str, dict] = {}
+        self.youtube: Optional[dict] = None
+        self.voice_speakers: List[dict] = []
+        self.connection_task: Optional[asyncio.Task] = None
         
         # Opções de Grid, Câmeras e Libras
         self.focused_camera_id: Optional[str] = None
         self.pinned_camera_ids: List[str] = []
-        self.libras_camera_ids: List[str] = [str(x) for x in cfg.get("libras_camera_ids", [])]
+        # IDs da reunião não são persistentes; versões antigas usavam posições.
+        self.libras_camera_ids: List[str] = []
         self.libras_disabled_camera_ids: Set[str] = set()
-        self.libras_saved_names: List[str] = [str(x) for x in cfg.get("libras_saved_names", [])]
+        self.libras_saved_names: List[str] = list(cfg.get("libras_saved_names", []))
+        self.libras_disabled_names: List[str] = list(cfg.get("libras_disabled_names", []))
         self.libras_auto_detect: bool = cfg.get("libras_auto_detect", True)
         self.libras_size: str = cfg.get("libras_size", "equal")
         self.show_camera_names: bool = cfg.get("show_camera_names", True)
         self.camera_name_style: str = cfg.get("camera_name_style", "glass")
+        _fmt = cfg.get("camera_format", "original")
+        self.camera_format: str = _fmt if _fmt in CAMERA_FORMATS else "original"
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
         self.custom_camera_names: Dict[str, str] = cfg.get("custom_camera_names", {})
@@ -212,6 +241,67 @@ class BridgeState:
         self.keep_alive_task: Optional[asyncio.Task] = None
         self.youtube_task: Optional[asyncio.Task] = None
 
+    def set_libras_cameras(self, ids):
+        requested = list(dict.fromkeys(str(cid) for cid in ids))
+        cameras = {str(c['id']): c for c in self.cameras_list}
+        if any(cid not in cameras for cid in requested):
+            raise HTTPException(409, 'Uma câmera saiu da sala. Atualize o painel antes de marcar Libras.')
+        selected_names = {normalized_name(cameras[cid].get('original_name', cameras[cid].get('name', ''))) for cid in requested}
+        selected_participants = {cameras[cid]['participant_id'] for cid in requested if cameras[cid].get('participant_id')}
+        for cid, cam in cameras.items():
+            original = cam.get('original_name', cam.get('name', '')).strip()
+            key = normalized_name(original)
+            if cid in requested:
+                self.libras_disabled_camera_ids.discard(cid)
+                self.libras_disabled_names = [n for n in self.libras_disabled_names if normalized_name(n) != key]
+                if key and key not in {normalized_name(n) for n in self.libras_saved_names}:
+                    self.libras_saved_names.append(original)
+            elif cid in self.libras_camera_ids or cam.get('participant_id') in selected_participants:
+                self.libras_disabled_camera_ids.add(cid)
+                if key not in selected_names:
+                    self.libras_saved_names = [n for n in self.libras_saved_names if normalized_name(n) != key]
+                    if key and key not in {normalized_name(n) for n in self.libras_disabled_names}:
+                        self.libras_disabled_names.append(original)
+            cam['is_libras'] = cid in requested
+        self.libras_camera_ids = requested
+
+    def reconcile_cameras(self, captured):
+        live_ids = {str(c['id']) for c in captured}
+        selected = set(self.libras_camera_ids) & live_ids
+        selected_participants = {c['participant_id'] for c in captured if str(c['id']) in selected and c.get('participant_id')}
+        self.libras_disabled_camera_ids.intersection_update(live_ids)
+        self.pinned_camera_ids = [cid for cid in self.pinned_camera_ids if cid in live_ids]
+        if self.focused_camera_id not in live_ids:
+            self.focused_camera_id = None
+        saved = {normalized_name(n) for n in self.libras_saved_names if normalized_name(n)}
+        disabled = {normalized_name(n) for n in self.libras_disabled_names if normalized_name(n)}
+        frames, cameras = {}, []
+        for cam in captured:
+            cid, original = str(cam['id']), cam['name'].strip()
+            key = normalized_name(original)
+            pid = cam.get('participant_id')
+            if pid and pid in selected_participants and cid not in selected:
+                self.libras_disabled_camera_ids.add(cid)
+            blocked = cid in self.libras_disabled_camera_ids or key in disabled
+            auto = self.libras_auto_detect and bool(re.search(r'\b(?:libras|intérprete|interprete|ils)\b', key))
+            is_libras = not blocked and (cid in selected or key in saved or auto)
+            if is_libras:
+                selected.add(cid)
+                if pid:
+                    selected_participants.add(pid)
+            else:
+                selected.discard(cid)
+            if cam.get('frame'):
+                frames[cid] = base64.b64decode(cam['frame'])
+            cameras.append({k: v for k, v in cam.items() if k != 'frame'} | {
+                'id': cid, 'original_name': original,
+                'name': self.custom_camera_names.get(cid, original),
+                'is_libras': is_libras, 'is_focused': cid == self.focused_camera_id,
+                'is_pinned': cid in self.pinned_camera_ids})
+        self.latest_camera_frames = frames
+        self.cameras_list = cameras
+        self.libras_camera_ids = [c['id'] for c in cameras if c['id'] in selected]
+
     def export_config(self) -> dict:
         return {
             "room_url": self.room_url,
@@ -222,6 +312,7 @@ class BridgeState:
             "control_theme": self.control_theme,
             "show_camera_names": self.show_camera_names,
             "camera_name_style": self.camera_name_style,
+            "camera_format": self.camera_format,
             "grid_layout_mode": self.grid_layout_mode,
             "stage_preset": self.stage_preset,
             "libras_size": self.libras_size,
@@ -236,7 +327,7 @@ class BridgeState:
             "chat_max_messages": self.chat_max_messages,
             "show_chat_avatars": self.show_chat_avatars,
             "custom_camera_names": self.custom_camera_names,
-            "libras_camera_ids": self.libras_camera_ids
+            "libras_disabled_names": self.libras_disabled_names
         }
 
 state = BridgeState()
@@ -250,6 +341,8 @@ def find_active_bbb_frame(page: Page) -> Frame:
         if "html5client" in f.url or "mconf" in f.url:
             return f
     return page.main_frame
+
+register_media_routes(app, lambda: state, find_active_bbb_frame)
 
 # --------------------------------------------------------------------------
 # YOUTUBE LIVE CHAT ENGINE (pytchat)
@@ -351,6 +444,29 @@ async def youtube_chat_loop(video_id: str):
 # --------------------------------------------------------------------------
 # RNP BIGBLUEBUTTON ENGINE
 # --------------------------------------------------------------------------
+async def start_connection(room_url: str, user_name: str, user_email: str):
+    """Inicia uma conexão cancelando e aguardando qualquer tentativa anterior (evita duas salas ativas)."""
+    previous = state.connection_task
+    if previous is not None and not previous.done():
+        previous.cancel()
+        try:
+            await previous
+        except BaseException:
+            pass
+    state.connection_task = asyncio.create_task(run_connection(room_url, user_name, user_email))
+
+
+async def cancel_connection():
+    task = state.connection_task
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass
+    state.connection_task = None
+
+
 async def run_connection(room_url: str, user_name: str, user_email: str):
     if state.connected or state.connecting:
         await stop_connection()
@@ -423,6 +539,12 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
             java_script_enabled=True,
             ignore_https_errors=True
         )
+        try:
+            max_peers = int(os.environ.get('RNP_MAX_PEERS', '0'))
+        except ValueError:
+            max_peers = 0
+        await state.context.add_init_script(f'window.RNP_MAX_PEERS = {max_peers};')
+        await state.context.add_init_script(MEDIA_SOURCE_JS)
         state.page = await state.context.new_page()
 
         log(f"Acessando sala RNP: {state.room_url} ...")
@@ -514,85 +636,9 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
 
         # 7. Iniciar áudio PCM Float32
         log("Iniciando transmissão de áudio PCM de baixa latência...")
-        await target_frame.evaluate('''() => {
-            if (window._pcmCaptureActive) return;
-            window._pcmCaptureActive = true;
-
-            function startPcmCapture() {
-                try {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-                    if (ctx.state === 'suspended') {
-                        ctx.resume().catch(() => {});
-                    }
-
-                    const masterGain = ctx.createGain();
-                    masterGain.gain.setValueAtTime(1.0, ctx.currentTime);
-
-                    const proc = ctx.createScriptProcessor(2048, 1, 1);
-                    const connectedStreams = new Set();
-
-                    const ws = new WebSocket('ws://127.0.0.1:3333/ws/pcm_in');
-                    ws.binaryType = 'arraybuffer';
-
-                    proc.onaudioprocess = (e) => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const input = e.inputBuffer.getChannelData(0);
-                            ws.send(input.buffer);
-                        }
-                    };
-
-                    masterGain.connect(proc);
-                    proc.connect(ctx.destination);
-
-                    function scanAndMixAudioSources() {
-                        try {
-                            const mediaElements = Array.from(document.querySelectorAll('audio, video'));
-                            for (const el of mediaElements) {
-                                if (el.srcObject && el.srcObject.getAudioTracks && el.srcObject.getAudioTracks().length > 0) {
-                                    const tracks = el.srcObject.getAudioTracks();
-                                    const activeTracks = tracks.filter(t => t.readyState === 'live');
-                                    if (activeTracks.length === 0) continue;
-
-                                    const streamId = el.srcObject.id || (el.id ? ('el_' + el.id) : ('track_' + activeTracks[0].id));
-                                    if (!connectedStreams.has(streamId)) {
-                                        try {
-                                            const src = ctx.createMediaStreamSource(el.srcObject);
-                                            src.connect(masterGain);
-                                            connectedStreams.add(streamId);
-                                            console.log('[RNP Audio Mixer] Conectado novo canal de áudio:', streamId, el.tagName);
-                                        } catch (err) {
-                                            // Pode já estar conectado ao AudioContext
-                                        }
-                                    }
-                                }
-                            }
-                        } catch(e) {}
-                    }
-
-                    scanAndMixAudioSources();
-                    const scanInterval = setInterval(scanAndMixAudioSources, 1500);
-
-                    ws.onclose = () => {
-                        try {
-                            clearInterval(scanInterval);
-                            proc.disconnect();
-                            masterGain.disconnect();
-                            ctx.close();
-                        } catch(e) {}
-                        window._pcmCaptureActive = false;
-                        setTimeout(startPcmCapture, 2000);
-                    };
-
-                    ws.onerror = () => {
-                        try { ws.close(); } catch(e) {}
-                    };
-                } catch(e) {
-                    window._pcmCaptureActive = false;
-                    setTimeout(startPcmCapture, 2000);
-                }
-            }
-            startPcmCapture();
-        }''')
+        await ensure_media_adapter(target_frame)
+        await target_frame.evaluate('(url) => window.RnpMedia.startPcm(url)',
+                                    f'ws://127.0.0.1:{os.environ.get("RNP_PORT", "3333")}/ws/pcm_in')
 
         state.connected = True
         state.connecting = False
@@ -612,6 +658,16 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         if state.youtube_auto_connect and state.youtube_url:
             asyncio.create_task(start_youtube_chat(state.youtube_url))
 
+    except asyncio.CancelledError:
+        # Cancelada por um connect/disconnect novo: libera o navegador e sai sem marcar como conectado.
+        state.connecting = False
+        if state.browser:
+            try:
+                await state.browser.close()
+            except Exception:
+                pass
+            state.browser = None
+        raise
     except Exception as e:
         state.connected = False
         state.connecting = False
@@ -642,6 +698,10 @@ async def stop_connection():
     state.bbb_frame = None
     state.cameras_list.clear()
     state.latest_camera_frames.clear()
+    state.audio_channels.clear()
+    state.audio_controls.clear()
+    state.libras_camera_ids.clear()
+    state.libras_disabled_camera_ids.clear()
     state.latest_presentation_frame = None
     state.poll_data = None
     log("Desconectado.")
@@ -665,6 +725,7 @@ async def keep_alive_loop():
             inactivity_selectors = [
                 '[data-test="inactivityWarningConfirmBtn"]',
                 '[data-test="confirmInactivity"]',
+                'button:has-text("Verificar")',
                 'button:has-text("Continuar")',
                 'button:has-text("Estou aqui")',
                 'button:has-text("Sim")',
@@ -673,16 +734,37 @@ async def keep_alive_loop():
                 'button:has-text("Stay in meeting")'
             ]
 
-            for sel in inactivity_selectors:
-                try:
-                    btn = target_frame.locator(sel)
-                    if await btn.count() > 0 and await btn.first.is_visible():
-                        await btn.first.click()
-                        state.inactivity_bypassed_count += 1
-                        log(f"🛡️ Modal de inatividade da RNP interceptado e confirmado automaticamente ({state.inactivity_bypassed_count}x)!")
-                        break
-                except Exception:
-                    pass
+            # O modal "Verificação de atividade do usuário" da RNP pode montar tanto no
+            # frame do BigBlueButton quanto no documento externo da sala; varre todos.
+            candidate_frames = [target_frame]
+            try:
+                candidate_frames = state.page.frames
+            except Exception:
+                pass
+            for frame in candidate_frames:
+                dismissed = False
+                for sel in inactivity_selectors:
+                    try:
+                        btn = frame.locator(sel)
+                        if await btn.count() > 0 and await btn.first.is_visible():
+                            await btn.first.click()
+                            state.inactivity_bypassed_count += 1
+                            log(f"🛡️ Modal de inatividade da RNP interceptado e confirmado automaticamente ({state.inactivity_bypassed_count}x)!")
+                            dismissed = True
+                            break
+                    except Exception:
+                        pass
+                if dismissed:
+                    break
+
+            # Contabiliza confirmações feitas pelo guard em página (MutationObserver do
+            # media-source.js), que resolvem o modal em subsegundo sem passar por aqui.
+            try:
+                dismissed_in_page = await target_frame.evaluate('() => window._rnpInactivityDismissed || 0')
+                if dismissed_in_page > state.inactivity_bypassed_count:
+                    state.inactivity_bypassed_count = dismissed_in_page
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -697,9 +779,10 @@ async def sync_loop():
         try:
             target_frame = find_active_bbb_frame(state.page)
             state.bbb_frame = target_frame
+            await ensure_media_adapter(target_frame)
 
             # 1. Capturar todas as Webcams com aceleracao, canvas persistente e deteccao de audio/fala
-            cam_data = await target_frame.evaluate('''() => {
+            cam_data = await target_frame.evaluate('''(captureJpeg) => {
                 if (!window._camCanvasMap) window._camCanvasMap = {};
                 const list = [];
                 const seenVideos = new Set();
@@ -751,8 +834,9 @@ async def sync_loop():
                     } catch(e) {}
                 });
 
-                const videoElements = document.querySelectorAll('video');
-                videoElements.forEach((video) => {
+                const videoEntries = window.RnpMedia.cameraEntries();
+                videoEntries.forEach((entry) => {
+                    const video = entry.video;
                     if (video.id === 'screenshareVideo' || video.closest('#screenshareContainer') || video.closest('[data-test="screenshareVideo"]')) {
                         return;
                     }
@@ -761,7 +845,7 @@ async def sync_loop():
 
                     const parent = video.closest('[data-test="webcamVideoItem"]') || video.closest('[data-test="webcamItem"]') || video.closest('div[class*="VideoListItem"]') || video.parentElement;
                     
-                    let name = '';
+                    let name = entry.name;
                     if (parent) {
                         const dropdown = parent.querySelector('[data-test="dropdownWebcamButton"], [class*="dropdownWebcamButton"]');
                         if (dropdown && dropdown.innerText.trim()) {
@@ -855,82 +939,81 @@ async def sync_loop():
                     const w = video.videoWidth || video.clientWidth || 903;
                     const h = video.videoHeight || video.clientHeight || 508;
                     
-                    const camKey = 'cam_' + (list.length + 1);
-                    let canvas = window._camCanvasMap[camKey];
-                    if (!canvas) {
-                        canvas = document.createElement('canvas');
-                        window._camCanvasMap[camKey] = canvas;
-                    }
-                    if (canvas.width !== w || canvas.height !== h) {
-                        canvas.width = w;
-                        canvas.height = h;
+                    let frame = null;
+                    if (captureJpeg) {
+                        const camKey = entry.id;
+                        let canvas = window._camCanvasMap[camKey];
+                        if (!canvas) {
+                            canvas = document.createElement('canvas');
+                            window._camCanvasMap[camKey] = canvas;
+                        }
+                        if (canvas.width !== w || canvas.height !== h) {
+                            canvas.width = w;
+                            canvas.height = h;
+                        }
+                        const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+                        ctx.drawImage(video, 0, 0, w, h);
+                        frame = canvas.toDataURL('image/jpeg', 0.80).slice(23);
                     }
 
-                    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
-                    ctx.drawImage(video, 0, 0, w, h);
+                    window._fpsSamples = window._fpsSamples || new Map();
+                    const q = (video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null);
+                    const nowMs = performance.now();
+                    const prevFps = window._fpsSamples.get(entry.id);
+                    let fps = (prevFps && q && nowMs > prevFps.t) ? (q.totalVideoFrames - prevFps.f) / ((nowMs - prevFps.t) / 1000) : 0;
+                    if (fps < 0) fps = 0;
+                    window._fpsSamples.set(entry.id, {t: nowMs, f: q ? q.totalVideoFrames : 0});
 
                     list.push({
-                        id: `${list.length + 1}`,
+                        id: entry.id,
+                        participant_id: entry.participant_id,
                         name: name,
                         width: w,
                         height: h,
-                        frame: canvas.toDataURL('image/jpeg', 0.80).slice(23),
+                        fps: Math.round(fps * 10) / 10,
+                        frame: frame,
                         is_speaking: isSpeaking,
                         is_muted: isMuted
                     });
                 });
 
-                return list;
-            }''')
+                const liveIds = new Set(list.map(c => c.id));
+                for (const id of Object.keys(window._camCanvasMap)) {
+                    if (!liveIds.has(id)) delete window._camCanvasMap[id];
+                }
+                if (window._fpsSamples) {
+                    for (const id of [...window._fpsSamples.keys()]) {
+                        if (!liveIds.has(id)) window._fpsSamples.delete(id);
+                    }
+                }
+                return {cameras: list, audio: window.RnpMedia.audioInfo(), youtube: window.RnpMedia.youtubeState()};
+            }''', not state.webrtc_only)
 
-            cams_info = []
-            for cam in cam_data:
-                frame_bytes = base64.b64decode(cam['frame'])
-                state.latest_camera_frames[str(cam['id'])] = frame_bytes
-                
-                display_name = state.custom_camera_names.get(str(cam['id']), cam['name'])
-                is_focus = (str(state.focused_camera_id) == str(cam['id']))
-                is_pin = (str(cam['id']) in [str(x) for x in state.pinned_camera_ids])
+            state.audio_channels = cam_data['audio']
+            state.youtube = cam_data.get('youtube')
 
-                # 🤟 RECONHECIMENTO AUTOMÁTICO E PERSISTENTE DE LIBRAS
-                cid_str = str(cam['id'])
-                is_libras = (cid_str in [str(x) for x in state.libras_camera_ids])
-                is_explicitly_disabled = (cid_str in [str(x) for x in state.libras_disabled_camera_ids])
-                
-                if not is_libras and not is_explicitly_disabled:
-                    if state.libras_saved_names:
-                        for s_name in state.libras_saved_names:
-                            if s_name and (s_name.lower() in display_name.lower() or s_name.lower() in cam['name'].lower() or display_name.lower() in s_name.lower()):
-                                is_libras = True
-                                if cid_str not in [str(x) for x in state.libras_camera_ids]:
-                                    state.libras_camera_ids.append(cid_str)
-                                break
+            # Fala por pico real do microfone (independe dos indicadores de DOM do BBB).
+            peaks = {}
+            for a in cam_data.get('audio', []):
+                pid = a.get('participant_id')
+                if pid and not str(a.get('id', '')).startswith('screen-audio-'):
+                    peaks[pid] = max(peaks.get(pid, 0.0), float(a.get('peak') or 0.0))
+            for cam in cam_data['cameras']:
+                pid = cam.get('participant_id')
+                if pid and peaks.get(pid, 0.0) > SPEAK_PEAK_THRESHOLD:
+                    cam['is_speaking'] = True
+            cam_pids = {c.get('participant_id') for c in cam_data['cameras'] if c.get('participant_id')}
+            state.voice_speakers = [
+                {'id': a.get('id'), 'participant_id': a.get('participant_id'), 'name': a.get('name')}
+                for a in cam_data.get('audio', [])
+                if a.get('participant_id')
+                and not str(a.get('id', '')).startswith('screen-audio-')
+                and float(a.get('peak') or 0.0) > SPEAK_PEAK_THRESHOLD
+                and a['participant_id'] not in cam_pids
+            ]
 
-                    if not is_libras and state.libras_auto_detect:
-                        keywords = ['libras', 'intérprete', 'interprete', 'tradutor', 'tradutora', 'ils']
-                        name_lower = (display_name + " " + cam['name']).lower()
-                        if any(kw in name_lower for kw in keywords):
-                            is_libras = True
-                            if cid_str not in [str(x) for x in state.libras_camera_ids]:
-                                state.libras_camera_ids.append(cid_str)
-                            if display_name not in state.libras_saved_names:
-                                state.libras_saved_names.append(display_name)
-                                save_disk_config(state.export_config())
-
-                cams_info.append({
-                    "id": str(cam['id']),
-                    "name": display_name,
-                    "original_name": cam['name'],
-                    "width": cam['width'],
-                    "height": cam['height'],
-                    "is_focused": is_focus,
-                    "is_pinned": is_pin,
-                    "is_libras": is_libras,
-                    "is_speaking": bool(cam.get('is_speaking', False)),
-                    "is_muted": bool(cam.get('is_muted', False))
-                })
-            
-            state.cameras_list = cams_info
+            state.reconcile_cameras(cam_data['cameras'])
+            cams_info = state.cameras_list
 
             # 🎙️ Notificar clientes conectados via WebSocket sobre os oradores ativos em tempo real
             speaker_map = {str(c['id']): bool(c.get('is_speaking', False)) for c in cams_info}
@@ -944,9 +1027,10 @@ async def sync_loop():
                         pass
 
             # 2. Capturar Apresentação (Screenshare rápido via Canvas)
-            screen_data = await target_frame.evaluate('''() => {
+            screen_data = await target_frame.evaluate('''(captureJpeg) => {
                 const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
                 if (vid && vid.videoWidth > 0) {
+                    if (!captureJpeg) return { mode: 'screenshare', frame: null };
                     if (!window._screenCanvas) {
                         window._screenCanvas = document.createElement('canvas');
                     }
@@ -962,10 +1046,10 @@ async def sync_loop():
                     return { mode: 'screenshare', frame: canvas.toDataURL('image/jpeg', 0.80).slice(23) };
                 }
                 return null;
-            }''')
+            }''', not state.webrtc_only)
 
             if screen_data:
-                state.latest_presentation_frame = base64.b64decode(screen_data['frame'])
+                state.latest_presentation_frame = base64.b64decode(screen_data['frame']) if screen_data['frame'] else None
                 state.screenshare_active = True
                 state.presentation_mode = "Tela Compartilhada (2.5K/1080p)"
             else:
@@ -1008,7 +1092,7 @@ async def sync_loop():
             pass
 
         elapsed = time.time() - t_start
-        sleep_time = max(0.015, 0.05 - elapsed)
+        sleep_time = max(0.015, (0.25 if state.webrtc_only else 0.05) - elapsed)
         await asyncio.sleep(sleep_time)
 
 
@@ -1504,11 +1588,12 @@ async def api_connect(req: Request):
     room_url = data.get("room_url", state.room_url)
     user_name = data.get("user_name", state.user_name)
     user_email = data.get("user_email", state.user_email)
-    asyncio.create_task(run_connection(room_url, user_name, user_email))
+    await start_connection(room_url, user_name, user_email)
     return JSONResponse({"status": "connecting", "message": "Iniciando conexão com a sala..."})
 
 @app.post("/api/disconnect")
 async def api_disconnect():
+    await cancel_connection()
     await stop_connection()
     return JSONResponse({"status": "disconnected"})
 
@@ -1627,34 +1712,7 @@ async def api_grid_config(req: Request):
     if "pinned_camera_ids" in data:
         state.pinned_camera_ids = [str(x) for x in data["pinned_camera_ids"]]
     if "libras_camera_ids" in data:
-        new_libras_ids = [str(x) for x in data["libras_camera_ids"]]
-        old_libras_ids = list(state.libras_camera_ids)
-        
-        # Câmeras que foram DESMARCADAS manualmente
-        removed_ids = [cid for cid in old_libras_ids if cid not in new_libras_ids]
-        for rid in removed_ids:
-            state.libras_disabled_camera_ids.add(str(rid))
-            # Remover o nome de saved_names para não reativar
-            for cam in state.cameras_list:
-                if str(cam.get('id')) == str(rid):
-                    cam_name = cam.get('name', '').strip()
-                    orig_name = cam.get('original_name', '').strip()
-                    state.libras_saved_names = [n for n in state.libras_saved_names if n.lower() not in (cam_name.lower(), orig_name.lower())]
-
-        # Câmeras que foram MARCADAS manualmente
-        added_ids = [cid for cid in new_libras_ids if cid not in old_libras_ids]
-        for aid in added_ids:
-            state.libras_disabled_camera_ids.discard(str(aid))
-            for cam in state.cameras_list:
-                if str(cam.get('id')) == str(aid):
-                    if cam.get('name') and cam['name'] not in state.libras_saved_names:
-                        state.libras_saved_names.append(cam['name'])
-                    if cam.get('original_name') and cam['original_name'] not in state.libras_saved_names:
-                        state.libras_saved_names.append(cam['original_name'])
-
-        state.libras_camera_ids = new_libras_ids
-        for cam in state.cameras_list:
-            cam['is_libras'] = (str(cam.get('id')) in state.libras_camera_ids)
+        state.set_libras_cameras(data["libras_camera_ids"])
     if "libras_size" in data:
         state.libras_size = data["libras_size"]
     if "show_camera_names" in data:
@@ -1663,6 +1721,10 @@ async def api_grid_config(req: Request):
         state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data:
         state.grid_layout_mode = data["grid_layout_mode"]
+    if "camera_format" in data:
+        fmt = str(data["camera_format"])
+        if fmt in CAMERA_FORMATS:
+            state.camera_format = fmt
     if "stage_preset" in data:
         state.stage_preset = data["stage_preset"]
     if "custom_name" in data and "cam_id" in data:
@@ -1670,9 +1732,6 @@ async def api_grid_config(req: Request):
         cid_str = str(data["cam_id"])
         if c_name:
             state.custom_camera_names[cid_str] = c_name
-            if cid_str in state.libras_camera_ids:
-                if c_name not in state.libras_saved_names:
-                    state.libras_saved_names.append(c_name)
         else:
             # Apaga a personalização e volta para o nome padrão da RNP!
             state.custom_camera_names.pop(cid_str, None)
@@ -1691,6 +1750,7 @@ async def api_libras_clear_saved():
     state.libras_saved_names = []
     state.libras_camera_ids = []
     state.libras_disabled_camera_ids = set()
+    state.libras_disabled_names = []
     for cam in state.cameras_list:
         cam['is_libras'] = False
     save_disk_config(state.export_config())
@@ -1744,7 +1804,7 @@ async def api_config_save(req: Request):
     if "chat_max_messages" in data: state.chat_max_messages = int(data["chat_max_messages"])
     if "show_chat_avatars" in data: state.show_chat_avatars = bool(data["show_chat_avatars"])
     if "custom_camera_names" in data: state.custom_camera_names = data["custom_camera_names"]
-    if "libras_camera_ids" in data: state.libras_camera_ids = [str(x) for x in data["libras_camera_ids"]]
+    if "libras_camera_ids" in data: state.set_libras_cameras(data["libras_camera_ids"])
 
     save_disk_config(state.export_config())
     return JSONResponse({"status": "saved", "config": state.export_config()})
@@ -1759,9 +1819,12 @@ async def api_config_reset():
     state.show_camera_names = cfg["show_camera_names"]
     state.camera_name_style = cfg["camera_name_style"]
     state.grid_layout_mode = cfg["grid_layout_mode"]
+    state.camera_format = cfg.get("camera_format", "original")
     state.stage_preset = cfg["stage_preset"]
     state.libras_size = cfg["libras_size"]
     state.libras_saved_names = []
+    state.libras_disabled_names = []
+    state.libras_disabled_camera_ids.clear()
     state.poll_display_mode = "results_only"
     state.poll_display_duration = 15
     state.poll_force_visible = False
@@ -1795,6 +1858,9 @@ async def api_status():
             "control_theme": state.control_theme,
             "cameras": state.cameras_list,
             "cameras_count": len(state.cameras_list),
+            "webrtc_only": state.webrtc_only,
+            "youtube": state.youtube,
+            "voice_speakers": state.voice_speakers,
             "focused_camera_id": state.focused_camera_id,
             "pinned_camera_ids": state.pinned_camera_ids,
             "libras_camera_ids": state.libras_camera_ids,
@@ -1803,6 +1869,7 @@ async def api_status():
             "libras_size": state.libras_size,
             "show_camera_names": state.show_camera_names,
             "camera_name_style": state.camera_name_style,
+            "camera_format": state.camera_format,
             "grid_layout_mode": state.grid_layout_mode,
             "stage_preset": state.stage_preset,
             "chat_style": state.chat_style,
@@ -1931,6 +1998,54 @@ PCM_AUDIO_SCRIPT = """
 # --------------------------------------------------------------------------
 # ESTILOS VISUAIS PARA TAGS DE NOMES E BADGE DE LIBRAS
 # --------------------------------------------------------------------------
+CAM_FORMAT_CSS = """
+        /* Formatos de câmera (data-camfmt no wrapper): proporção e ajuste da imagem. */
+        [data-camfmt="original"] > video, [data-camfmt="original"] > img { object-fit: contain !important; }
+        [data-camfmt="esticado"] > video, [data-camfmt="esticado"] > img { object-fit: fill !important; }
+        [data-camfmt="auto"] > video, [data-camfmt="auto"] > img,
+        [data-camfmt="retrato"] > video, [data-camfmt="retrato"] > img,
+        [data-camfmt="paisagem"] > video, [data-camfmt="paisagem"] > img,
+        [data-camfmt="quadrada"] > video, [data-camfmt="quadrada"] > img { object-fit: cover !important; }
+        .stage-cam-wrap[data-camfmt="retrato"], .cam-card[data-camfmt="retrato"] {
+            aspect-ratio: 9 / 16; flex: 0 1 auto; margin: auto; max-width: 100%; max-height: 100%;
+        }
+        .stage-cam-wrap[data-camfmt="paisagem"], .cam-card[data-camfmt="paisagem"] {
+            aspect-ratio: 16 / 9; flex: 0 1 auto; margin: auto; max-width: 100%; max-height: 100%;
+        }
+        .stage-cam-wrap[data-camfmt="quadrada"], .cam-card[data-camfmt="quadrada"] {
+            aspect-ratio: 1 / 1; flex: 0 1 auto; margin: auto; max-width: 100%; max-height: 100%;
+        }
+        /* "original": a moldura abraça o conteúdo e fica sem fundo preto,
+           mas MANTÉM borda e drop shadow da base contornando o vídeo. */
+        .stage-cam-wrap[data-camfmt="original"], .cam-card[data-camfmt="original"], .libras-card[data-camfmt="original"] {
+            background: transparent !important;
+            flex: 0 1 auto;
+            margin: auto;
+            max-width: 100%;
+            max-height: 100%;
+        }
+"""
+
+SPEAKING_CSS = """
+/* Sinalização de quem está falando, aplicada à name-tag EXISTENTE (sem segundo elemento). */
+.name-tag.is-speaking {
+    border-color: #22c55e !important;
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, .7), 0 0 14px rgba(34, 197, 94, .55) !important;
+}
+.name-tag.is-speaking::after {
+    content: '';
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+    animation: pulseLive 1.2s infinite;
+    margin-left: 2px;
+}
+@keyframes pulseLive {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.6; }
+}
+"""
+
 NAME_TAG_CSS = """
 .name-tag.style-glass {
     position: absolute;
@@ -3031,6 +3146,12 @@ async def get_control_panel():
     sel_layout_row = "selected" if state.grid_layout_mode == "row" else ""
     sel_layout_col = "selected" if state.grid_layout_mode == "column" else ""
     sel_layout_grid = "selected" if state.grid_layout_mode == "grid" else ""
+    sel_fmt_auto = "selected" if state.camera_format == "auto" else ""
+    sel_fmt_original = "selected" if state.camera_format == "original" else ""
+    sel_fmt_retrato = "selected" if state.camera_format == "retrato" else ""
+    sel_fmt_paisagem = "selected" if state.camera_format == "paisagem" else ""
+    sel_fmt_quadrada = "selected" if state.camera_format == "quadrada" else ""
+    sel_fmt_esticado = "selected" if state.camera_format == "esticado" else ""
 
     sel_lib_equal = "selected" if state.libras_size == "equal" else ""
     sel_lib_huge = "selected" if state.libras_size == "huge" else ""
@@ -3211,7 +3332,7 @@ async def get_control_panel():
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px;">
             <!-- Enquete -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #10b981;" onclick="copyUrl('http://localhost:3333/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #10b981;" onclick="copyUrl('/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
                 <span style="font-size: 18px; margin-right: 6px;">📊</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Enquete / Votação</div>
@@ -3220,7 +3341,7 @@ async def get_control_panel():
             </button>
 
             <!-- Palco Composto -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(168, 85, 247, 0.15); border-color: #c084fc; color: #c084fc;" onclick="copyUrl('http://localhost:3333/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(168, 85, 247, 0.15); border-color: #c084fc; color: #c084fc;" onclick="copyUrl('/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
                 <span style="font-size: 18px; margin-right: 6px;">🎭</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Palco Composto</div>
@@ -3229,7 +3350,7 @@ async def get_control_panel():
             </button>
 
             <!-- Janela Libras -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(6, 182, 212, 0.15); border-color: #06b6d4; color: #22d3ee;" onclick="copyUrl('http://localhost:3333/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(6, 182, 212, 0.15); border-color: #06b6d4; color: #22d3ee;" onclick="copyUrl('/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
                 <span style="font-size: 18px; margin-right: 6px;">🤟</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Janela de Libras</div>
@@ -3238,7 +3359,7 @@ async def get_control_panel():
             </button>
 
             <!-- Chat Feed -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #60a5fa;" onclick="copyUrl('http://localhost:3333/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(59, 130, 246, 0.15); border-color: #3b82f6; color: #60a5fa;" onclick="copyUrl('/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
                 <span style="font-size: 18px; margin-right: 6px;">💬</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Feed de Chat (RNP+YT)</div>
@@ -3247,7 +3368,7 @@ async def get_control_panel():
             </button>
 
             <!-- Chat Destaque -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(234, 179, 8, 0.15); border-color: #eab308; color: #fde047;" onclick="copyUrl('http://localhost:3333/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(234, 179, 8, 0.15); border-color: #eab308; color: #fde047;" onclick="copyUrl('/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
                 <span style="font-size: 18px; margin-right: 6px;">⭐</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Chat em Destaque</div>
@@ -3256,7 +3377,7 @@ async def get_control_panel():
             </button>
 
             <!-- Grid de Câmeras -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(14, 165, 233, 0.15); border-color: #0ea5e9; color: #38bdf8;" onclick="copyUrl('http://localhost:3333/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(14, 165, 233, 0.15); border-color: #0ea5e9; color: #38bdf8;" onclick="copyUrl('/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
                 <span style="font-size: 18px; margin-right: 6px;">👥</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Grid de Câmeras</div>
@@ -3265,7 +3386,7 @@ async def get_control_panel():
             </button>
 
             <!-- Slides / Apresentação -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(244, 63, 94, 0.15); border-color: #f43f5e; color: #fda4af;" onclick="copyUrl('http://localhost:3333/presentation', this)" title="Copiar URL dos Slides da Apresentação">
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(244, 63, 94, 0.15); border-color: #f43f5e; color: #fda4af;" onclick="copyUrl('/presentation', this)" title="Copiar URL dos Slides da Apresentação">
                 <span style="font-size: 18px; margin-right: 6px;">📽️</span>
                 <div style="line-height: 1.2;">
                     <div style="font-weight: 800; font-size: 11.5px;">Slides Apresentação</div>
@@ -3273,14 +3394,8 @@ async def get_control_panel():
                 </div>
             </button>
 
-            <!-- Áudio PCM Stream -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px; background: rgba(34, 197, 94, 0.15); border-color: #22c55e; color: #86efac;" onclick="copyUrl('http://localhost:3333/audio', this)" title="Copiar URL do Stream de Áudio">
-                <span style="font-size: 18px; margin-right: 6px;">🔊</span>
-                <div style="line-height: 1.2;">
-                    <div style="font-weight: 800; font-size: 11.5px;">Áudio PCM Direto</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace;">/audio (Controle Áudio OBS)</div>
-                </div>
-            </button>
+            <!-- O master de áudio agora vem do /stage (ver botão "Palco Composto");
+                 os áudios individuais ficam no rack de áudio abaixo, com link próprio. -->
         </div>
     </div>
 
@@ -3314,8 +3429,8 @@ async def get_control_panel():
                 <span>🎭 Palco Composto (Slides + Câmeras)</span>
             </span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: #c084fc;" onclick="copyUrl('http://localhost:3333/stage')">📋 Link Palco OBS</button>
-                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('http://localhost:3333/libras')">🤟 Link Janela Libras</button>
+                <button class="btn-copy" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: #c084fc;" onclick="copyUrl('/stage')">📋 Link Palco OBS</button>
+                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('/libras')">🤟 Link Janela Libras</button>
             </div>
         </div>
 
@@ -3376,7 +3491,7 @@ async def get_control_panel():
                 <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px;">⚪ Standby</span>
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981; font-weight: 700;" onclick="copyUrl('http://localhost:3333/poll', this)">📋 Link OBS Enquete</button>
+                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981; font-weight: 700;" onclick="copyUrl('/poll', this)">📋 Link OBS Enquete</button>
                 <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
                 <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px; color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="clearPoll()">🗑️ Limpar</button>
             </div>
@@ -3460,15 +3575,9 @@ async def get_control_panel():
                 <span>🔊</span> Transmissão de Áudio da Sala & Mixer OBS
             </span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981;" onclick="copyUrl('http://localhost:3333/audio', this)" title="Copiar URL Master para adicionar como Fonte de Navegador no OBS Studio">
-                    📋 Copiar Link Master OBS
-                </button>
                 <button class="btn-ctrl" onclick="testAudioVuMeter()" style="font-size: 11.5px; padding: 4px 10px;" title="Testar animação de todos os medidores de áudio">
                     🧪 Testar Medidores
                 </button>
-                <a href="/audio" target="_blank" class="btn-ctrl" style="text-decoration: none; display: inline-flex; align-items: center; padding: 4px 10px; font-size: 11.5px;" title="Abrir áudio no navegador">
-                    🔗 Ouvir no Navegador
-                </a>
             </div>
         </div>
 
@@ -3476,9 +3585,9 @@ async def get_control_panel():
         <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
             <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #10b981;">
                 <span class="source-health-dot ok"></span>
-                <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte e Master geral para o OBS Studio (PCM Float32 48kHz).</span>
+                <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte. O master geral sai pelo <strong>/stage</strong> (PCM Float32 48kHz) — marque "Controlar áudio via OBS" nessa fonte.</span>
             </div>
-            <span class="badge connected" style="font-size: 11px;">OBS: /audio</span>
+            <span class="badge connected" style="font-size: 11px;">OBS: /stage</span>
         </div>
 
         <!-- MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS -->
@@ -3488,7 +3597,7 @@ async def get_control_panel():
                 <div class="channel-header">
                     <span style="font-size: 18px;">🎛️</span>
                     <span class="channel-title">Master Geral</span>
-                    <span class="channel-tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">OBS: /audio</span>
+                    <span class="channel-tag" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">OBS: /stage</span>
                 </div>
 
                 <div class="channel-meter-box">
@@ -3510,9 +3619,7 @@ async def get_control_panel():
 
                 <div class="meter-db-readout" id="vuMasterDbText">-∞ dB (0%)</div>
 
-                <button class="channel-btn-copy" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border-color: #10b981;" onclick="copyUrl('http://localhost:3333/audio', this)" title="Copiar link do áudio Master para o OBS">
-                    📋 Link Master
-                </button>
+                <div class="channel-tag" title="O master é reproduzido pela fonte /stage no OBS">Master via /stage</div>
 
                 <div class="channel-fader-box">
                     <div style="display:flex; justify-content:space-between; width:100%; font-size:10px; color:#94a3b8;">
@@ -3559,8 +3666,8 @@ async def get_control_panel():
         <div class="section-title">
             <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" onclick="copyUrl('http://localhost:3333/cameras/grid', this)">📋 Link Grid</button>
-                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('http://localhost:3333/libras', this)">🤟 Janela Libras</button>
+                <button class="btn-copy" onclick="copyUrl('/cameras/grid', this)">📋 Link Grid</button>
+                <button class="btn-copy" style="background: rgba(6, 182, 212, 0.2); color: #22d3ee; border-color: #06b6d4;" onclick="copyUrl('/libras', this)">🤟 Janela Libras</button>
             </div>
         </div>
 
@@ -3596,6 +3703,18 @@ async def get_control_panel():
                 </select>
             </div>
 
+            <div class="grid-opt-group">
+                <label style="margin: 0; color: #94a3b8; font-size: 12px;">Formato Câmera:</label>
+                <select id="selCamFormat" style="width: auto; padding: 4px 8px; font-size: 12px;" onchange="updateGridConfig()">
+                    <option value="original" {sel_fmt_original}>📐 Original (sem corte)</option>
+                    <option value="paisagem" {sel_fmt_paisagem}>🖼️ Paisagem 16:9</option>
+                    <option value="quadrada" {sel_fmt_quadrada}>⬜ Quadrada 1:1</option>
+                    <option value="retrato" {sel_fmt_retrato}>📱 Retrato 9:16</option>
+                    <option value="esticado" {sel_fmt_esticado}>↔️ Esticado (preencher)</option>
+                    <option value="auto" {sel_fmt_auto}>🤖 Auto (corte atual)</option>
+                </select>
+            </div>
+
             <div class="grid-opt-group" style="width: 100%;">
                 <button class="btn-ctrl" style="width: 100%;" onclick="clearFocusAndPins()">🔄 Restaurar Grid Equilibrado</button>
             </div>
@@ -3615,8 +3734,8 @@ async def get_control_panel():
         <div class="section-title">
             <span>💬 Chat & Destaque (Lower-Third)</span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn-copy" onclick="copyUrl('http://localhost:3333/chat')">📋 Link Feed</button>
-                <button class="btn-copy" style="background: rgba(234, 179, 8, 0.2); color: #eab308; border-color: #eab308;" onclick="copyUrl('http://localhost:3333/chat/featured')">🌟 Link Destaque</button>
+                <button class="btn-copy" onclick="copyUrl('/chat')">📋 Link Feed</button>
+                <button class="btn-copy" style="background: rgba(234, 179, 8, 0.2); color: #eab308; border-color: #eab308;" onclick="copyUrl('/chat/featured')">🌟 Link Destaque</button>
             </div>
         </div>
 
@@ -3693,7 +3812,7 @@ async def get_control_panel():
     <div class="card">
         <div class="section-title">
             <span>📊 Apresentação / Slides</span>
-            <button class="btn-copy" onclick="copyUrl('http://localhost:3333/presentation')">📋 Link Slides</button>
+            <button class="btn-copy" onclick="copyUrl('/presentation')">📋 Link Slides</button>
         </div>
         <div class="thumb-box" style="height: 200px; background: transparent;">
             <img id="thumbScreen" src="/raw_frame/presentation" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
@@ -3701,9 +3820,12 @@ async def get_control_panel():
     </div>
 
     {PCM_AUDIO_SCRIPT}
+    {'<p style="color:#fbbf24">Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
 
+    <script src="/assets/audio-mixer.js"></script>
     <script>
         let currentCameras = [];
+        let configSaveError = '';
         let currentMessages = [];
         let activeFeaturedMsg = null;
         let focusedCamId = null;
@@ -3768,56 +3890,6 @@ async def get_control_panel():
             }}
             updatePeakHoldUI(masterPeakHold);
 
-            // Animar medidores dos canais individuais EXCLUSIVAMENTE para quem está ativamente falando
-            if (currentCameras && currentCameras.length > 0) {{
-                currentCameras.forEach((c) => {{
-                    const cid = String(c.id);
-                    const barEl = document.getElementById('vuBar_cam_' + cid);
-                    const peakEl = document.getElementById('vuPeak_cam_' + cid);
-                    const dbEl = document.getElementById('vuDb_cam_' + cid);
-                    if (barEl) {{
-                        if (c.is_speaking) {{
-                            const faderVal = sourceVolumes[cid] !== undefined ? sourceVolumes[cid] : 1.0;
-                            const isChanMuted = mutedSources.has(cid);
-                            const chPeak = isChanMuted ? 0 : (peak * faderVal);
-                            const channelPct = Math.max(0, Math.min(100, Math.round(chPeak * 100)));
-                            barEl.style.height = channelPct + '%';
-                            if (peakEl && channelPct > (channelPeaks[cid] || 0)) {{
-                                channelPeaks[cid] = channelPct;
-                                peakEl.style.bottom = channelPct + '%';
-                                setTimeout(() => {{ channelPeaks[cid] = 0; }}, 1200);
-                            }}
-                            if (dbEl) {{
-                                if (channelPct > 0) {{
-                                    const chDb = chPeak > 0.0001 ? Math.max(-60, Math.min(0, 20 * Math.log10(chPeak))) : -60;
-                                    dbEl.innerText = `${{chDb.toFixed(1)}} dB (${{channelPct}}%)`;
-                                    dbEl.style.color = channelPct > 85 ? '#ef4444' : (channelPct > 65 ? '#f59e0b' : '#10b981');
-                                }} else {{
-                                    dbEl.innerText = '-∞ dB (0%)';
-                                    dbEl.style.color = '#94a3b8';
-                                }}
-                            }}
-                        }} else {{
-                            // Quem NÃO está falando fica estritamente zerado (-∞ dB)
-                            const cur = parseFloat(barEl.style.height || '0');
-                            if (cur > 0) {{
-                                const nextVal = Math.max(0, cur - 15);
-                                barEl.style.height = nextVal + '%';
-                                if (nextVal === 0 && dbEl) {{
-                                    dbEl.innerText = '-∞ dB (0%)';
-                                    dbEl.style.color = '#94a3b8';
-                                }}
-                            }} else {{
-                                barEl.style.height = '0%';
-                                if (dbEl) {{
-                                    dbEl.innerText = '-∞ dB (0%)';
-                                    dbEl.style.color = '#94a3b8';
-                                }}
-                            }}
-                        }}
-                    }}
-                }});
-            }}
         }};
 
         // Atualização em tempo real de quem está falando recebida via WebSocket
@@ -3944,33 +4016,6 @@ async def get_control_panel():
             }}
         }};
 
-        let sourceVolumes = {{}};
-        window.updateSourceVol = function(camId, val) {{
-            sourceVolumes[camId] = parseFloat(val);
-            const pct = Math.round(parseFloat(val) * 100);
-            const lbl = document.getElementById('lblVol_cam_' + camId);
-            if (lbl) lbl.innerText = pct + '%';
-        }};
-
-        let mutedSources = new Set();
-        window.toggleSourceMute = function(camId) {{
-            const btn = document.getElementById('btnMute_cam_' + camId);
-            if (mutedSources.has(camId)) {{
-                mutedSources.delete(camId);
-                if (btn) {{
-                    btn.style.background = '#0f172a';
-                    btn.style.color = '#cbd5e1';
-                    btn.innerText = '🔊 Ativo';
-                }}
-            }} else {{
-                mutedSources.add(camId);
-                if (btn) {{
-                    btn.style.background = '#ef4444';
-                    btn.style.color = '#fff';
-                    btn.innerText = '🔇 Mudo';
-                }}
-            }}
-        }};
 
         function showSaveNotice() {{
             const toast = document.getElementById('saveToast');
@@ -4072,6 +4117,7 @@ async def get_control_panel():
                 document.getElementById('chkShowNames').checked = !!cfg.show_camera_names;
                 document.getElementById('selNameStyle').value = cfg.camera_name_style || 'glass';
                 document.getElementById('selGridLayout').value = cfg.grid_layout_mode || 'auto';
+                document.getElementById('selCamFormat').value = cfg.camera_format || 'original';
                 document.getElementById('selLibrasSize').value = cfg.libras_size || 'equal';
                 document.getElementById('selPollDisplayMode').value = cfg.poll_display_mode || 'results_only';
                 document.getElementById('selPollDuration').value = (cfg.poll_display_duration !== undefined) ? cfg.poll_display_duration : 15;
@@ -4323,7 +4369,7 @@ async def get_control_panel():
                 }}
 
                 if (data.status_message) {{
-                    document.getElementById('logBox').innerText = '> ' + data.status_message;
+                    document.getElementById('logBox').innerText = configSaveError || ('> ' + data.status_message);
                 }}
 
                 focusedCamId = (data.focused_camera_id !== null && data.focused_camera_id !== undefined) ? String(data.focused_camera_id) : null;
@@ -4530,88 +4576,7 @@ async def get_control_panel():
                 currentCameras = cams;
                 document.getElementById('camTotalCount').innerText = cams.length;
 
-                // --- 🎙️ SINCRONIZAÇÃO DA MESA DE SOM VERTICAL (CANAIS INDIVIDUAIS) ---
-                const indContainer = document.getElementById('individualChannelsContainer');
-                const noIndPlaceholder = document.getElementById('noIndividualChannelsPlaceholder');
-                if (indContainer) {{
-                    if (cams.length === 0) {{
-                        if (noIndPlaceholder) noIndPlaceholder.style.display = 'flex';
-                        indContainer.innerHTML = '';
-                    }} else {{
-                        if (noIndPlaceholder) noIndPlaceholder.style.display = 'none';
-                        const existingIds = new Set(Array.from(indContainer.querySelectorAll('.audio-channel-strip')).map(el => el.getAttribute('data-cam-id')));
-                        const newIds = new Set(cams.map(c => String(c.id)));
-                        
-                        // Remover canais desconectados
-                        existingIds.forEach(id => {{
-                            if (!newIds.has(id)) {{
-                                const strip = document.getElementById('channelStrip_cam_' + id);
-                                if (strip) strip.remove();
-                            }}
-                        }});
-
-                        // Inserir ou atualizar canal de cada câmera
-                        cams.forEach(c => {{
-                            const cid = String(c.id);
-                            let strip = document.getElementById('channelStrip_cam_' + cid);
-                            if (!strip) {{
-                                strip = document.createElement('div');
-                                strip.className = 'audio-channel-strip';
-                                strip.id = 'channelStrip_cam_' + cid;
-                                strip.setAttribute('data-cam-id', cid);
-                                if (c.is_libras) strip.style.borderColor = 'rgba(6, 182, 212, 0.4)';
-                                strip.innerHTML = `
-                                    <div class="channel-header">
-                                        <span style="font-size: 18px;">${{c.is_libras ? '🤟' : '🎥'}}</span>
-                                        <span class="channel-title" title="${{c.name}}">${{c.name}}</span>
-                                        <div style="display:flex; align-items:center; justify-content:center; gap:4px; width:100%; margin-top:2px;">
-                                            <span class="channel-tag">ID: cam_${{c.id}}</span>
-                                            <span class="channel-voice-badge" id="voiceBadge_cam_${{c.id}}">${{c.is_speaking ? '🗣️ Falando' : (c.is_muted ? '🔇 Mudo' : '🎙️ Aberto')}}</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-meter-box">
-                                        <div class="meter-scale-vertical">
-                                            <span style="color:#ef4444; font-weight:bold;">0</span>
-                                            <span style="color:#f59e0b;">-3</span>
-                                            <span style="color:#f59e0b;">-6</span>
-                                            <span>-12</span>
-                                            <span>-20</span>
-                                            <span>-30</span>
-                                            <span>-40</span>
-                                            <span>-60</span>
-                                        </div>
-                                        <div class="vu-track-vertical">
-                                            <div class="vu-fill-vertical" id="vuBar_cam_${{c.id}}"></div>
-                                            <div class="vu-peak-vertical" id="vuPeak_cam_${{c.id}}"></div>
-                                        </div>
-                                    </div>
-                                    <div class="meter-db-readout" id="vuDb_cam_${{c.id}}">-∞ dB (0%)</div>
-                                    <button class="channel-btn-copy" onclick="copyUrl('http://localhost:3333/audio?source=${{c.id}}', this)" title="Copiar link de áudio exclusivo desta fonte para o OBS">
-                                        📋 Link Fonte ${{c.id}}
-                                    </button>
-                                    <div class="channel-fader-box">
-                                        <div style="display:flex; justify-content:space-between; width:100%; font-size:10px; color:#94a3b8;">
-                                            <span>Vol:</span>
-                                            <span id="lblVol_cam_${{c.id}}">100%</span>
-                                        </div>
-                                        <input type="range" id="rngVol_cam_${{c.id}}" min="0" max="1.5" step="0.05" value="1" style="width:100%; accent-color:#38bdf8; cursor:pointer;" oninput="updateSourceVol('${{c.id}}', this.value)">
-                                        <button class="btn-ctrl" id="btnMute_cam_${{c.id}}" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px;" onclick="toggleSourceMute('${{c.id}}')">
-                                            🔊 Ativo
-                                        </button>
-                                    </div>
-                                `;
-                                indContainer.appendChild(strip);
-                            }} else {{
-                                const titleEl = strip.querySelector('.channel-title');
-                                if (titleEl && titleEl.title !== c.name) {{
-                                    titleEl.title = c.name;
-                                    titleEl.innerText = c.name;
-                                }}
-                            }}
-                            updateChannelVisualState(c);
-                        }});
-                    }}
-                }}
+                // A mesa de som usa trilhas identificadas em /api/media, inclusive sem câmera.
                 
                 const grid = document.getElementById('camerasGrid');
                 grid.innerHTML = '';
@@ -4637,6 +4602,7 @@ async def get_control_panel():
                                     ${{isLibras ? '🤟' : (isFocus ? '🌟' : (isPin ? '📌' : '🎥'))}} <strong>${{c.name}}</strong>
                                 </span>
                                 <span style="font-size: 10.5px; color: #10b981;">● ${{c.width}}x${{c.height}}</span>
+                                <span class="cam-fps" style="font-size: 10.5px; color: ${{(c.fps >= 20 ? '#10b981' : (c.fps >= 10 ? '#eab308' : '#ef4444'))}};">${{Math.round(c.fps || 0)}} FPS</span>
                             </div>
                             <div class="thumb-box">
                                 <img src="/raw_frame/camera/${{c.id}}?t=${{Date.now()}}" id="thumbCam_${{c.id}}" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
@@ -4658,7 +4624,7 @@ async def get_control_panel():
                                 </button>
                             </div>
 
-                            <button class="btn-copy" onclick="copyUrl('http://localhost:3333/camera/${{c.id}}')">📋 Link Câmera ${{c.id}}</button>
+                            <button class="btn-copy" onclick="copyUrl('/camera/${{c.id}}')">📋 Link Câmera ${{c.id}}</button>
                         `;
                         grid.appendChild(box);
                     }});
@@ -4672,10 +4638,11 @@ async def get_control_panel():
             const show_camera_names = document.getElementById('chkShowNames').checked;
             const camera_name_style = document.getElementById('selNameStyle').value;
             const grid_layout_mode = document.getElementById('selGridLayout').value;
+            const camera_format = document.getElementById('selCamFormat').value;
             await fetch('/api/grid/config', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ show_camera_names, camera_name_style, grid_layout_mode, stage_preset: activeStagePreset, libras_camera_ids: librasCamIds, libras_size: activeLibrasSize }})
+                body: JSON.stringify({{ show_camera_names, camera_name_style, grid_layout_mode, camera_format, stage_preset: activeStagePreset, libras_camera_ids: librasCamIds, libras_size: activeLibrasSize }})
             }});
             showSaveNotice();
         }}
@@ -4712,14 +4679,21 @@ async def get_control_panel():
             }} else {{
                 newLibras.push(targetId);
             }}
-            librasCamIds = newLibras;
-            await fetch('/api/grid/config', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ libras_camera_ids: newLibras }})
-            }});
-            fetchStatus();
-            showSaveNotice();
+            try {{
+                const response = await fetch('/api/grid/config', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ libras_camera_ids: newLibras }})
+                }});
+                if (!response.ok) throw new Error('Não foi possível salvar Libras. Verifique a câmera e a permissão de gravação.');
+                configSaveError = '';
+                librasCamIds = newLibras;
+                await fetchStatus();
+                showSaveNotice();
+            }} catch (error) {{
+                configSaveError = error.message;
+                document.getElementById('logBox').innerText = configSaveError;
+            }}
         }}
 
         async function toggleLibrasAutoDetect() {{
@@ -4962,6 +4936,7 @@ async def get_control_panel():
         }}
 
         function copyUrl(url, btnElement) {{
+            url = new URL(url, window.location.origin).href;
             if (navigator.clipboard && navigator.clipboard.writeText) {{
                 navigator.clipboard.writeText(url).catch(() => {{
                     fallbackCopy(url);
@@ -5001,7 +4976,7 @@ async def get_control_panel():
 # OBS OVERLAY: PALCO COMPOSTO (SLIDES + CÂMERAS + LIBRAS INTEGRADO) (/stage)
 # --------------------------------------------------------------------------
 @app.get("/stage")
-async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[str] = None):
+async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[str] = None, camfmt: Optional[str] = None):
     return HTMLResponse(f"""
 <!DOCTYPE html>
 <html>
@@ -5041,10 +5016,21 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             align-items: center;
             justify-content: center;
         }}
-        .slide-frame img {{
+        .slide-frame img, .slide-frame video {{
             width: 100% !important;
             height: 100% !important;
             object-fit: contain !important;
+        }}
+
+        /* O player nativo do YouTube vira um iframe (flex item) com tamanho próprio;
+           ancora absoluto no slide-frame (position:relative) para preencher de verdade. */
+        #ytStageHost, #ytStageHost *, .slide-frame iframe, .slide-frame #ytStageHost {{
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+            border: 0 !important;
         }}
 
         .cameras-column {{
@@ -5079,7 +5065,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             border: 2px solid #06b6d4 !important;
             box-shadow: 0 0 16px rgba(6, 182, 212, 0.4) !important;
         }}
-        .stage-cam-wrap img {{
+        .stage-cam-wrap img, .stage-cam-wrap video {{
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
@@ -5098,7 +5084,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             align-items: center;
             justify-content: center;
         }}
-        .libras-floating-box img {{
+        .libras-floating-box img, .libras-floating-box video {{
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
@@ -5211,22 +5197,71 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         }}
 
         {NAME_TAG_CSS}
+        {CAM_FORMAT_CSS}
+        {SPEAKING_CSS}
     </style>
 </head>
 <body>
+    <style>
+        .stage-media-status {{ position: absolute; inset: 40% 8% auto; color: #cbd5e1; font: 14px sans-serif; text-align: center; pointer-events: none; }}
+        /* O seletor universal acima aplica `overflow: hidden` a tudo; aqui é preciso
+           sobrescrever, senão a caixa do contêiner (que encolhe ao tamanho do chip)
+           recorta o box-shadow e a sombra sai retangular em vez de sangrar. */
+        #voiceChips {{ position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 300; pointer-events: none; overflow: visible; }}
+        .voice-chip {{ display: flex; align-items: center; gap: 7px; background: rgba(2, 6, 23, .82); border: 1px solid rgba(34, 197, 94, .65); color: #e2e8f0; font: 700 13px/1.2 sans-serif; padding: 6px 14px; border-radius: 999px; box-shadow: 0 0 14px rgba(34, 197, 94, .45); backdrop-filter: blur(6px); overflow: visible; }}
+        .voice-chip::before {{ content: '🎙'; font-size: 12px; }}
+    </style>
+    <script src="/assets/stage-media.js"></script>
+    <script src="/assets/stage-youtube.js"></script>
     <div id="stage-container" class="preset-side-by-side"></div>
-    <!-- Áudio desativado no /stage para evitar saída indesejada ou eco no OBS Studio (use o endpoint /audio) -->
+    <div id="voiceChips"></div>
+    <!-- O master de áudio (participantes + apresentações) é reproduzido AQUI, via
+         PCM_AUDIO_SCRIPT no fim desta página. No OBS, marque "Controlar áudio via
+         OBS" nesta fonte e desligue "Shutdown source when not visible", senão o
+         som some quando o palco não estiver visível na cena. -->
 
     <script>
         const container = document.getElementById('stage-container');
         let currentStageSignature = '';
+        let stageBusy = false, lastSlideRefresh = 0;
+        const useWebRTC = {json.dumps(state.webrtc_only)};
+        const stageMedia = useWebRTC ? new RnpStageMedia(container) : null;
+        let ytHost = null, ytPlayer = null, ytApiLoading = false, stageYt = null;
+        let camFmt = 'original';
+        window.onYouTubeIframeAPIReady = () => {{ window.__ytReady = true; }};
+        function loadYtApi() {{
+            if (ytApiLoading || window.__ytReady) return;
+            ytApiLoading = true;
+            const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+            document.head.appendChild(s);
+        }}
+        function ensureYt() {{
+            if (!ytHost) {{ ytHost = document.createElement('div'); ytHost.id = 'ytStageHost'; ytHost.style.cssText = 'width:100%;height:100%;background:#000;'; }}
+            if (!window.RnpYouTube) return;
+            loadYtApi();
+            if (!ytPlayer && window.__ytReady && window.YT && window.YT.Player) ytPlayer = new RnpYouTube(ytHost, {{}});
+        }}
+        function cameraMarkup(id) {{
+            if (useWebRTC) return `<video id="stage_cam_${{id}}" data-source-id="${{id}}" autoplay muted playsinline></video>`;
+            return `<img id="stage_cam_${{id}}" src="/raw_frame/camera/${{encodeURIComponent(id)}}">`;
+        }}
         const urlOverridePreset = "{preset or ''}";
         const urlOverrideLibrasSize = "{libras_size or ''}";
+        const urlOverrideCamFmt = "{camfmt or ''}";
 
         async function updateStage() {{
+            if (stageBusy) return;
+            stageBusy = true;
+            stageMedia?.refresh();
             try {{
-                const res = await fetch('/api/status?t=' + Date.now());
+                const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
+                if (!res.ok) return;
                 const data = await res.json();
+                stageYt = data.youtube || null;
+                camFmt = urlOverrideCamFmt || data.camera_format || 'original';
+                const screenVideo = !!stageMedia?.sources.has('presentation');
+                const yt = stageYt;
+                const ytActive = !!(useWebRTC && yt && yt.present && yt.video_id);
                 let cams = data.cameras || [];
                 const focusedId = (data.focused_camera_id !== null && data.focused_camera_id !== undefined) ? String(data.focused_camera_id) : null;
                 const pinnedIds = (data.pinned_camera_ids || []).map(String);
@@ -5239,6 +5274,11 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                 const signature = JSON.stringify({{
                     activePreset,
                     currentLibrasSize,
+                    screenVideo,
+                    hasPresentation: !!data.has_presentation,
+                    ytActive,
+                    ytVideoId: yt ? yt.video_id : '',
+                    camFmt,
                     cams: cams.map(c => String(c.id) + '_' + c.name + '_' + (c.is_libras ? '1' : '0')),
                     focusedId,
                     pinnedIds,
@@ -5254,7 +5294,14 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     // 1. Container do Slide / Apresentação
                     const slideFrame = document.createElement('div');
                     slideFrame.className = 'slide-frame';
-                    slideFrame.innerHTML = `<img id="stage_slide_img" src="/raw_frame/presentation">`;
+                    if (screenVideo) {{
+                        slideFrame.innerHTML = '<video id="stage_slide_video" data-source-id="presentation" autoplay muted playsinline></video>';
+                    }} else if (ytActive) {{
+                        ensureYt();
+                        slideFrame.appendChild(ytHost);
+                    }} else if (!useWebRTC || data.has_presentation) {{
+                        slideFrame.innerHTML = '<img id="stage_slide_img" src="/raw_frame/presentation">';
+                    }}
 
                     // Identificar Câmeras de Libras e Outras Câmeras Reais
                     const librasCams = cams.filter(c => c.is_libras || librasIds.includes(String(c.id)));
@@ -5290,8 +5337,9 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         // 1. Box do Palestrante
                         const wrapSpeaker = document.createElement('div');
                         wrapSpeaker.className = 'stage-cam-wrap';
+                        wrapSpeaker.style.flex = '0 0 calc(50% - 4px)';
                         wrapSpeaker.innerHTML = `
-                            <img id="stage_cam_${{mainSpeaker.id}}" src="/raw_frame/camera/${{mainSpeaker.id}}">
+                            ${{cameraMarkup(mainSpeaker.id)}}
                             ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{mainSpeaker.name}}</div>` : ''}}
                         `;
                         camsCont.appendChild(wrapSpeaker);
@@ -5299,8 +5347,9 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         // 2. Box do Intérprete de Libras (Exatamente do mesmo tamanho)
                         const wrapLibras = document.createElement('div');
                         wrapLibras.className = 'stage-cam-wrap is-libras-box';
+                        wrapLibras.style.flex = '0 0 calc(50% - 4px)';
                         wrapLibras.innerHTML = `
-                            <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}">
+                            ${{cameraMarkup(activeLibras.id)}}
                             <div class="libras-badge-overlay">🤟 Libras</div>
                             ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
                         `;
@@ -5327,7 +5376,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 const wrap = document.createElement('div');
                                 wrap.className = 'stage-cam-wrap';
                                 wrap.innerHTML = `
-                                    <img id="stage_cam_${{c.id}}" src="/raw_frame/camera/${{c.id}}">
+                                    ${{cameraMarkup(c.id)}}
                                     ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{c.name}}</div>` : ''}}
                                 `;
                                 camsCont.appendChild(wrap);
@@ -5343,7 +5392,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             const wrapLibras = document.createElement('div');
                             wrapLibras.className = 'stage-cam-wrap is-libras-box';
                             wrapLibras.innerHTML = `
-                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}">
+                                ${{cameraMarkup(activeLibras.id)}}
                                 <div class="libras-badge-overlay">🤟 Libras</div>
                                 ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
                             `;
@@ -5380,7 +5429,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             }}
 
                             librasFloating.innerHTML = `
-                                <img id="stage_cam_${{activeLibras.id}}" src="/raw_frame/camera/${{activeLibras.id}}">
+                                ${{cameraMarkup(activeLibras.id)}}
                                 <div class="libras-badge-overlay">🤟 Libras</div>
                                 ${{showNames ? `<div class="name-tag style-${{nameStyle}}" style="font-size:11px; padding:3px 8px; bottom:6px; left:6px;">${{activeLibras.name}}</div>` : ''}}
                             `;
@@ -5392,18 +5441,69 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 
                 // Atualizar frames ao vivo diretamente da memória
                 const slideImg = document.getElementById('stage_slide_img');
-                if (slideImg) slideImg.src = '/raw_frame/presentation?t=' + Date.now();
+                if (slideImg && (!useWebRTC || Date.now() - lastSlideRefresh >= 1000)) {{
+                    slideImg.src = '/raw_frame/presentation?t=' + Date.now();
+                    lastSlideRefresh = Date.now();
+                }}
 
+                // Sinaliza quem fala na name-tag existente (sem duplicar identificação).
                 cams.forEach(c => {{
+                    const cid = String(c.id);
+                    const media = container.querySelector(`video[data-source-id="${{cid}}"]`) || document.getElementById('stage_cam_' + cid);
+                    const wrap = media ? media.closest('.stage-cam-wrap') : null;
+                    const tag = wrap ? wrap.querySelector('.name-tag') : null;
+                    if (tag) tag.classList.toggle('is-speaking', !!c.is_speaking);
+                }});
+
+                // Chips de voz para quem fala SEM câmera (topo central, sempre visível).
+                const chipBox = document.getElementById('voiceChips');
+                if (chipBox) {{
+                    const names = (data.voice_speakers || []).map(v => v.name || 'Participante');
+                    const chipSig = names.join('|');
+                    if (chipBox.dataset.sig !== chipSig) {{
+                        chipBox.dataset.sig = chipSig;
+                        chipBox.innerHTML = '';
+                        names.forEach(n => {{
+                            const d = document.createElement('div');
+                            d.className = 'voice-chip';
+                            d.textContent = n;
+                            chipBox.appendChild(d);
+                        }});
+                    }}
+                }}
+
+                if (!useWebRTC) cams.forEach(c => {{
                     const img = document.getElementById(`stage_cam_${{c.id}}`);
-                    if (img) img.src = `/raw_frame/camera/${{c.id}}?t=` + Date.now();
+                    if (img) img.src = `/raw_frame/camera/${{encodeURIComponent(c.id)}}?t=` + Date.now();
                 }});
             }} catch (e) {{}}
+            finally {{
+                if (useWebRTC) {{
+                    const y = stageYt;
+                    const active = !!(y && y.present && y.video_id);
+                    if (active) {{
+                        ensureYt();
+                        if (ytPlayer) {{ ytPlayer.apply(y); const sf = document.querySelector('.slide-frame'); if (sf && ytHost && !sf.contains(ytHost)) sf.appendChild(ytHost); }}
+                    }} else if (ytPlayer) {{
+                        ytPlayer.apply(null);
+                    }}
+                }}
+                container.querySelectorAll('.stage-cam-wrap').forEach(w => {{
+                    w.dataset.camfmt = camFmt;
+                    const m = w.querySelector('video, img');
+                    const nw = m && (m.videoWidth || m.naturalWidth || 0);
+                    const nh = m && (m.videoHeight || m.naturalHeight || 0);
+                    w.style.aspectRatio = (camFmt === 'original' && nw && nh) ? (nw + ' / ' + nh) : '';
+                }});
+                stageMedia?.reconcile();
+                stageBusy = false;
+            }}
         }}
 
-        setInterval(updateStage, 66);
+        setInterval(updateStage, useWebRTC ? 250 : 66);
         updateStage();
     </script>
+    {PCM_AUDIO_SCRIPT}
 </body>
 </html>
 """)
@@ -5412,7 +5512,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 # OBS OVERLAY: JANELA DEDICADA DE LIBRAS (/libras)
 # --------------------------------------------------------------------------
 @app.get("/libras")
-async def get_libras_overlay(cam_id: Optional[str] = None):
+async def get_libras_overlay(cam_id: Optional[str] = None, camfmt: Optional[str] = None):
     return HTMLResponse(f"""
 <!DOCTYPE html>
 <html>
@@ -5444,37 +5544,52 @@ async def get_libras_overlay(cam_id: Optional[str] = None):
             justify-content: center;
         }}
 
-        img {{
+        img, .libras-card video {{
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
         }}
 
+        .stage-media-status {{ position: absolute; inset: 40% 8% auto; color: #cbd5e1; font: 14px sans-serif; text-align: center; pointer-events: none; }}
+
         {NAME_TAG_CSS}
+        {CAM_FORMAT_CSS}
+        {SPEAKING_CSS}
     </style>
 </head>
 <body>
     <div class="libras-card">
-        <img id="librasFeed" src="/raw_frame/camera/1">
+        {'' if state.webrtc_only else '<img id="librasFeed" src="/raw_frame/camera/1">'}
         <div class="libras-badge-overlay" style="font-size: 13px; padding: 4px 10px;">🤟 Intérprete de Libras</div>
         <div id="librasNameTag" class="name-tag style-glass" style="display: none;"></div>
     </div>
-    <!-- Áudio desativado no /libras para evitar saída indesejada ou eco no OBS Studio (use o endpoint /audio) -->
+    <!-- Áudio desativado no /libras de propósito: quem reproduz o master é o /stage.
+         Ligar aqui também causaria eco/duplicação no OBS Studio. -->
 
+    <script src="/assets/stage-media.js"></script>
     <script>
+        const card = document.querySelector('.libras-card');
         const img = document.getElementById('librasFeed');
         const nameTag = document.getElementById('librasNameTag');
         const urlOverrideCam = "{cam_id or ''}";
-        let currentTargetCamId = urlOverrideCam || '1';
+        const urlOverrideCamFmt = "{camfmt or ''}";
+        const useWebRTC = {json.dumps(state.webrtc_only)};
+        const librasMedia = useWebRTC ? new RnpStageMedia(card) : null;
+        let currentTargetCamId = urlOverrideCam || '';
+        let librasBusy = false;
 
         async function updateLibras() {{
+            if (librasBusy) return;
+            librasBusy = true;
+            if (librasMedia) librasMedia.refresh();
             try {{
-                const res = await fetch('/api/status?t=' + Date.now());
+                const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
                 const data = await res.json();
                 const cams = data.cameras || [];
                 const librasIds = (data.libras_camera_ids || []).map(String);
                 const showNames = data.show_camera_names;
                 const nameStyle = data.camera_name_style || 'glass';
+                const camFmt = urlOverrideCamFmt || data.camera_format || 'original';
 
                 let targetCam = null;
                 if (urlOverrideCam) {{
@@ -5485,16 +5600,35 @@ async def get_libras_overlay(cam_id: Optional[str] = None):
                     targetCam = cams.find(c => c.is_libras);
                 }}
 
-                const card = document.querySelector('.libras-card');
                 if (!targetCam) {{
-                    if (card) card.style.display = 'none';
+                    card.style.display = 'none';
+                    nameTag.style.display = 'none';
+                    if (useWebRTC) {{ const v = card.querySelector('video[data-source-id]'); if (v) v.remove(); }}
+                    else if (img) img.style.display = 'none';
                     return;
                 }}
-                if (card) card.style.display = 'flex';
-
+                card.style.display = 'flex';
+                card.dataset.camfmt = camFmt;
+                const media = card.querySelector('video, img');
+                const nw = media && (media.videoWidth || media.naturalWidth || 0);
+                const nh = media && (media.videoHeight || media.naturalHeight || 0);
+                card.style.aspectRatio = (camFmt === 'original' && nw && nh) ? (nw + ' / ' + nh) : '';
                 currentTargetCamId = String(targetCam.id);
-                img.src = '/raw_frame/camera/' + targetCam.id + '?t=' + Date.now();
-                
+
+                if (useWebRTC) {{
+                    let video = card.querySelector('video[data-source-id]');
+                    if (!video) {{
+                        video = document.createElement('video');
+                        video.autoplay = true; video.muted = true;
+                        video.setAttribute('playsinline', '');
+                        card.insertBefore(video, card.firstChild);
+                    }}
+                    if (video.dataset.sourceId !== String(targetCam.id)) video.dataset.sourceId = String(targetCam.id);
+                }} else if (img) {{
+                    img.style.display = '';
+                    img.src = '/raw_frame/camera/' + targetCam.id + '?t=' + Date.now();
+                }}
+
                 if (showNames && targetCam.name) {{
                     nameTag.className = 'name-tag style-' + nameStyle;
                     nameTag.innerText = targetCam.name;
@@ -5502,10 +5636,15 @@ async def get_libras_overlay(cam_id: Optional[str] = None):
                 }} else {{
                     nameTag.style.display = 'none';
                 }}
-            }} catch (e) {{}}
+                nameTag.classList.toggle('is-speaking', !!targetCam.is_speaking);
+            }} catch (e) {{
+            }} finally {{
+                if (librasMedia) librasMedia.reconcile();
+                librasBusy = false;
+            }}
         }}
 
-        setInterval(updateLibras, 66);
+        setInterval(updateLibras, useWebRTC ? 250 : 66);
         updateLibras();
     </script>
 </body>
@@ -5916,7 +6055,8 @@ async def get_cameras_grid_overlay(
     audio: Optional[int] = None,
     layout: Optional[str] = None,
     names: Optional[int] = None,
-    style: Optional[str] = None
+    style: Optional[str] = None,
+    camfmt: Optional[str] = None
 ):
     return HTMLResponse(f"""
 <!DOCTYPE html>
@@ -5961,7 +6101,7 @@ async def get_cameras_grid_overlay(
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }}
 
-        .cam-card img {{
+        .cam-card img, .cam-card video {{
             width: 100%;
             height: 100%;
             object-fit: cover;
@@ -5976,6 +6116,11 @@ async def get_cameras_grid_overlay(
         .cam-card.is-focused {{
             border: 3px solid #38bdf8;
             box-shadow: 0 0 25px rgba(56, 189, 248, 0.6);
+        }}
+
+        .stage-media-status {{
+            position: absolute; inset: 40% 8% auto; width: 84%;
+            color: #cbd5e1; font: 14px sans-serif; text-align: center; pointer-events: none;
         }}
 
         /* NAME TAG STYLES */
@@ -6044,30 +6189,51 @@ async def get_cameras_grid_overlay(
             align-items: center;
             gap: 10px;
         }}
+        {CAM_FORMAT_CSS}
+        {SPEAKING_CSS}
     </style>
 </head>
 <body>
     <div class="grid-container" id="gridContainer"></div>
 
+    <script src="/assets/stage-media.js"></script>
     <script>
         const container = document.getElementById('gridContainer');
         const overrideLayout = "{layout or ''}";
         const overrideNames = {names if names is not None else 'null'};
         const overrideStyle = "{style or ''}";
+        const overrideCamFmt = "{camfmt or ''}";
+        const useWebRTC = {json.dumps(state.webrtc_only)};
         let currentSig = '';
+        let gridBusy = false;
+        const gridMedia = useWebRTC ? new RnpStageMedia(container) : null;
+
+        function gridLayout(n, mode) {{
+            if (mode === 'row') return [n, 1];
+            if (mode === 'column') return [1, n];
+            if (mode === 'grid') {{ const cols = Math.ceil(Math.sqrt(n)); return [cols, Math.ceil(n / cols)]; }}
+            if (n === 1) return [1, 1];
+            if (n === 2) return [2, 1];
+            if (n <= 4) return [2, 2];
+            if (n <= 6) return [3, 2];
+            if (n <= 9) return [3, 3];
+            return [4, Math.ceil(n / 4)];
+        }}
 
         async function updateGrid() {{
+            if (gridBusy) return;
+            gridBusy = true;
+            if (gridMedia) gridMedia.refresh();
             try {{
-                const res = await fetch('/api/status?t=' + Date.now());
+                const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
                 const data = await res.json();
                 const cams = data.cameras || [];
                 const showNames = (overrideNames !== null) ? !!overrideNames : (data.show_camera_names !== undefined ? data.show_camera_names : true);
                 const nameStyle = overrideStyle || data.camera_name_style || 'glass';
                 const layoutMode = overrideLayout || data.grid_layout_mode || 'auto';
+                const camFmt = overrideCamFmt || data.camera_format || 'original';
                 const focusedId = data.focused_camera_id;
-                const librasIds = data.libras_camera_ids || [];
-
-                const sig = cams.map(c => c.id + '_' + (c.name || '') + '_' + (librasIds.includes(String(c.id)) ? '1' : '0')).join(',') + '::' + showNames + '::' + nameStyle + '::' + layoutMode + '::' + focusedId;
+                const librasIds = (data.libras_camera_ids || []).map(String);
 
                 if (cams.length === 0) {{
                     if (currentSig !== 'empty') {{
@@ -6077,34 +6243,13 @@ async def get_cameras_grid_overlay(
                     return;
                 }}
 
-                // Calculate layout grid
-                let cols = 1;
-                let rows = 1;
-                const n = cams.length;
-
-                if (layoutMode === 'row') {{
-                    cols = n;
-                    rows = 1;
-                }} else if (layoutMode === 'column') {{
-                    cols = 1;
-                    rows = n;
-                }} else if (layoutMode === 'grid') {{
-                    cols = Math.ceil(Math.sqrt(n));
-                    rows = Math.ceil(n / cols);
-                }} else {{
-                    if (n === 1) {{ cols = 1; rows = 1; }}
-                    else if (n === 2) {{ cols = 2; rows = 1; }}
-                    else if (n <= 4) {{ cols = 2; rows = 2; }}
-                    else if (n <= 6) {{ cols = 3; rows = 2; }}
-                    else if (n <= 9) {{ cols = 3; rows = 3; }}
-                    else {{ cols = 4; rows = Math.ceil(n / 4); }}
-                }}
-
-                container.style.gridTemplateColumns = `repeat(${{cols}}, 1fr)`;
-                container.style.gridTemplateRows = `repeat(${{rows}}, 1fr)`;
+                const sig = cams.map(c => c.id + '_' + (c.name || '') + '_' + (librasIds.includes(String(c.id)) ? '1' : '0')).join(',') + '::' + showNames + '::' + nameStyle + '::' + layoutMode + '::' + focusedId + '::' + camFmt;
 
                 if (sig !== currentSig) {{
                     currentSig = sig;
+                    const dims = gridLayout(cams.length, layoutMode);
+                    container.style.gridTemplateColumns = `repeat(${{dims[0]}}, 1fr)`;
+                    container.style.gridTemplateRows = `repeat(${{dims[1]}}, 1fr)`;
                     container.innerHTML = '';
 
                     cams.forEach(cam => {{
@@ -6114,14 +6259,23 @@ async def get_cameras_grid_overlay(
                         const card = document.createElement('div');
                         card.className = 'cam-card' + (isLibras ? ' is-libras' : '') + (isFocused ? ' is-focused' : '');
                         card.id = 'camCard_' + cam.id;
+                        card.dataset.camfmt = camFmt;
 
-                        const img = document.createElement('img');
-                        img.id = 'camImg_' + cam.id;
-                        img.src = '/raw_frame/camera/' + cam.id;
-                        img.onerror = () => {{
-                            setTimeout(() => {{ if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now(); }}, 1500);
-                        }};
-                        card.appendChild(img);
+                        if (useWebRTC) {{
+                            const video = document.createElement('video');
+                            video.dataset.sourceId = cam.id;
+                            video.autoplay = true; video.muted = true;
+                            video.setAttribute('playsinline', '');
+                            card.appendChild(video);
+                        }} else {{
+                            const img = document.createElement('img');
+                            img.id = 'camImg_' + cam.id;
+                            img.src = '/raw_frame/camera/' + cam.id;
+                            img.onerror = () => {{
+                                setTimeout(() => {{ if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now(); }}, 1500);
+                            }};
+                            card.appendChild(img);
+                        }}
 
                         if (showNames) {{
                             const tag = document.createElement('div');
@@ -6137,15 +6291,34 @@ async def get_cameras_grid_overlay(
                     }});
                 }}
 
-                // Atualizar imagens ao vivo diretamente da memória
-                cams.forEach(cam => {{
-                    const img = document.getElementById('camImg_' + cam.id);
-                    if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now();
+                if (!useWebRTC) {{
+                    cams.forEach(cam => {{
+                        const img = document.getElementById('camImg_' + cam.id);
+                        if (img) img.src = '/raw_frame/camera/' + cam.id + '?t=' + Date.now();
+                    }});
+                }}
+
+                container.querySelectorAll('.cam-card').forEach(c => {{
+                    c.dataset.camfmt = camFmt;
+                    const m = c.querySelector('video, img');
+                    const nw = m && (m.videoWidth || m.naturalWidth || 0);
+                    const nh = m && (m.videoHeight || m.naturalHeight || 0);
+                    c.style.aspectRatio = (camFmt === 'original' && nw && nh) ? (nw + ' / ' + nh) : '';
                 }});
-            }} catch (e) {{}}
+
+                // Sinaliza quem fala na name-tag existente (sem duplicar identificação).
+                cams.forEach(c => {{
+                    const tag = document.querySelector('#camCard_' + c.id + ' .name-tag');
+                    if (tag) tag.classList.toggle('is-speaking', !!c.is_speaking);
+                }});
+            }} catch (e) {{
+            }} finally {{
+                if (gridMedia) gridMedia.reconcile();
+                gridBusy = false;
+            }}
         }}
 
-        setInterval(updateGrid, 66);
+        setInterval(updateGrid, useWebRTC ? 250 : 66);
         updateGrid();
     </script>
 </body>
@@ -6641,250 +6814,19 @@ async def get_presentation_overlay():
 """)
 
 # --------------------------------------------------------------------------
-# OBS OVERLAY: RECEPTOR DE ÁUDIO PCM (/audio)
+# ÁUDIO: apenas o alias para o receptor WebRTC individual.
+# O master (participantes + apresentações) é reproduzido pelo /stage via
+# PCM_AUDIO_SCRIPT. Não existe mais um segundo player PCM aqui: dois masters
+# ligados ao mesmo tempo duplicavam o consumo no OBS e causavam eco.
+# Os links individuais ficam no rack de áudio do painel (/control).
 # --------------------------------------------------------------------------
 @app.get("/audio")
 async def get_audio_receiver(source: Optional[str] = None, vol: Optional[float] = 1.0):
-    source_label = f"Fonte: {source}" if source else "Master Geral"
-    return HTMLResponse(f"""
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RNP Live Audio Bridge (OBS Audio)</title>
-    <style>
-        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-        body {{ 
-            background: transparent; 
-            color: #38bdf8; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            margin: 0; 
-            overflow: hidden; 
-        }}
-        .audio-receiver-card {{
-            background: rgba(15, 23, 42, 0.92);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            border-radius: 12px;
-            padding: 12px 18px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(8px);
-        }}
-        .audio-icon-box {{
-            font-size: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 40px;
-            background: rgba(56, 189, 248, 0.15);
-            border-radius: 8px;
-            border: 1px solid rgba(56, 189, 248, 0.3);
-        }}
-        .audio-meta {{
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }}
-        .audio-title {{
-            font-size: 12.5px;
-            font-weight: 800;
-            color: #f8fafc;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }}
-        .audio-status {{
-            font-size: 10.5px;
-            color: #10b981;
-            font-family: monospace;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }}
-        .audio-mini-vu {{
-            width: 80px;
-            height: 7px;
-            background: #020617;
-            border-radius: 4px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            margin-top: 3px;
-        }}
-        .audio-mini-bar {{
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #10b981 0%, #f59e0b 70%, #ef4444 100%);
-            transition: width 0.05s linear;
-        }}
-    </style>
-</head>
-<body>
-    <div class="audio-receiver-card" id="audioCard">
-        <div class="audio-icon-box" id="audioIcon">🎧</div>
-        <div class="audio-meta">
-            <div class="audio-title">
-                <span>RNP Audio Bridge</span>
-                <span style="font-size: 10px; background: rgba(56, 189, 248, 0.2); padding: 1px 6px; border-radius: 4px; color: #38bdf8;">{source_label}</span>
-            </div>
-            <div class="audio-status">
-                <span id="statusDot">🟢</span>
-                <span id="statusText">48kHz PCM Ativo</span>
-            </div>
-            <div class="audio-mini-vu">
-                <div class="audio-mini-bar" id="miniVuBar"></div>
-            </div>
-        </div>
-    </div>
+    if not source:
+        raise HTTPException(404, 'O master de áudio agora vem do /stage; use os links individuais do painel.')
+    query = urllib.parse.urlencode({'source': source, 'kind': 'audio', 'volume': vol, 'overlay': '1'})
+    return RedirectResponse('/webrtc?' + query)
 
-    <script>
-        let audioCtx = null;
-        let gainNode = null;
-        let nextStartTime = 0;
-        let ws = null;
-        const initialVol = {vol if vol is not None else 1.0};
-        const targetSource = "{source or ''}";
-
-        function initAudioContext() {{
-            if (!audioCtx) {{
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext({{ sampleRate: 48000 }});
-                gainNode = audioCtx.createGain();
-                gainNode.gain.setValueAtTime(initialVol, audioCtx.currentTime);
-                gainNode.connect(audioCtx.destination);
-            }}
-            if (audioCtx.state === 'suspended') {{
-                audioCtx.resume().catch(() => {{}});
-            }}
-            return audioCtx;
-        }}
-
-        function unlockAudio() {{
-            const ctx = initAudioContext();
-            if (ctx.state === 'suspended') {{
-                ctx.resume().catch(() => {{}});
-            }}
-            try {{
-                const osc = ctx.createOscillator();
-                const g = ctx.createGain();
-                g.gain.setValueAtTime(0.00001, ctx.currentTime);
-                osc.connect(g);
-                g.connect(ctx.destination);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.05);
-            }} catch(e) {{}}
-        }}
-
-        function connectWs() {{
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(protocol + '//' + window.location.host + '/ws/pcm_out');
-            ws.binaryType = 'arraybuffer';
-
-            ws.onopen = () => {{
-                const st = document.getElementById('statusText');
-                if (st) st.innerText = 'Conectado (48kHz)';
-                const dot = document.getElementById('statusDot');
-                if (dot) dot.innerText = '🟢';
-                unlockAudio();
-            }};
-
-            ws.onmessage = (event) => {{
-                if (typeof event.data === 'string') {{
-                    try {{
-                        const msg = JSON.parse(event.data);
-                        if (msg.type === 'speakers' && targetSource) {{
-                            const isSpeaking = !!(msg.speakers && msg.speakers[targetSource]);
-                            if (gainNode && audioCtx) {{
-                                const targetGain = isSpeaking ? initialVol : 0.0;
-                                gainNode.gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.05);
-                            }}
-                            const dot = document.getElementById('statusDot');
-                            const st = document.getElementById('statusText');
-                            if (isSpeaking) {{
-                                if (dot) dot.innerText = '🗣️';
-                                if (st) st.innerText = 'Falando (Ao Vivo)';
-                            }} else {{
-                                if (dot) dot.innerText = '💤';
-                                if (st) st.innerText = 'Silêncio / Standby';
-                            }}
-                        }}
-                    }} catch(e) {{}}
-                    return;
-                }}
-                if (!(event.data instanceof ArrayBuffer)) return;
-                const float32Array = new Float32Array(event.data);
-                if (float32Array.length === 0) return;
-
-                const ctx = initAudioContext();
-                if (ctx.state === 'suspended') {{
-                    ctx.resume().catch(() => {{}});
-                }}
-
-                const buffer = ctx.createBuffer(1, float32Array.length, 48000);
-                buffer.copyToChannel(float32Array, 0);
-
-                const source = ctx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(gainNode);
-
-                const currentTime = ctx.currentTime;
-                if (nextStartTime < currentTime) {{
-                    nextStartTime = currentTime + 0.015;
-                }}
-                source.start(nextStartTime);
-                nextStartTime += buffer.duration;
-
-                let peak = 0;
-                for (let i = 0; i < float32Array.length; i += 4) {{
-                    const val = Math.abs(float32Array[i]);
-                    if (val > peak) peak = val;
-                }}
-                const pct = Math.min(100, Math.round(peak * 100));
-                const bar = document.getElementById('miniVuBar');
-                if (bar) bar.style.width = pct + '%';
-            }};
-
-            ws.onclose = () => {{
-                const st = document.getElementById('statusText');
-                if (st) st.innerText = 'Reconectando...';
-                const dot = document.getElementById('statusDot');
-                if (dot) dot.innerText = '🟡';
-                setTimeout(connectWs, 2000);
-            }};
-
-            ws.onerror = () => {{
-                try {{ ws.close(); }} catch(e) {{}}
-            }};
-        }}
-
-        setInterval(() => {{
-            const bar = document.getElementById('miniVuBar');
-            if (bar) {{
-                const cur = parseFloat(bar.style.width || '0');
-                if (cur > 0) bar.style.width = Math.max(0, cur - 10) + '%';
-            }}
-        }}, 100);
-
-        window.addEventListener('load', unlockAudio);
-        window.addEventListener('click', unlockAudio);
-        window.addEventListener('pointerdown', unlockAudio);
-        window.addEventListener('keydown', unlockAudio);
-        document.addEventListener('visibilitychange', () => {{
-            if (!document.hidden) unlockAudio();
-        }});
-
-        unlockAudio();
-        connectWs();
-    </script>
-</body>
-</html>
-""")
 
 # Frames Brutos
 @app.get("/raw_frame/camera/{cam_id}")
@@ -7564,5 +7506,5 @@ async def get_themes_catalog():
 """)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=3333, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get('RNP_PORT', '3333')), log_level="warning")
 

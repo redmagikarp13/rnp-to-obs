@@ -31,6 +31,8 @@ def build_executable():
         f"--add-data={os.path.join(PROJECT_DIR, 'app_icon.png')};.",
         f"--add-data={os.path.join(PROJECT_DIR, 'config.json')};.",
         f"--add-data={os.path.join(PROJECT_DIR, 'server.py')};.",
+        f"--add-data={os.path.join(PROJECT_DIR, 'web')};web",
+        "--hidden-import=media_bridge",
         "--collect-all=playwright",
         "--collect-all=uvicorn",
         "--collect-all=fastapi",

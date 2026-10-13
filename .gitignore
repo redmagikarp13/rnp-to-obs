@@ -26,6 +26,8 @@ dist_installer/
 # Temporary/scratch inspection scripts
 scratch_*.py
 test_*.py
+!tests/test_*.py
+.test_runtime/
 inspect_*.py
 check_*.py
 capture_*.py

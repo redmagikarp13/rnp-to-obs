@@ -1,0 +1,672 @@
+/* ==========================================================================
+   CSS CUSTOMIZADO - RNP WEBCONFERÊNCIA / BIGBLUEBUTTON PARA OBS STUDIO
+   ESTILO DISCORD BROADCAST - VERSÃO 0.2 (CORREÇÃO DE LAYOUT & POLIMENTO)
+   ==========================================================================
+   
+   CORREÇÕES E MELHORIAS DESTA VERSÃO:
+   1. Active Speaker (Quem fala):
+      - Deslocado para top: 28px (não é mais cortado no topo da tela do OBS).
+   2. Slide / Apresentação (Stage Fixo):
+      - Ocultado o botão de 4 bolinhas (ferramentas/whiteboard) no canto superior direito.
+      - Bordas e dimensões travadas para evitar pulos de layout.
+   3. Área de Câmeras Fixa:
+      - Largura travada (~340px) no lado direito, garantindo estabilidade no canvas.
+      - Câmeras com cantos arredondados, borda escura Discord e borda verde ativa ao falar.
+      - Ocultadas as setas de opções e controles de dropdown das câmeras.
+   4. Chat Público & Enquetes (Discord Dark):
+      - Ocultadas as mensagens de sistema (ex: "X é agora o apresentador").
+      - Enquetes corrigidas: textos e contagens de votos em branco nítido (não mais preto sobre cinza).
+      - Ocultados os botões administrativos da enquete ("Copiar resultados" e "Baixar PNG").
+      - Avatares circulares preservados em gradiente Blurple (#5865f2).
+      - Fade gradiente suavizado nas bordas (sem manchas escuras cortando mensagens).
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   1. TRANSPARÊNCIA GLOBAL E LIMPEZA DE FUNDO
+   -------------------------------------------------------------------------- */
+:root {
+    --color-background: transparent !important;
+    --color-surface: transparent !important;
+    --color-white: transparent !important;
+    --color-content-background: transparent !important;
+}
+
+html,
+body,
+main,
+#app,
+#layout,
+div[id^="layout"],
+div[class*="Layout"],
+section[class*="Layout"],
+div[class*="MainLayout"],
+div[class*="SidebarContentBackdrop"],
+div[class*="SidebarContentPanel"],
+div[class*="PanelContent"],
+div[class*="ChatWrapper"],
+section[class*="SidebarContent"],
+div[class*="SidebarContent"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+/* Remove sombras, gradientes e linhas decorativas */
+div[id^="scroll-box"],
+div[id^="chat-list"],
+div[id^="breakoutBox"] {
+    background-image: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+hr,
+hr[class*="Separator"],
+div[class*="Separator"],
+div[class*="Divider"],
+div[class*="Splitter"],
+div[class*="ResizeHandle"],
+div[class*="resizeSidebarContentWrapper"] {
+    display: none !important;
+    border: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   2. NAVBAR SUPERIOR E QUEM ESTÁ FALANDO (ACTIVE SPEAKER - TOPO CENTRAL)
+   -------------------------------------------------------------------------- */
+#Navbar,
+header#Navbar,
+header[id="Navbar"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    pointer-events: none !important;
+    overflow: visible !important;
+}
+
+/* Ocultar barra superior padrão */
+header[id="Navbar"] > div:first-child,
+header[id="Navbar"] div[class*="Top"],
+header[id="Navbar"] div[class*="Right"],
+header[id="Navbar"] div[class*="Left"],
+header[id="Navbar"] div[class*="Center"],
+header[id="Navbar"] [data-test="presentationTitle"],
+header[id="Navbar"] #presentationTitle,
+header[id="Navbar"] #SessionDetailsModal,
+header[id="Navbar"] [class*="Avatar"],
+header[id="Navbar"] [class*="NavBarButton"],
+header[id="Navbar"] [aria-label*="Opções"],
+header[id="Navbar"] [aria-label*="Options"],
+header[id="Navbar"] [aria-label*="Sair"],
+header[id="Navbar"] [aria-label*="Leave"],
+div[id="connectionBars"],
+div[id*="connectionBars"],
+[data-test="connectionStatusItemUser"],
+[data-test="profileSidebarButton"],
+[data-test="recordingIndicator"] {
+    display: none !important;
+}
+
+/* Contêiner de Quem Fala (Talking Indicator) - DESLOCADO PARA BAIXO PARA NÃO CORTAR */
+#Navbar [data-test="talkingIndicator"],
+[data-test="talkingIndicator"],
+div[class*="IsTalkingWrapper"],
+div[class*="Speaking"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    position: fixed !important;
+    top: 26px !important; /* Deslocado para evitar corte no topo */
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    z-index: 999999 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    gap: 8px !important;
+}
+
+div[class*="TalkingIndicatorWrapper"],
+div[class*="TalkingIndicatorWrapper"] * {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+div[class*="TalkingIndicatorWrapper"] {
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Badge do orador ativo (Discord Green #23a55a) */
+div[class*="TalkingIndicatorWrapper"] button,
+[data-test="talkingIndicator"] button,
+[data-test="isTalking"],
+div[class*="TalkingIndicatorButton"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    gap: 8px !important;
+    background: #23a55a !important; /* Discord Voice Green */
+    background-color: #23a55a !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    font-size: 13.5px !important;
+    padding: 6px 18px !important;
+    border-radius: 20px !important;
+    border: 2px solid rgba(255, 255, 255, 0.85) !important;
+    box-shadow: 0 4px 16px rgba(35, 165, 90, 0.5) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8) !important;
+}
+
+[data-test="talkingIndicator"] button span,
+[data-test="talkingIndicator"] button i,
+div[class*="TalkingIndicatorButton"] span {
+    color: #ffffff !important;
+    font-size: 13.5px !important;
+    font-weight: 700 !important;
+}
+
+/* Quando acabou de falar (Discord Idle) */
+[data-test="wasTalking"] {
+    background: #2b2d31 !important;
+    background-color: #2b2d31 !important;
+    color: #949ba4 !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    opacity: 0.85 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   3. CÂMERAS DOS APRESENTADORES FIXAS (DISCORD VOICE TILES)
+   -------------------------------------------------------------------------- */
+#cameraDock,
+div[id="cameraDock"],
+div[class*="VideoCanvas"],
+div[class*="Draggable"] {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* Trava a área de câmeras na lateral direita para não empurrar os slides */
+#cameraDock,
+div[id="cameraDock"] {
+    width: 330px !important;
+    min-width: 300px !important;
+    max-width: 360px !important;
+}
+
+/* Moldura e cantos arredondados para cada câmera */
+[data-test="webcamVideoItem"],
+div[class*="VideoListItem"] {
+    background-color: #1e1f22 !important; /* Discord Dark */
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    border: 2px solid #2b2d31 !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    margin-bottom: 8px !important;
+}
+
+/* Quando o participante fala: borda verde viva do Discord */
+[data-test="webcamVideoItem"]:has([data-test="isTalking"]),
+[data-test="webcamVideoItem"][class*="talking"],
+[data-test="webcamVideoItem"][class*="Speaking"],
+div[class*="VideoListItem"]:has([data-test="isTalking"]),
+div[class*="VideoListItem"][class*="talking"] {
+    border: 2.5px solid #23a55a !important; /* Discord Voice Green */
+    box-shadow: 0 0 16px rgba(35, 165, 90, 0.55) !important;
+}
+
+/* Identificação do participante na câmera (Etiqueta Discord Dark no canto) */
+[data-test="webcamVideoItem"] span,
+[data-test="webcamVideoItem"] [class*="userName"],
+div[class*="VideoListItem"] span {
+    background-color: rgba(17, 18, 20, 0.9) !important;
+    color: #f2f3f5 !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    padding: 3px 9px !important;
+    border-radius: 4px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* Ocultar botões de controle, setas de opções e dropdowns das webcams */
+[data-test="webcamFullscreenButton"],
+[data-test="webcamsFullscreenButton"],
+[data-test="pinVideoButton"],
+[data-test="dropdownToggle"],
+[data-test="webcamVideoItem"] button[class*="dropdown"],
+[data-test="webcamVideoItem"] [class*="Dropdown"] {
+    display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   4. ÁREA DE APRESENTAÇÃO / SLIDES FIXOS (DISCORD STAGE)
+   -------------------------------------------------------------------------- */
+[data-test="presentationContainer"],
+#presentationInnerWrapper,
+#screenshareContainer {
+    background: transparent !important;
+    background-color: transparent !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* OCULTAR O BOTÃO DE 4 BOLINHAS (FERRAMENTAS/WHITEBOARD), ZOOM, PASSADOR E ANOTAÇÕES */
+#presentationToolbarWrapper,
+div[id="presentationToolbarWrapper"],
+[id^="PresentationToolbar"],
+[data-test="prevSlide"],
+[data-test="nextSlide"],
+[data-test="skipSlide"],
+[data-test="quickPollBtn"],
+[data-test="fitToWidth"],
+[data-test="presentationFullscreen"],
+[data-test="presentationDownload"],
+[data-test="multiUser"],
+.tlui-toolbar,
+div[class*="PresentationToolbar"],
+div[class*="PresentationSlideControls"],
+div[class*="PresentationZoomControls"],
+div[class*="ExtraTools"],
+div[class*="MultiUserTool"],
+div[class*="presentationTools"],
+button[class*="buttonPresentation"],
+button[class*="MultiUser"],
+button[aria-label*="ferramentas"],
+button[aria-label*="whiteboard"],
+button[aria-label*="Quadro de anotações"],
+div[class*="SvgContainer"] button {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   5. CHAT PÚBLICO ESTILO DISCORD COM AVATAR
+   -------------------------------------------------------------------------- */
+/* Trava a largura da barra lateral do chat (~330px) no lado esquerdo */
+section[class*="SidebarContent"],
+div[class*="SidebarContentPanel"],
+div[class*="ChatWrapper"] {
+    width: 330px !important;
+    min-width: 300px !important;
+    max-width: 360px !important;
+    top: 0px !important;
+    bottom: 0px !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+}
+
+/* Ocultar menus laterais, títulos e cabeçalhos */
+[data-test="navigationSidebarContainer"],
+nav[class*="NavigationSidebar"],
+div[class*="NavigationSidebarBackdrop"],
+div[class*="NavigationSidebar"],
+[data-test="chatTitle"],
+header[data-test="chatTitle"],
+div[data-test="chatTitle"],
+[data-test="chatOptionsMenu"],
+[data-test="hidePublicChat"],
+[data-test="hidePrivateChat"],
+header[class*="HeaderContainer"] {
+    display: none !important;
+}
+
+/* Ocultar formulário de envio de texto, botões e emojis */
+form,
+form:has(#message-input),
+form:has([data-test="sendMessageButton"]),
+#message-input,
+[data-test="messageInput"],
+[data-test="sendMessageButton"],
+div:has(> #message-input),
+div:has(> [data-test="messageInput"]),
+div[class*="EmojiPickerWrapper"],
+div[class*="ChatMessageError"] {
+    display: none !important;
+}
+
+/* Ocultar lista de usuários se o painel abrir em participantes */
+[data-test="userListPanel"] [data-test="draggableUser"],
+[data-test="userListPanel"] [class*="UserList"],
+[data-test="userListPanel"] header,
+[data-test="closeUserList"] {
+    display: none !important;
+}
+
+/* Ocultar toolbars de reação, responder e emojis */
+.chat-message-toolbar,
+div[class*="chat-message-toolbar"],
+[data-test="chatMessageToolbar"],
+[data-test="replyMessageButton"],
+[data-test="reactMessageButton"],
+[data-test="pinMessageButton"],
+[data-test="chatMessageActionsDropdown"],
+div[class*="ReactionWrapper"],
+div[class*="ReactionPopover"],
+div[class*="EmojiPickerWrapper"],
+div[id^="reactions-dropdown"],
+div:has(> [data-test="replyMessageButton"]),
+div:has(> [data-test="reactMessageButton"]) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
+/* OCULTAR MENSAGENS DO SISTEMA ("X é agora o apresentador...") */
+[data-test="chatMessageItem"][data-message-type="system"],
+[data-test="chatMessageItem"][data-message-type*="userIsPresenter"],
+[data-test="chatMessageItem"][data-message-type*="System"],
+[data-test="chatMessageItem"]:has([data-test="systemMessageText"]),
+[data-test="chatMessageItem"]:has([class*="systemMessage"]),
+[data-test="systemMessageText"],
+div[class*="SystemMessage"],
+div[class*="systemMessage"] {
+    display: none !important;
+}
+
+/* CONTÊINER DA LISTA DE MENSAGENS COM FADE LEVE NO TOPO E NA BASE */
+#chat-list,
+div[id^="chat-list"],
+[data-test="chatMessages"],
+div[class*="MessageList"],
+div[class*="ScrollableList"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    height: 100% !important;
+    max-height: 100vh !important;
+    padding: 16px 12px !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+    overflow-x: visible !important;
+    
+    /* Efeito de Fade sutil (2% nas extremidades) para não criar borrão escuro */
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(0, 0, 0, 1) 2%,
+        rgba(0, 0, 0, 1) 98%,
+        transparent 100%
+    ) !important;
+    mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(0, 0, 0, 1) 2%,
+        rgba(0, 0, 0, 1) 98%,
+        transparent 100%
+    ) !important;
+}
+
+#chat-list::-webkit-scrollbar,
+div[id^="chat-list"]::-webkit-scrollbar,
+[data-test="chatMessages"]::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
+/* CARD PRINCIPAL DE CADA MENSAGEM (ESTILO DISCORD DARK #313338 TRANSLÚCIDO) */
+[data-test="chatMessageItem"],
+.chat-message-container {
+    display: flex !important;
+    flex-direction: column !important;
+    background-color: rgba(49, 51, 56, 0.94) !important; /* Discord Dark */
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-radius: 12px !important;
+    padding: 10px 14px !important;
+    margin: 6px 2px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+    overflow: visible !important;
+}
+
+/* Zerar bordas e fundos residuais internos */
+[data-test="chatMessageItem"] *:not([data-test="chatMessageItem"]):not([data-test="viewerAvatar"]) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* Contêiner filho principal */
+[data-test="chatMessageItem"] > div,
+.chat-message-container > div {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* LINHA SUPERIOR DO CABEÇALHO (AVATAR + NOME DO AUTOR + HORA) */
+[data-test="chatMessageItem"] > div > div:first-child {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin-bottom: 4px !important;
+}
+
+/* AVATAR CIRCULAR ESTILO DISCORD COM INICIAIS */
+[data-test="chatMessageItem"] > div > div:first-child > div:has(+ [role="listitem"]),
+[data-test="chatMessageItem"] > div > div:first-child > span:has(+ [role="listitem"]),
+[data-test="chatMessageItem"] [data-test="viewerAvatar"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+    border-radius: 50% !important;
+    background: linear-gradient(135deg, #5865f2, #4752c4) !important; /* Discord Blurple */
+    color: #ffffff !important;
+    font-size: 11.5px !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    overflow: hidden !important;
+    flex-shrink: 0 !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Centralizar as iniciais do avatar perfeitamente */
+[data-test="chatMessageItem"] > div > div:first-child > div:has(+ [role="listitem"]) *,
+[data-test="chatMessageItem"] > div > div:first-child > span:has(+ [role="listitem"]) * {
+    color: #ffffff !important;
+    font-size: 11.5px !important;
+    font-weight: 800 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* BLOCO DO AUTOR + HORA */
+[data-test="chatMessageItem"] [role="listitem"],
+[data-test="chatMessageItem"] [role="listitem"] > div,
+[data-test="chatMessageItem"] div[class*="HeaderContent"],
+[data-test="chatMessageItem"] div[class*="ChatHeaderText"],
+.chat-message-container [role="listitem"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    flex: 1 !important;
+    width: auto !important;
+    margin: 0 !important;
+}
+
+/* NOME DO AUTOR (DISCORD BLURPLE VIBRANTE #818CF8) */
+[data-test="chatMessageItem"] [class*="ChatUserName"],
+[data-test="chatMessageItem"] [class*="userName"],
+[data-test="chatMessageItem"] [class*="senderName"],
+[data-test="chatMessageItem"] [role="listitem"] [class*="ChatUserName"],
+[data-test="chatMessageItem"] [role="listitem"] > div > div:first-child,
+[data-test="chatMessageItem"] [role="listitem"] > div > span:first-child,
+.chat-message-container [role="listitem"] [class*="ChatUserName"],
+.chat-message-container [class*="ChatUserName"] {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    font-weight: 700 !important;
+    font-size: 14.5px !important;
+    color: #818cf8 !important; /* Discord Blurple */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8) !important;
+    letter-spacing: 0.1px !important;
+    line-height: 1.2 !important;
+}
+
+/* HORÁRIO DA MENSAGEM (DISCORD MUTED #949BA4) */
+[data-test="chatMessageItem"] time,
+[data-test="chatMessageItem"] [class*="ChatTime"],
+[data-test="chatMessageItem"] [role="listitem"] time,
+.chat-message-container time {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    font-size: 11px !important;
+    color: #949ba4 !important;
+    font-weight: 500 !important;
+    margin-left: auto !important;
+}
+
+/* CORPO DA MENSAGEM */
+[data-test="chatMessageItem"] div[class*="chat-message-content"],
+[data-test="chatMessageItem"] div[class*="ChatContent"],
+.chat-message-container div[class*="chat-message-content"] {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* TEXTO DA MENSAGEM (BRANCO NÍTIDO #F2F3F5) */
+[data-test="chatMessageItem"] div[class*="chat-message-content"] p,
+[data-test="chatMessageItem"] div[class*="chat-message-content"] span,
+[data-test="chatMessageItem"] p,
+.chat-message-container p,
+.chat-message-container span {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    color: #f2f3f5 !important; /* Branco nítido */
+    font-size: 14.5px !important;
+    font-weight: 400 !important;
+    line-height: 1.45 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   6. ENQUETES NO CHAT (POLLS ESTILO DISCORD - TOTALMENTE LEGÍVEIS)
+   -------------------------------------------------------------------------- */
+/* Card da Enquete no Chat */
+div[data-message-type="poll"],
+[data-test="pollResultMsg"],
+div[class*="pollResult"],
+div[class*="PollResult"] {
+    background-color: #2b2d31 !important; /* Discord Surface */
+    border: 1px solid #1e1f22 !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Forçar TODOS os textos da enquete a ficarem brancos e legíveis */
+div[data-message-type="poll"] *,
+[data-test="pollResultMsg"] *,
+[data-test="chatPollMessageText"],
+div[class*="PollItemWrapper"] * {
+    color: #f2f3f5 !important; /* Texto branco nítido */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8) !important;
+}
+
+/* Pergunta da Enquete em destaque */
+div[data-message-type="poll"] h1,
+div[data-message-type="poll"] h2,
+div[data-message-type="poll"] h3,
+div[data-message-type="poll"] p:first-of-type {
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    color: #ffffff !important;
+    margin-bottom: 8px !important;
+}
+
+/* Barras de porcentagem / preenchimento da enquete em Discord Blurple */
+div[data-message-type="poll"] [class*="bar"],
+div[data-message-type="poll"] [class*="progress"],
+div[data-message-type="poll"] [class*="Fill"],
+div[data-message-type="poll"] [class*="fill"] {
+    background-color: #5865f2 !important; /* Discord Blurple */
+    border-radius: 6px !important;
+}
+
+/* Ocultar botões administrativos da enquete ("Copiar resultados" e "Baixar como PNG") */
+div[data-message-type="poll"] button,
+[data-test="pollResultMsg"] button,
+button[class*="pollButton"],
+button[aria-label*="Copiar"],
+button[aria-label*="Baixar"] {
+    display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   7. BARRA DE AÇÕES INFERIOR (OCULTAR 100%)
+   -------------------------------------------------------------------------- */
+#ActionsBar,
+section#ActionsBar,
+section[id="ActionsBar"],
+div[class*="ActionsBarWrapper"],
+div[class*="ActionsBar"] {
+    display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   8. BANNERS, NOTIFICAÇÕES E TOASTS (OCULTAR 100%)
+   -------------------------------------------------------------------------- */
+[data-test="notificationBannerBar"],
+[data-test="toast"],
+[data-test="toastSmallMsg"],
+div[class*="Toast"],
+div[class*="Banner"],
+span[id="destination"],
+div#modals-container:empty,
+.sr-only {
+    display: none !important;
+}

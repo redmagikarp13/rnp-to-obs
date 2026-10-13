@@ -19,14 +19,14 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 | Endpoint | Tipo no OBS | Descrição |
 | :--- | :--- | :--- |
 | `http://localhost:3333/control` | **Navegador Personalizado (Dock)** | Painel de controle completo para encaixar na interface do OBS. |
-| `http://localhost:3333/stage` | **Navegador (Browser Source)** | Palco composto (Slides + Câmeras + Libras paritário). |
+| `http://localhost:3333/stage` | **Navegador (Browser Source)** | Palco composto (Slides + Câmeras + Libras paritário) **e master de áudio** (PCM Float32 / 48 kHz). |
 | `http://localhost:3333/cameras/grid`| **Navegador (Browser Source)** | Grid dinâmico e responsivo de todas as webcams abertas. |
 | `http://localhost:3333/libras` | **Navegador (Browser Source)** | Janela dedicada e isolada para Intérprete de Libras. |
 | `http://localhost:3333/presentation`| **Navegador (Browser Source)** | Slides ou compartilhamento de tela puro (1080p/2.5K). |
 | `http://localhost:3333/chat` | **Navegador (Browser Source)** | Feed de chat ao vivo unificado (RNP + YouTube). |
 | `http://localhost:3333/chat/featured`| **Navegador (Browser Source)**| Lower-third animado para destaque de mensagens. |
 | `http://localhost:3333/poll` | **Navegador (Browser Source)** | Card moderno de resultados de enquete com temporizador. |
-| `http://localhost:3333/audio` | **Navegador (Browser Source)** | Áudio mixado de alta fidelidade (PCM Float32 / 48 kHz). |
+| `http://localhost:3333/audio?source=<canal>` | **Navegador (Browser Source)** | Áudio **individual** de um participante. O master não sai mais por `/audio` (sem `source` devolve 404) — ele vem do `/stage`. |
 
 ---
 
@@ -58,6 +58,13 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 
 ## 🔊 Arquitetura de Áudio (PCM WebRTC)
 
-- Captura o elemento `<audio>` da conferência via **Web Audio API**.
+- Captura o elemento `<audio>` da conferência via **Web Audio API** na página da sala
+  (`startPcm` → `/ws/pcm_in`), com analisador por canal.
 - Transmite por WebSocket binário (`/ws/pcm_out`) em **Float32 48.000 Hz**.
 - Latência sub-50ms e zero compressão adicional.
+- **Master:** é reproduzido pelo `/stage` (`PCM_AUDIO_SCRIPT`). Não há segundo player
+  em `/audio` — dois masters duplicavam o consumo no OBS e causavam eco.
+- **No OBS:** na fonte `/stage`, marque "Controlar áudio via OBS" e **desligue**
+  "Shutdown source when not visible", senão o som some em cenas sem o palco.
+- A captura continua ativa mesmo sem ninguém ouvindo: é dela que vêm os picos usados
+  na detecção de fala (`is_speaking` / chips de voz), com *peak-hold* τ=300 ms.

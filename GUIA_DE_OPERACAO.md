@@ -20,7 +20,7 @@ Este documento serve como manual operacional para técnicos de transmissão, ope
    - Clique em **Vincular Live**. O status exibirá `Live do YouTube conectada`.
 4. **Verificar os Sinais no OBS Studio:**
    - Abra o OBS Studio e verifique se as cenas (`Palco`, `Libras`, `Grid`, `Apresentação`, `Chat`) estão recebendo os feeds.
-   - Verifique se a fonte de áudio (`/audio`) está movimentando o mixer de som do OBS ao haver falas na sala.
+   - Verifique se a fonte do **palco** (`/stage`) está movimentando o mixer de som do OBS ao haver falas na sala — é ela que carrega o master de áudio (com "Controlar áudio via OBS" marcado).
 
 ---
 
@@ -71,8 +71,8 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 ## 🔍 Solução de Problemas Frequentes (FAQ)
 
 ### 1. O áudio está com eco ou repetindo na transmissão
-- **Causa:** Alguma fonte de vídeo (como `/stage` ou `/libras`) foi marcada acidentalmente no OBS com "Controlar áudio via OBS".
-- **Solução:** No OBS, abra as propriedades das fontes de vídeo e deixe **desmarcada** a opção de áudio. Apenas a fonte dedicada `http://localhost:3333/audio` deve ter a opção de áudio habilitada.
+- **Causa:** Mais de uma fonte foi marcada no OBS com "Controlar áudio via OBS". O master de áudio sai **apenas** pelo `/stage`.
+- **Solução:** Deixe "Controlar áudio via OBS" marcado **somente** na fonte `http://localhost:3333/stage` e **desmarcado** em `/libras`, `/cameras/grid`, `/presentation`, `/chat` etc. O endpoint `/audio` não serve mais master (devolve 404); ele existe apenas como `/audio?source=<canal>` para trilhas individuais.
 
 ### 2. A imagem da câmera de Libras não atualizou na cena do OBS
 - **Causa:** O cache do Browser Source do OBS pode reter um quadro antigo se a cena não for atualizada.
@@ -84,3 +84,7 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 
 ### 4. O firewall do Windows solicitou permissão
 - **Solução:** Permita a conexão em redes privadas/locais para o Python e para o executável `RNP to OBS.exe`. O servidor opera exclusivamente no endereço de loopback local (`127.0.0.1:3333`).
+
+### 5. O som da sala some quando troco de cena
+- **Causa:** O master de áudio é acoplado à fonte `/stage`. Se essa fonte não estiver visível na cena ativa e a opção "Shutdown source when not visible" estiver ligada, o OBS suspende a página e o áudio junto.
+- **Solução:** Nas propriedades da fonte `/stage`, **desligue** "Shutdown source when not visible" (e mantenha "Controlar áudio via OBS" ligado). Alternativa: inclua o `/stage` em todas as cenas, ainda que fora do enquadramento, ou use uma trilha individual `/audio?source=<canal>` na cena que precisa de som sem o palco.
