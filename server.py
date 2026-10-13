@@ -3213,6 +3213,9 @@ async def get_control_panel():
     <style>
         {CONTROL_PANEL_CSS}
     </style>
+    <!-- Design system do dock. Vem DEPOIS do <style> acima para vencer na cascata
+         (mesma especificidade, ordem posterior). O CSS legado sai na Task 4. -->
+    <link rel="stylesheet" href="/assets/dock.css">
 </head>
 <body class="theme-{state.control_theme}">
     <div class="header">
@@ -4967,6 +4970,7 @@ async def get_control_panel():
         setInterval(fetchStatus, 250);
         fetchStatus();
     </script>
+    <script src="/assets/dock.js"></script>
 </body>
 </html>
     """

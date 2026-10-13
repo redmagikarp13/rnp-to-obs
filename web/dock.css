@@ -1,0 +1,76 @@
+/* ==========================================================================
+   Design system do dock /control — ponte RNP → OBS
+
+   Regra central: TEMA É APENAS OVERRIDE DE TOKENS. Nenhum componente pode ser
+   re-estilizado por tema (nada de `body.theme-X .componente`); o teste
+   test_temas_sao_apenas_override_de_tokens garante isso.
+
+   Spec: docs/superpowers/specs/2026-10-13-dock-control-redesign-design.md
+   ========================================================================== */
+
+:root {
+    --radius: 2px;
+    --radius-sm: 1px;
+    --space-1: 4px;
+    --space-2: 6px;
+    --space-3: 8px;
+    --space-4: 10px;
+    --space-5: 12px;
+    --label-size: 8.5px;
+    --label-weight: 700;
+    --label-tracking: .1em;
+}
+
+/* Tema padrão: broadcast denso (ATEM / Resolve).
+   Neutro, plano, sem gradiente/glow/blur. */
+body.theme-broadcast {
+    --bg: #1a1a1a;
+    --surface: #202020;
+    --surface-2: #252525;
+    --surface-inset: #141414;
+    --border: #2e2e2e;
+    --border-strong: #3d3d3d;
+    --border-soft: #2c2c2c;
+    --text: #e0e0e0;
+    --text-muted: #8a8a8a;
+    --text-disabled: #6b6b6b;
+    --primary: #2d2d2d;
+    --primary-border: #3d3d3d;
+    --primary-text: #e0e0e0;
+    --ok: #3d8b43;
+    --warn: #b5a63c;
+    --danger: #c0392b;
+    --danger-surface: #8b2f2f;
+    --danger-border: #a13838;
+    --vu-off: #2e2e2e;
+    --accent-top: transparent;
+    --accent-top-width: 0px;
+    --label-weight: 700;
+}
+
+/* Tema institucional Ifes: papel quente (off-white levemente bege),
+   verde #15803d como primário e vermelho #dc2626 para perigo. */
+body.theme-ifes {
+    --bg: #eae6dc;
+    --surface: #f7f4ec;
+    --surface-2: #f0ece1;
+    --surface-inset: #f0ece1;
+    --border: #cdc7b8;
+    --border-strong: #c4bca6;
+    --border-soft: #ded8c9;
+    --text: #211f1a;
+    --text-muted: #45413a;
+    --text-disabled: #75705f;
+    --primary: #15803d;
+    --primary-border: #166534;
+    --primary-text: #ffffff;
+    --ok: #15803d;
+    --warn: #b5a63c;
+    --danger: #dc2626;
+    --danger-surface: #b91c1c;
+    --danger-border: #991b1b;
+    --vu-off: #ded8c9;
+    --accent-top: #15803d;
+    --accent-top-width: 3px;
+    --label-weight: 800;
+}

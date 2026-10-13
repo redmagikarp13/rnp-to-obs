@@ -62,6 +62,14 @@ def register_media_routes(app, get_state, get_frame):
     async def stage_youtube_script():
         return FileResponse(WEB_DIR / 'stage-youtube.js', media_type='text/javascript', headers={'Cache-Control': 'no-store'})
 
+    @app.get('/assets/dock.css')
+    async def dock_style():
+        return FileResponse(WEB_DIR / 'dock.css', media_type='text/css', headers={'Cache-Control': 'no-store'})
+
+    @app.get('/assets/dock.js')
+    async def dock_script():
+        return FileResponse(WEB_DIR / 'dock.js', media_type='text/javascript', headers={'Cache-Control': 'no-store'})
+
     @app.get('/assets/audio-mixer.js')
     async def mixer_script():
         return FileResponse(WEB_DIR / 'audio-mixer.js', media_type='text/javascript', headers={'Cache-Control': 'no-store'})

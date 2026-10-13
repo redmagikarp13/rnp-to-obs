@@ -106,6 +106,22 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn("copyUrl('/audio'", response.text,
                          'O dock não deve mais oferecer o master de /audio; o master vem do /stage.')
 
+    def test_assets_do_dock_servidos_com_no_store(self):
+        css = self.client.get('/assets/dock.css')
+        self.assertEqual(css.status_code, 200, 'web/dock.css precisa ser servido como asset.')
+        self.assertIn('text/css', css.headers['content-type'])
+        self.assertEqual(css.headers['cache-control'], 'no-store',
+                         'O dock é recarregado dentro do OBS; não pode cachear.')
+        js = self.client.get('/assets/dock.js')
+        self.assertEqual(js.status_code, 200, 'web/dock.js precisa ser servido como asset.')
+        self.assertIn('javascript', js.headers['content-type'])
+        self.assertEqual(js.headers['cache-control'], 'no-store')
+
+    def test_dock_referencia_os_assets(self):
+        html = self.client.get('/control').text
+        self.assertIn('/assets/dock.css', html)
+        self.assertIn('/assets/dock.js', html)
+
     def test_webrtc_e_modo_padrao_com_opt_out_explicito(self):
         # A produção sobe por start.bat / app.pyw / .exe sem variável de ambiente,
         # então o modo validado (WebRTC) precisa ser o padrão — com opt-out explícito.
