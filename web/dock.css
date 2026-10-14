@@ -285,6 +285,24 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-audio-fixed .channel-meter-box { min-height: 0; }
 }
 
+/* Pills do monitor de fontes: as regras legadas vivem em outra constante de CSS que
+   o /control não recebe, então o monitor fica sem ponto de estado. Tokenizado aqui. */
+.source-health-pill { display: flex; align-items: center; gap: 6px; }
+.pill-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.pill-dot.connected { background: var(--ok); }
+.pill-dot.disconnected { background: var(--text-disabled); }
+.pill-dot.connecting { background: var(--warn); }
+.pill-dot.alert { background: var(--danger); }
+.pill-info { display: flex; flex-direction: column; line-height: 1.15; }
+.pill-name {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--text-muted);
+}
+.pill-state { font-size: 10px; color: var(--text); }
+
 /* Cabeçalho de grupo: nome + setas de reordenação (ordem persiste no servidor). */
 .dock-group-head {
     display: flex;
