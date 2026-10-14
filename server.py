@@ -2910,6 +2910,7 @@ async def get_control_panel():
     <div class="dock-statusbar" id="dockStatusbar">
         <h1><span>RNP to OBS</span>{ifes_logo}</h1>
         <span id="statusBadge" class="badge disconnected">● Desconectado</span>
+        <span id="shieldBadge" class="badge" title="Blindagem anti-inatividade: confirma sozinho o modal de verificação da RNP">🛡️ Anti-Inatividade</span>
         <span class="dock-statusbar-fps"><span id="dockFps">--</span> fps</span>
         <label class="dock-statusbar-theme" for="selControlTheme">Estilo
             <select id="selControlTheme" onchange="changeControlTheme(this.value)">
@@ -3044,7 +3045,6 @@ async def get_control_panel():
     </nav>
     <div class="dock-groups" id="dockGroups">
     <section class="dock-group" data-group="conexao" id="group-conexao">
-            <div id="shieldBadge" class="badge" style="border: 1px solid">🛡️ Anti-Inatividade</div>
     <div class="card" style="padding: 10px 14px">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
             <span style="font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px">

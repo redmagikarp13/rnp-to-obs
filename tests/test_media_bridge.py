@@ -152,6 +152,17 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_escudo_anti_inatividade_fica_na_barra_de_status(self):
+        # Pedido do usuário: o aviso de anti-inatividade é estado global da sessão,
+        # então mora ao lado do indicador de conexão, não enterrado no grupo Conexão.
+        html = self.client.get('/control').text
+        barra = html[html.index('dock-statusbar'):html.index('dock-audio-fixed')]
+        self.assertIn('shieldBadge', barra,
+                      'O escudo anti-inatividade deve ficar na barra de status.')
+        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
+        self.assertNotIn('shieldBadge', conexao,
+                         'O escudo não pode ficar duplicado no grupo Conexão.')
+
     def test_shell_do_dock_tem_zona_fixa_e_quatro_grupos(self):
         html = self.client.get('/control').text
         for marcador in ('dock-statusbar', 'dock-audio-fixed', 'dock-tabs', 'dock-groups'):
