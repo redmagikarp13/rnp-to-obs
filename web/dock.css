@@ -345,7 +345,14 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-monitor-fixed .monitor-head { display: none; }
     .dock-monitor-fixed .pill-state { display: none; }
     .dock-monitor-fixed .sources-health-grid { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 4px; }
-    .dock-monitor-fixed .source-health-pill { padding: 3px 6px; }
+    .dock-monitor-fixed .source-health-pill {
+        padding: 3px 6px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 4px;
+    }
+    .dock-monitor-fixed .pill-dot { width: 9px; height: 9px; flex-shrink: 0; }
     .dock-monitor-fixed .card { padding: 8px 10px; }
     .dock-audio-fixed .mixer-info { display: none; }
     .dock-audio-fixed .vu-track-vertical { height: 48px; }
