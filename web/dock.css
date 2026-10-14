@@ -318,6 +318,23 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
    Mesmo DOM nos dois modos; o estreito esconde o estado detalhado e o título. */
 .dock-monitor-fixed { margin-bottom: 8px; }
 .dock-monitor-fixed .card { margin-bottom: 0; }
+.monitor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.mixer-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+}
 .sources-health-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));

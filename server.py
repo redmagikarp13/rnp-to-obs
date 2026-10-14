@@ -2953,7 +2953,7 @@ async def get_control_panel():
     </div>
     <div class="dock-monitor-fixed">
     <div class="card" style="padding: 10px 14px">
-        <div class="monitor-head" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+        <div class="monitor-head">
             <span style="font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px">
                 <span class="live-pulse-dot"></span>
                 <span class="monitor-title-text">Monitor de Fontes em Tempo Real</span>
@@ -3031,7 +3031,7 @@ async def get_control_panel():
         </div>
 
         <!-- Informação do Mixer Unificado -->
-        <div class="mixer-info" style="border: 1px solid; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap">
+        <div class="mixer-info">
             <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
                 <span class="source-health-dot ok"></span>
                 <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte. O master geral sai pelo <strong>/stage</strong> (PCM Float32 48kHz) — marque "Controlar áudio via OBS" nessa fonte.</span>
