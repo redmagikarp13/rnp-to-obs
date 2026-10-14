@@ -152,6 +152,15 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_cada_fonte_tem_um_unico_botao_de_link(self):
+        # Os links de fonte existiam 2-3x (tile na Conexão + botão solto em outra
+        # seção; Libras 3x). Dedupe: um único lugar canônico por fonte.
+        html = self.client.get('/control').text
+        for fonte in ('/poll', '/stage', '/libras', '/chat', '/chat/featured',
+                      '/cameras/grid', '/presentation'):
+            self.assertEqual(html.count(f"copyUrl('{fonte}'"), 1,
+                             f'A fonte {fonte} deve ter um único botão de link.')
+
     def test_sensibilidade_de_fala_fica_recolhida(self):
         # É ajuste raro, não operação: no card fixo de áudio ele não pode empurrar
         # as abas para baixo da dobra no dock estreito.

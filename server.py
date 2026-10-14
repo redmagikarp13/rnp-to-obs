@@ -3238,8 +3238,6 @@ async def get_control_panel():
                 <span>🎭 Palco Composto (Slides + Câmeras)</span>
             </span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn-copy"  onclick="copyUrl('/stage')">📋 Link Palco OBS</button>
-                <button class="btn-copy"  onclick="copyUrl('/libras')">🤟 Link Janela Libras</button>
             </div>
         </div>
 
@@ -3300,7 +3298,6 @@ async def get_control_panel():
                 <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px">⚪ Standby</span>
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn-copy" style="font-weight: 700" onclick="copyUrl('/poll', this)">📋 Link OBS Enquete</button>
                 <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
                 <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="clearPoll()">🗑️ Limpar</button>
             </div>
@@ -3381,7 +3378,6 @@ async def get_control_panel():
     <div class="card">
         <div class="section-title">
             <span>📊 Apresentação / Slides</span>
-            <button class="btn-copy" onclick="copyUrl('/presentation')">📋 Link Slides</button>
             <button id="btnToggleScreenPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('presentation')">Ocultar preview</button>
         </div>
         <div class="thumb-box" style="height: 200px">
@@ -3399,8 +3395,6 @@ async def get_control_panel():
         <div class="section-title">
             <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn-copy" onclick="copyUrl('/cameras/grid', this)">📋 Link Grid</button>
-                <button class="btn-copy"  onclick="copyUrl('/libras', this)">🤟 Janela Libras</button>
                 <button id="btnToggleCamPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('cameras')">Ocultar preview</button>
             </div>
         </div>
@@ -3470,8 +3464,6 @@ async def get_control_panel():
         <div class="section-title">
             <span>💬 Chat & Destaque (Lower-Third)</span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn-copy" onclick="copyUrl('/chat')">📋 Link Feed</button>
-                <button class="btn-copy"  onclick="copyUrl('/chat/featured')">🌟 Link Destaque</button>
             </div>
         </div>
 
