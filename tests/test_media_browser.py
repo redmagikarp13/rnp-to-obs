@@ -936,6 +936,21 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
+    async def test_monitor_comprime_no_estreito(self):
+        # C híbrida: no estreito o monitor vira chips (some o estado detalhado);
+        # no largo mostra o estado completo. Mesmo DOM, troca por CSS.
+        await self.receiver.goto(self.url + '/control')
+        probe = ("() => getComputedStyle(document.querySelector("
+                 "'.dock-monitor-fixed .pill-state')).display")
+        await self.receiver.set_viewport_size({'width': 400, 'height': 800})
+        await self.receiver.wait_for_timeout(600)
+        estreito = await self.receiver.evaluate(probe)
+        await self.receiver.set_viewport_size({'width': 1200, 'height': 800})
+        await self.receiver.wait_for_timeout(600)
+        largo = await self.receiver.evaluate(probe)
+        self.assertEqual(estreito, 'none', 'No estreito o estado detalhado some (chips).')
+        self.assertNotEqual(largo, 'none', 'No largo o monitor mostra o estado completo.')
+
     async def test_abas_acima_da_dobra_no_estreito(self):
         # No dock estreito a zona fixa não pode empurrar as abas para fora da tela:
         # o operador precisa ver status + mixer + abas sem rolar.

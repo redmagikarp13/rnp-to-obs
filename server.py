@@ -2910,6 +2910,7 @@ async def get_control_panel():
     <div class="dock-statusbar" id="dockStatusbar">
         <h1><span>RNP to OBS</span>{ifes_logo}</h1>
         <span id="statusBadge" class="badge disconnected">● Desconectado</span>
+        <button id="btnBarConnect" class="btn btn-primary" style="display:none" onclick="handleConnect()">Conectar</button>
         <span id="shieldBadge" class="badge" title="Blindagem anti-inatividade: confirma sozinho o modal de verificação da RNP">🛡️ Anti-Inatividade</span>
         <span class="dock-statusbar-fps"><span id="dockFps">--</span> fps</span>
         <label class="dock-statusbar-theme" for="selControlTheme">Estilo
@@ -2920,6 +2921,72 @@ async def get_control_panel():
         </label>
         <span id="saveToast" class="badge" style="display:none">Salvo!</span>
         <button onclick="handleExitApplication()" class="btn btn-danger" title="Desconectar da sala e encerrar o servidor e aplicativo">Parar</button>
+    </div>
+    <div class="dock-monitor-fixed">
+    <div class="card" style="padding: 10px 14px">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+            <span style="font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px">
+                <span class="live-pulse-dot"></span>
+                <span class="monitor-title-text">Monitor de Fontes em Tempo Real</span>
+            </span>
+            <span id="healthHeartbeat" style="font-size: 10.5px; font-family: monospace">● Ativo (500ms)</span>
+        </div>
+
+        <div class="sources-health-grid">
+            <div class="source-health-pill" id="healthPillRnp">
+                <span class="pill-dot disconnected" id="dotRnp"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Sala RNP</span>
+                    <span class="pill-state" id="healthStateRnp">Desconectado</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillSlides">
+                <span class="pill-dot disconnected" id="dotSlides"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Apresentação</span>
+                    <span class="pill-state" id="healthStateSlides">Sem Slides</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillCams">
+                <span class="pill-dot disconnected" id="dotCams"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Webcams</span>
+                    <span class="pill-state" id="healthStateCams">0 Câmeras</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillLibras">
+                <span class="pill-dot disconnected" id="dotLibras"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Libras</span>
+                    <span class="pill-state" id="healthStateLibras">Nenhum</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillYt">
+                <span class="pill-dot disconnected" id="dotYt"></span>
+                <div class="pill-info">
+                    <span class="pill-name">YouTube Chat</span>
+                    <span class="pill-state" id="healthStateYt">Desconectado</span>
+                </div>
+            </div>
+
+            <div class="source-health-pill" id="healthPillAudio">
+                <span class="pill-dot disconnected" id="dotAudio"></span>
+                <div class="pill-info">
+                    <span class="pill-name">Áudio PCM</span>
+                    <span class="pill-state" id="healthStateAudio">Standby</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- BANNER DE EVENTO / NOTIFICAÇÃO AO VIVO (EX: NOVA CÂMERA ENTROU / SAIU) -->
+        <div id="liveSourceEventBanner" style="display: none; margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px"></div>
+    </div>
+
+    <!-- SALVAR / CARREGAR CONFIGURAÇÕES -->
     </div>
     <div class="dock-audio-fixed">
     <div class="card" id="audioDockCard">
@@ -3047,70 +3114,6 @@ async def get_control_panel():
     </nav>
     <div class="dock-groups" id="dockGroups">
     <section class="dock-group" data-group="conexao" id="group-conexao">
-    <div class="card" style="padding: 10px 14px">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
-            <span style="font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px">
-                <span class="live-pulse-dot"></span>
-                <span>Monitor de Fontes em Tempo Real</span>
-            </span>
-            <span id="healthHeartbeat" style="font-size: 10.5px; font-family: monospace">● Ativo (500ms)</span>
-        </div>
-
-        <div class="sources-health-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px">
-            <div class="source-health-pill" id="healthPillRnp">
-                <span class="pill-dot disconnected" id="dotRnp"></span>
-                <div class="pill-info">
-                    <span class="pill-name">Sala RNP</span>
-                    <span class="pill-state" id="healthStateRnp">Desconectado</span>
-                </div>
-            </div>
-
-            <div class="source-health-pill" id="healthPillSlides">
-                <span class="pill-dot disconnected" id="dotSlides"></span>
-                <div class="pill-info">
-                    <span class="pill-name">Apresentação</span>
-                    <span class="pill-state" id="healthStateSlides">Sem Slides</span>
-                </div>
-            </div>
-
-            <div class="source-health-pill" id="healthPillCams">
-                <span class="pill-dot disconnected" id="dotCams"></span>
-                <div class="pill-info">
-                    <span class="pill-name">Webcams</span>
-                    <span class="pill-state" id="healthStateCams">0 Câmeras</span>
-                </div>
-            </div>
-
-            <div class="source-health-pill" id="healthPillLibras">
-                <span class="pill-dot disconnected" id="dotLibras"></span>
-                <div class="pill-info">
-                    <span class="pill-name">Libras</span>
-                    <span class="pill-state" id="healthStateLibras">Nenhum</span>
-                </div>
-            </div>
-
-            <div class="source-health-pill" id="healthPillYt">
-                <span class="pill-dot disconnected" id="dotYt"></span>
-                <div class="pill-info">
-                    <span class="pill-name">YouTube Chat</span>
-                    <span class="pill-state" id="healthStateYt">Desconectado</span>
-                </div>
-            </div>
-
-            <div class="source-health-pill" id="healthPillAudio">
-                <span class="pill-dot disconnected" id="dotAudio"></span>
-                <div class="pill-info">
-                    <span class="pill-name">Áudio PCM</span>
-                    <span class="pill-state" id="healthStateAudio">Standby</span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- BANNER DE EVENTO / NOTIFICAÇÃO AO VIVO (EX: NOVA CÂMERA ENTROU / SAIU) -->
-        <div id="liveSourceEventBanner" style="display: none; margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; align-items: center; gap: 6px"></div>
-    </div>
-
-    <!-- SALVAR / CARREGAR CONFIGURAÇÕES -->
     <div class="card" >
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
             <div>
@@ -4106,6 +4109,9 @@ async def get_control_panel():
                     badge.className = 'badge disconnected';
                     badge.innerHTML = '● Desconectado';
                 }}
+
+                const barConnect = document.getElementById('btnBarConnect');
+                if (barConnect) barConnect.style.display = (data.connected || data.connecting) ? 'none' : '';
 
                 const ytBadge = document.getElementById('ytStatusBadge');
                 if (data.youtube_connected) {{

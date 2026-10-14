@@ -152,6 +152,26 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_monitor_de_fontes_fica_na_zona_fixa(self):
+        # Decisão C híbrida: o monitor é informação de live, então sobe para a zona
+        # fixa (comprimido no estreito, completo no largo) e sai do grupo Conexão.
+        html = self.client.get('/control').text
+        self.assertIn('dock-monitor-fixed', html)
+        self.assertLess(html.index('dock-monitor-fixed'), html.index('dock-audio-fixed'),
+                        'O monitor deve vir antes do mixer, na zona fixa.')
+        mon = html[html.index('dock-monitor-fixed'):html.index('dock-audio-fixed')]
+        self.assertIn('healthPillRnp', mon, 'O monitor completo mora na zona fixa.')
+        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
+        self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
+
+    def test_barra_tem_conectar_contextual(self):
+        # Reconexão rápida sem abrir o formulário de URL: a barra oferece Conectar
+        # quando desconectado (o formulário permanece na aba Conexão).
+        html = self.client.get('/control').text
+        barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
+        self.assertIn('btnBarConnect', barra,
+                      'A barra precisa do Conectar contextual para reconexão rápida.')
+
     def test_cada_fonte_tem_um_unico_botao_de_link(self):
         # Os links de fonte existiam 2-3x (tile na Conexão + botão solto em outra
         # seção; Libras 3x). Dedupe: um único lugar canônico por fonte.

@@ -284,3 +284,19 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-audio-fixed .section-title { margin-bottom: 6px; }
     .dock-audio-fixed .channel-meter-box { min-height: 0; }
 }
+
+/* Monitor de fontes na zona fixa: grade completa no largo, chips no estreito.
+   Mesmo DOM nos dois modos; o estreito esconde o estado detalhado e o título. */
+.dock-monitor-fixed { margin-bottom: 8px; }
+.dock-monitor-fixed .card { margin-bottom: 0; }
+.sources-health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 6px;
+}
+@media (max-width: 899px) {
+    .dock-monitor-fixed .monitor-title-text { display: none; }
+    .dock-monitor-fixed .pill-state { display: none; }
+    .dock-monitor-fixed .sources-health-grid { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 4px; }
+    .dock-monitor-fixed .source-health-pill { padding: 3px 6px; }
+}
