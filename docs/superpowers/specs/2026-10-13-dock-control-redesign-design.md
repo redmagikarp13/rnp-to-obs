@@ -342,3 +342,66 @@ verificando contraste, ausência de rolagem horizontal e barra de status sempre 
 - Plugin C++ (`obs_plugin_cpp/`).
 - Limpeza de `css_custom.css` e `css_custom_discord.css` (arquivos mortos, nenhum `.py` os
   referencia) — decidir à parte.
+
+---
+
+## Adendo 2026-10-14 — UI intuitiva e responsiva (sobrepõe §2.4, §2.5, §4.1.4 e §4.2)
+
+Validado com o companion visual (sessão `1572-1791987082`: `responsive-layout.html`,
+`grouping-mockups.html`, `grouping-mockups-v2.html`). Quatro decisões novas, que
+**sobrepõem** as citadas acima onde conflitarem:
+
+### A1. Zona fixa = barra de status + mixer de áudio (híbrido)
+
+Além da barra de status, o **mixer de áudio fica sempre visível** (não atrás de aba),
+em qualquer largura. É a ação mais constante numa live (monitorar/ajustar nível).
+
+### A2. Barra de status SEM medidor master
+
+O §4.1.4 previa um VU segmentado compacto na barra (`vuBarSegments`, `vuBarDb`).
+**Removido do design.** Motivo: com o mixer na zona fixa (A1), o master já está sempre
+na tela; um segundo medidor na barra seria duplicata do mesmo valor, sem informação
+nova. A barra de status passa a ter apenas: indicador de conexão · FPS · seletor de
+tema · botão Parar. Os IDs `vuBarSegments`/`vuBarDb` deixam de existir; o master
+(`vuMasterBar`, `vuMasterPeak`, `vuMasterDbText`, `lblMasterVol`) vive só no mixer.
+
+### A3. Quatro grupos (não cinco abas)
+
+O mixer saindo das abas esvazia a aba `Áudio`, então ficam **4 grupos**:
+
+1. **Conexão** — sala RNP, nome/e-mail do operador, conectar/desconectar,
+   salvar/recarregar/padrões, anti-inatividade, encerrar aplicativo.
+2. **Palco** — presets de cena, slides/apresentação + link, YouTube, Libras
+   (nome/tag, tamanho, janela paritária).
+3. **Câmeras** — grid ao vivo (focus/pin), renomear, formato, links de fonte.
+4. **Chat & Enquete** — feed de chat + avatares, destaque lower-third, enquete.
+
+O card fixo de áudio agrega, além do mixer (master + canais: VU, volume, mute, copiar
+link OBS), o monitor local + volume local e, **recolhido** num "avançado", o limiar de
+detecção de fala e os links individuais do OBS. Rejeitados: 5 grupos (áudio avançado
+separado — 5 colunas quebram em duas linhas no largo e 5 abas truncam rótulos no
+estreito) e 3 grupos (Palco+Câmeras="Cena" produz uma coluna alta misturando preset de
+layout com controle de câmera).
+
+### A4. Responsivo: abas no estreito, colunas `auto-fit` no largo
+
+- **Estreito** (dock encaixado no OBS, < ~900px): zona fixa empilhada + barra de 4 abas;
+  só a aba ativa rola. Mixer com canais em miniatura vertical.
+- **Largo** (≥ ~900px, janela ou dock flutuante): as abas **desaparecem** e os 4 grupos
+  aparecem todos, lado a lado, em grade
+  `grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))` — o navegador decide
+  quantas colunas cabem (1→4), sem breakpoint fixo por largura específica. O mixer vira
+  faixa horizontal (canais deitados, medidores horizontais). Cada coluna rola por conta
+  própria se exceder a altura.
+- Rejeitados: 4 colunas fixas `repeat(4,1fr)` (não cobre larguras intermediárias) e
+  grade 2×2 (esconde a segunda linha atrás de rolagem mesmo com espaço horizontal).
+
+### Consequências para a implementação (Task 4/5 do plano)
+
+- O shell do dock passa a ter: barra de status (sem VU) → card mixer fixo → barra de
+  abas (só estreito) → contêiner dos 4 grupos (abas no estreito, grid no largo).
+- A troca estreito/largo é puramente CSS (media query em ~900px alterna
+  `display` da barra de abas e o `grid-template-columns` do contêiner); o markup dos
+  grupos é o mesmo nos dois modos — não há duplicação de DOM.
+- Teste de responsividade: em viewport largo, os 4 grupos visíveis simultaneamente e a
+  barra de abas ausente; em viewport estreito, o inverso.
