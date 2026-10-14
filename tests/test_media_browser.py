@@ -936,6 +936,16 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
+    async def test_abas_acima_da_dobra_no_estreito(self):
+        # No dock estreito a zona fixa não pode empurrar as abas para fora da tela:
+        # o operador precisa ver status + mixer + abas sem rolar.
+        await self.receiver.set_viewport_size({'width': 400, 'height': 800})
+        await self.receiver.goto(self.url + '/control')
+        await self.receiver.wait_for_timeout(1200)
+        top = await self.receiver.evaluate(
+            "() => document.getElementById('dockTabs').getBoundingClientRect().top")
+        self.assertLess(top, 800, 'No estreito a barra de abas deve ficar acima da dobra.')
+
     async def test_responsivo_largo_mostra_grupos_sem_abas(self):
         # Estreito: barra de abas visível e só o grupo ativo; largo: os 4 grupos
         # visíveis e nenhuma barra de abas (disclosure progressivo).

@@ -265,3 +265,22 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     letter-spacing: var(--label-tracking);
     text-transform: uppercase;
 }
+
+/* Avançado recolhido (limiar de fala): ajuste raro, não ocupa a zona fixa. */
+.dock-advanced summary {
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 2px 0;
+}
+.dock-advanced[open] summary { margin-bottom: 2px; }
+
+/* Estreito: compacta o mixer para a zona fixa não empurrar as abas da dobra. */
+@media (max-width: 899px) {
+    .dock-audio-fixed .meter-scale-vertical { display: none; }
+    .dock-audio-fixed .vu-track-vertical { height: 64px; }
+    .dock-audio-fixed .audio-channel-strip { padding: 6px; }
+    .dock-audio-fixed .section-title { margin-bottom: 6px; }
+    .dock-audio-fixed .channel-meter-box { min-height: 0; }
+}

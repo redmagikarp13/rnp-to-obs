@@ -152,6 +152,17 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_sensibilidade_de_fala_fica_recolhida(self):
+        # É ajuste raro, não operação: no card fixo de áudio ele não pode empurrar
+        # as abas para baixo da dobra no dock estreito.
+        html = self.client.get('/control').text
+        self.assertIn('<details class="dock-advanced">', html,
+                      'O avançado de áudio deve virar um <details> recolhível.')
+        d = html.index('<details class="dock-advanced">')
+        f = html.index('</details>', d)
+        self.assertIn('speakThreshold', html[d:f],
+                      'O limiar de fala deve morar dentro do bloco recolhível.')
+
     def test_botoes_para_desativar_previews(self):
         # Previews ao vivo (grid de câmeras, apresentação) pesam CPU; o operador
         # precisa poder desligá-los sem perder os links de fonte.

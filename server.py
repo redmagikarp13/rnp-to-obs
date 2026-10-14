@@ -2943,26 +2943,28 @@ async def get_control_panel():
             <span class="badge connected" style="font-size: 11px">OBS: /stage</span>
         </div>
 
-        <!-- SENSIBILIDADE DA DETECÇÃO DE FALA -->
-        <div style="border: 1px solid; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px">
-            <label for="speakThreshold" style="display: block; font-size: 11.5px; font-weight: 700; margin-bottom: 5px">
-                Sensibilidade da detecção de fala
-            </label>
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
-                <input type="number" id="speakThreshold" min="0.005" max="0.5" step="0.005"
-                       value="{state.speak_peak_threshold}" onchange="saveSpeakThreshold(this)"
-                       style="width: 96px">
-                <span id="speakThresholdHint" style="font-size: 11px">
-                    Pico mínimo do microfone (0,005 a 0,5) para marcar alguém como falando.
-                </span>
+        <!-- SENSIBILIDADE DA DETECÇÃO DE FALA: recolhido por padrão (ajuste raro,
+             não operação; no card fixo ele não pode empurrar as abas da dobra). -->
+        <details class="dock-advanced">
+            <summary>Sensibilidade da detecção de fala</summary>
+            <div style="border: 1px solid; border-radius: 8px; padding: 9px 12px; margin-top: 8px; margin-bottom: 12px">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                    <label for="speakThreshold" style="font-size: 11.5px; font-weight: 700">Limiar (0,005 a 0,5)</label>
+                    <input type="number" id="speakThreshold" min="0.005" max="0.5" step="0.005"
+                           value="{state.speak_peak_threshold}" onchange="saveSpeakThreshold(this)"
+                           style="width: 96px">
+                    <span id="speakThresholdHint" style="font-size: 11px">
+                        Pico mínimo do microfone para marcar alguém como falando.
+                    </span>
+                </div>
+                <div style="font-size: 10.5px; margin-top: 6px; line-height: 1.55">
+                    O indicador acende pouco enquanto a pessoa fala? <strong>Baixe</strong> o valor.
+                    Acende sozinho com ruído da sala? <strong>Aumente</strong>.
+                    Referência medida em sala real: silêncio ≈ 0,001 · fala ≈ 0,02 a 0,15.
+                    Vale para o indicador na name-tag e para os chips de voz de quem fala sem câmera.
+                </div>
             </div>
-            <div style="font-size: 10.5px; margin-top: 6px; line-height: 1.55">
-                O indicador acende pouco enquanto a pessoa fala? <strong>Baixe</strong> o valor.
-                Acende sozinho com ruído da sala? <strong>Aumente</strong>.
-                Referência medida em sala real: silêncio ≈ 0,001 · fala ≈ 0,02 a 0,15.
-                Vale para o indicador na name-tag e para os chips de voz de quem fala sem câmera.
-            </div>
-        </div>
+        </details>
 
         <!-- MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS -->
         <div class="audio-mixer-rack" id="audioMixerRack">
