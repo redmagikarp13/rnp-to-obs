@@ -152,6 +152,24 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_ordem_dos_grupos_e_configuravel_e_validada(self):
+        # A ordem dos painéis é preferência persistida no config do servidor (todos os
+        # clientes iguais), então /api/grid/config precisa validar como permutação.
+        ordem = ['palco', 'conexao', 'chat', 'cameras']
+        r = self.client.post('/api/grid/config', json={'dock_group_order': ordem})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('data-dock-order="palco,conexao,chat,cameras"',
+                      self.client.get('/control').text,
+                      'O dock deve renderizar os grupos na ordem salva.')
+        for invalida in (['conexao', 'conexao', 'palco', 'cameras'],
+                         ['conexao', 'palco', 'cameras'],
+                         ['conexao', 'palco', 'cameras', 'chat', 'extra'],
+                         'conexao,palco'):
+            r = self.client.post('/api/grid/config', json={'dock_group_order': invalida})
+            self.assertEqual(r.status_code, 400, f'Ordem inválida {invalida} deve ser rejeitada.')
+        self.assertEqual(self.state.dock_group_order, ordem,
+                         'Uma ordem rejeitada não pode mutar o estado.')
+
     def test_monitor_de_fontes_fica_na_zona_fixa(self):
         # Decisão C híbrida: o monitor é informação de live, então sobe para a zona
         # fixa (comprimido no estreito, completo no largo) e sai do grupo Conexão.

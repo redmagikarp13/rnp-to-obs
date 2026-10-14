@@ -32,6 +32,57 @@
     if (!groups.some(g => g.dataset.group === inicial)) inicial = 'conexao';
     activate(inicial);
 
+    // Ordem dos grupos: preferência persistida no config do servidor (todos os
+    // clientes veem igual). As setas do cabeçalho de cada grupo movem o grupo e a
+    // aba correspondente; falha de gravação reverte em vez de fingir que salvou.
+    const groupsBox = document.getElementById('dockGroups');
+    const tabsBox = document.getElementById('dockTabs');
+
+    function currentOrder() {
+        return [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group);
+    }
+
+    function applyGroupOrder(ordem) {
+        if (!groupsBox) return;
+        for (const key of ordem) {
+            const g = document.getElementById('group-' + key);
+            if (g) groupsBox.appendChild(g);
+            const t = tabsBox && tabsBox.querySelector('[data-tab="' + key + '"]');
+            if (t) tabsBox.appendChild(t);
+        }
+    }
+
+    async function saveGroupOrder(ordem) {
+        const anterior = currentOrder();
+        try {
+            const res = await fetch('/api/grid/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dock_group_order: ordem })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+        } catch (_) {
+            applyGroupOrder(anterior);
+        }
+    }
+
+    if (groupsBox) {
+        const salva = (groupsBox.dataset.dockOrder || '').split(',').filter(Boolean);
+        if (salva.length === 4) applyGroupOrder(salva);
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.dock-move');
+            if (!btn) return;
+            const secao = btn.closest('.dock-group');
+            const ordem = currentOrder();
+            const i = ordem.indexOf(secao.dataset.group);
+            const j = i + Number(btn.dataset.move);
+            if (i < 0 || j < 0 || j >= ordem.length) return;
+            [ordem[i], ordem[j]] = [ordem[j], ordem[i]];
+            applyGroupOrder(ordem);
+            saveGroupOrder(ordem);
+        });
+    }
+
     // Previews ao vivo (grid de câmeras, apresentação) pesam CPU. O toggle zera o src
     // (para de decodificar de verdade) e marca o contêiner para o placeholder; o estado
     // persiste por operador em localStorage. O poll que refresca o thumb da apresentação
@@ -87,5 +138,6 @@
         }, 2000);
     }
 
-    window.RnpDock = { activateTab: activate, togglePreview, get previewOff() { return previewOff; } };
+    window.RnpDock = { activateTab: activate, togglePreview, applyGroupOrder, currentOrder,
+                       get previewOff() { return previewOff; } };
 })();

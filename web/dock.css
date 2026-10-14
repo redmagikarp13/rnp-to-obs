@@ -285,6 +285,35 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-audio-fixed .channel-meter-box { min-height: 0; }
 }
 
+/* Cabeçalho de grupo: nome + setas de reordenação (ordem persiste no servidor). */
+.dock-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.dock-group-name {
+    font-size: var(--label-size);
+    font-weight: var(--label-weight);
+    letter-spacing: var(--label-tracking);
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.dock-group-move { display: flex; gap: 2px; }
+.dock-move {
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+.dock-move:hover { background: var(--surface-2); color: var(--text); }
+
 /* Monitor de fontes na zona fixa: grade completa no largo, chips no estreito.
    Mesmo DOM nos dois modos; o estreito esconde o estado detalhado e o título. */
 .dock-monitor-fixed { margin-bottom: 8px; }
@@ -296,7 +325,14 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 @media (max-width: 899px) {
     .dock-monitor-fixed .monitor-title-text { display: none; }
+    .dock-monitor-fixed .monitor-head { display: none; }
     .dock-monitor-fixed .pill-state { display: none; }
     .dock-monitor-fixed .sources-health-grid { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 4px; }
     .dock-monitor-fixed .source-health-pill { padding: 3px 6px; }
+    .dock-monitor-fixed .card { padding: 8px 10px; }
+    .dock-audio-fixed .mixer-info { display: none; }
+    .dock-audio-fixed .vu-track-vertical { height: 48px; }
+    .dock-audio-fixed .audio-mixer-rack { max-height: 190px; overflow-x: auto; overflow-y: hidden; }
+    .dock-audio-fixed #noIndividualChannelsPlaceholder { height: 150px; min-height: 0; }
+    .dock-audio-fixed em { display: none; }
 }

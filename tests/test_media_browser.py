@@ -936,6 +936,27 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
+    async def test_reordenar_grupos_persiste_apos_reload(self):
+        # As setas do cabeçalho de cada grupo movem o grupo (e a aba correspondente)
+        # e a ordem persiste no config do servidor — sobrevive a reload.
+        await self.receiver.goto(self.url + '/control')
+        antes = await self.receiver.evaluate(
+            "() => [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group)")
+        await self.receiver.click('#group-conexao .dock-move[data-move="1"]')
+        await self.receiver.wait_for_timeout(500)
+        depois = await self.receiver.evaluate(
+            "() => [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group)")
+        self.assertEqual(depois, antes[1:2] + antes[:1] + antes[2:],
+                         'Mover para a direita deve trocar o grupo de lugar.')
+        abas = await self.receiver.evaluate(
+            "() => [...document.querySelectorAll('.dock-tab')].map(b => b.dataset.tab)")
+        self.assertEqual(abas, depois, 'As abas acompanham a ordem dos grupos.')
+        await self.receiver.reload(wait_until='domcontentloaded')
+        await self.receiver.wait_for_timeout(800)
+        recarregado = await self.receiver.evaluate(
+            "() => [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group)")
+        self.assertEqual(recarregado, depois, 'A ordem deve persistir após reload.')
+
     async def test_monitor_comprime_no_estreito(self):
         # C híbrida: no estreito o monitor vira chips (some o estado detalhado);
         # no largo mostra o estado completo. Mesmo DOM, troca por CSS.

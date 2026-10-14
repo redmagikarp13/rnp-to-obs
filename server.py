@@ -108,6 +108,20 @@ def parse_speak_threshold(value):
         return None
     return parsed
 
+
+# Ordem dos painéis do dock (preferência persistida no config do servidor, para que
+# todos os clientes — dock do OBS, janela, navegador — vejam a mesma ordem).
+DOCK_GROUPS = ('conexao', 'palco', 'cameras', 'chat')
+
+
+def parse_group_order(value):
+    """Devolve a ordem como lista válida (permutação de DOCK_GROUPS), ou None."""
+    if not isinstance(value, (list, tuple)):
+        return None
+    if sorted(value) != sorted(DOCK_GROUPS):
+        return None
+    return list(value)
+
 # Temas do dock /control. `hardware`, `nordic`, `glass` e `obsidian` foram aposentados no
 # redesign de 2026-10; configs antigos migram para o padrão em vez de quebrar.
 CONTROL_THEMES = ('broadcast', 'ifes')
@@ -130,6 +144,7 @@ DEFAULT_CONFIG = {
     "grid_layout_mode": "auto",
     "camera_format": "original",
     "speak_peak_threshold": DEFAULT_SPEAK_PEAK_THRESHOLD,
+    "dock_group_order": list(DOCK_GROUPS),
     "stage_preset": "side-by-side",
     "libras_size": "equal",
     "libras_auto_detect": True,
@@ -256,6 +271,8 @@ class BridgeState:
         _limiar = parse_speak_threshold(cfg.get("speak_peak_threshold"))
         self.speak_peak_threshold: float = (
             _limiar if _limiar is not None else DEFAULT_SPEAK_PEAK_THRESHOLD)
+        _ordem = parse_group_order(cfg.get("dock_group_order"))
+        self.dock_group_order: list = _ordem if _ordem is not None else list(DOCK_GROUPS)
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
         self.custom_camera_names: Dict[str, str] = cfg.get("custom_camera_names", {})
@@ -348,6 +365,7 @@ class BridgeState:
             "camera_name_style": self.camera_name_style,
             "camera_format": self.camera_format,
             "speak_peak_threshold": self.speak_peak_threshold,
+            "dock_group_order": self.dock_group_order,
             "grid_layout_mode": self.grid_layout_mode,
             "stage_preset": self.stage_preset,
             "libras_size": self.libras_size,
@@ -1782,6 +1800,14 @@ async def api_grid_config(req: Request):
                  "message": f"speak_peak_threshold deve ser um número entre {SPEAK_PEAK_MIN} e {SPEAK_PEAK_MAX}"},
                 status_code=400)
         data["speak_peak_threshold"] = limiar
+    if "dock_group_order" in data:
+        ordem = parse_group_order(data["dock_group_order"])
+        if ordem is None:
+            return JSONResponse(
+                {"status": "error",
+                 "message": f"dock_group_order deve ser uma permutação de {list(DOCK_GROUPS)}"},
+                status_code=400)
+        data["dock_group_order"] = ordem
     if "focused_camera_id" in data:
         state.focused_camera_id = str(data["focused_camera_id"]) if data["focused_camera_id"] is not None else None
     if "pinned_camera_ids" in data:
@@ -1802,6 +1828,8 @@ async def api_grid_config(req: Request):
             state.camera_format = fmt
     if "speak_peak_threshold" in data:
         state.speak_peak_threshold = data["speak_peak_threshold"]
+    if "dock_group_order" in data:
+        state.dock_group_order = data["dock_group_order"]
     if "stage_preset" in data:
         state.stage_preset = data["stage_preset"]
     if "custom_name" in data and "cam_id" in data:
@@ -2886,6 +2914,7 @@ async def get_control_panel():
         'style="height: 30px; width: auto; margin-left: 9px; vertical-align: -9px">'
         if state.control_theme == "ifes" else '')
     chk_yt_auto_connect = "checked" if state.youtube_auto_connect else ""
+    dock_order_csv = ",".join(state.dock_group_order)
 
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
 
@@ -2924,7 +2953,7 @@ async def get_control_panel():
     </div>
     <div class="dock-monitor-fixed">
     <div class="card" style="padding: 10px 14px">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+        <div class="monitor-head" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
             <span style="font-weight: 800; font-size: 12.5px; display: flex; align-items: center; gap: 6px">
                 <span class="live-pulse-dot"></span>
                 <span class="monitor-title-text">Monitor de Fontes em Tempo Real</span>
@@ -3002,7 +3031,7 @@ async def get_control_panel():
         </div>
 
         <!-- Informação do Mixer Unificado -->
-        <div style="border: 1px solid; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap">
+        <div class="mixer-info" style="border: 1px solid; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap">
             <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
                 <span class="source-health-dot ok"></span>
                 <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte. O master geral sai pelo <strong>/stage</strong> (PCM Float32 48kHz) — marque "Controlar áudio via OBS" nessa fonte.</span>
@@ -3112,8 +3141,15 @@ async def get_control_panel():
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="cameras">Câmeras</button>
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat">Chat & Enquete</button>
     </nav>
-    <div class="dock-groups" id="dockGroups">
+    <div class="dock-groups" id="dockGroups" data-dock-order="{dock_order_csv}">
     <section class="dock-group" data-group="conexao" id="group-conexao">
+        <div class="dock-group-head">
+            <span class="dock-group-name">Conexão</span>
+            <span class="dock-group-move">
+                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Conexão para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Conexão para a direita">›</button>
+            </span>
+        </div>
     <div class="card" >
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
             <div>
@@ -3235,6 +3271,13 @@ async def get_control_panel():
     <!-- 🎭 PRESETS DE CENA AO VIVO (SLIDES + CÂMERAS) -->
     </section>
     <section class="dock-group" data-group="palco" id="group-palco">
+        <div class="dock-group-head">
+            <span class="dock-group-name">Palco</span>
+            <span class="dock-group-move">
+                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Palco para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Palco para a direita">›</button>
+            </span>
+        </div>
     <div class="card" >
         <div class="section-title">
             <span style="display: flex; align-items: center; gap: 6px">
@@ -3394,6 +3437,13 @@ async def get_control_panel():
     <script src="/assets/audio-mixer.js"></script>
     </section>
     <section class="dock-group" data-group="cameras" id="group-cameras">
+        <div class="dock-group-head">
+            <span class="dock-group-name">Câmeras</span>
+            <span class="dock-group-move">
+                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Câmeras para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Câmeras para a direita">›</button>
+            </span>
+        </div>
     <div class="card">
         <div class="section-title">
             <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
@@ -3463,6 +3513,13 @@ async def get_control_panel():
     <!-- SEÇÃO EXCLUSIVA DE TEMAS, DESTAQUES E GERENCIAMENTO DO CHAT -->
     </section>
     <section class="dock-group" data-group="chat" id="group-chat">
+        <div class="dock-group-head">
+            <span class="dock-group-name">Chat & Enquete</span>
+            <span class="dock-group-move">
+                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Chat e Enquete para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Chat e Enquete para a direita">›</button>
+            </span>
+        </div>
     <div class="card">
         <div class="section-title">
             <span>💬 Chat & Destaque (Lower-Third)</span>
