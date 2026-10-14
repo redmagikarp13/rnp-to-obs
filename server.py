@@ -3380,6 +3380,7 @@ async def get_control_panel():
         <div class="section-title">
             <span>📊 Apresentação / Slides</span>
             <button class="btn-copy" onclick="copyUrl('/presentation')">📋 Link Slides</button>
+            <button id="btnToggleScreenPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('presentation')">Ocultar preview</button>
         </div>
         <div class="thumb-box" style="height: 200px">
             <img id="thumbScreen" src="/raw_frame/presentation" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
@@ -3398,6 +3399,7 @@ async def get_control_panel():
             <div style="display: flex; gap: 6px; flex-wrap: wrap">
                 <button class="btn-copy" onclick="copyUrl('/cameras/grid', this)">📋 Link Grid</button>
                 <button class="btn-copy"  onclick="copyUrl('/libras', this)">🤟 Janela Libras</button>
+                <button id="btnToggleCamPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('cameras')">Ocultar preview</button>
             </div>
         </div>
 
@@ -4309,7 +4311,8 @@ async def get_control_panel():
                     if (elStyle) elStyle.value = data.poll_style;
                 }}
 
-                if (data.connected) {{
+                if (data.connected && !(window.RnpDock && window.RnpDock.previewOff
+                        && window.RnpDock.previewOff.presentation)) {{
                     document.getElementById('thumbScreen').src = '/raw_frame/presentation?t=' + Date.now();
                 }}
 

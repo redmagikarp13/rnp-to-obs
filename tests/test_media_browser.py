@@ -914,6 +914,28 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any('/ws/peaks_out' in u for u in ws_urls),
                         'A mesa precisa assinar o canal de picos empurrados.')
 
+    async def test_toggle_desliga_preview_de_webcams_e_apresentacao(self):
+        # Desligar o preview precisa PARAR de carregar a fonte (src about:blank),
+        # e o poll que refresca o thumb da apresentação não pode ressuscitá-lo.
+        await self.receiver.goto(self.url + '/control')
+        await self.receiver.click('#btnToggleCamPreview')
+        await self.receiver.wait_for_timeout(300)
+        estado = await self.receiver.evaluate("""() => ({
+            src: document.getElementById('gridPreviewIframe').getAttribute('src'),
+            off: document.getElementById('gridPreviewIframe').parentElement.classList.contains('preview-off'),
+        })""")
+        self.assertEqual(estado['src'], 'about:blank', 'Preview de webcams desligado não deve carregar o grid.')
+        self.assertTrue(estado['off'], 'O contêiner deve marcar preview-off para o placeholder.')
+        await self.receiver.click('#btnToggleCamPreview')
+        await self.receiver.wait_for_timeout(300)
+        self.assertIn('/cameras/grid', await self.receiver.evaluate(
+            "() => document.getElementById('gridPreviewIframe').getAttribute('src')"),
+            'Religar o preview deve restaurar a fonte.')
+        await self.receiver.click('#btnToggleScreenPreview')
+        await self.receiver.wait_for_timeout(1600)
+        src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
+        self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
+
     async def test_responsivo_largo_mostra_grupos_sem_abas(self):
         # Estreito: barra de abas visível e só o grupo ativo; largo: os 4 grupos
         # visíveis e nenhuma barra de abas (disclosure progressivo).

@@ -248,3 +248,20 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-group,
     .dock-group.is-active { display: block; }
 }
+
+/* Preview desativado: o src foi zerado (para de decodificar); o contêiner explica. */
+.preview-off { position: relative; }
+.preview-off > * { visibility: hidden; }
+.preview-off::after {
+    content: 'Preview desativado';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: var(--label-tracking);
+    text-transform: uppercase;
+}

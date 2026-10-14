@@ -152,6 +152,13 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_botoes_para_desativar_previews(self):
+        # Previews ao vivo (grid de câmeras, apresentação) pesam CPU; o operador
+        # precisa poder desligá-los sem perder os links de fonte.
+        html = self.client.get('/control').text
+        for idb in ('btnToggleCamPreview', 'btnToggleScreenPreview'):
+            self.assertIn(idb, html, f'Botão {idb} de controle de preview ausente.')
+
     def test_escudo_anti_inatividade_fica_na_barra_de_status(self):
         # Pedido do usuário: o aviso de anti-inatividade é estado global da sessão,
         # então mora ao lado do indicador de conexão, não enterrado no grupo Conexão.

@@ -32,6 +32,48 @@
     if (!groups.some(g => g.dataset.group === inicial)) inicial = 'conexao';
     activate(inicial);
 
+    // Previews ao vivo (grid de câmeras, apresentação) pesam CPU. O toggle zera o src
+    // (para de decodificar de verdade) e marca o contêiner para o placeholder; o estado
+    // persiste por operador em localStorage. O poll que refresca o thumb da apresentação
+    // consulta previewOff antes de religar (guarda no server.py).
+    const PREVIEW_KEY = 'rnpDockPreviewsOff';
+    const PREVIEW_ALVO = {
+        cameras: 'gridPreviewIframe',
+        presentation: 'thumbScreen',
+    };
+    const PREVIEW_BOTAO = {
+        cameras: 'btnToggleCamPreview',
+        presentation: 'btnToggleScreenPreview',
+    };
+    let previewOff = { cameras: false, presentation: false };
+    try { previewOff = Object.assign(previewOff, JSON.parse(localStorage.getItem(PREVIEW_KEY) || '{}')); } catch (_) {}
+
+    function applyPreview(kind) {
+        const el = document.getElementById(PREVIEW_ALVO[kind]);
+        const btn = document.getElementById(PREVIEW_BOTAO[kind]);
+        if (!el) return;
+        const caixa = el.parentElement;
+        if (previewOff[kind]) {
+            if (!el.dataset.srcOriginal) el.dataset.srcOriginal = el.getAttribute('src') || '';
+            if (el.tagName === 'IFRAME') el.setAttribute('src', 'about:blank');
+            else el.removeAttribute('src');
+            caixa.classList.add('preview-off');
+        } else {
+            if (el.dataset.srcOriginal) el.setAttribute('src', el.dataset.srcOriginal);
+            caixa.classList.remove('preview-off');
+        }
+        if (btn) btn.textContent = previewOff[kind] ? 'Mostrar preview' : 'Ocultar preview';
+    }
+
+    function togglePreview(kind) {
+        if (!(kind in PREVIEW_ALVO)) return;
+        previewOff[kind] = !previewOff[kind];
+        try { localStorage.setItem(PREVIEW_KEY, JSON.stringify(previewOff)); } catch (_) {}
+        applyPreview(kind);
+    }
+
+    Object.keys(PREVIEW_ALVO).forEach(applyPreview);
+
     // FPS médio das câmeras na barra de status (a origem amostra por câmera).
     const fpsEl = document.getElementById('dockFps');
     if (fpsEl) {
@@ -45,5 +87,5 @@
         }, 2000);
     }
 
-    window.RnpDock = { activateTab: activate };
+    window.RnpDock = { activateTab: activate, togglePreview, get previewOff() { return previewOff; } };
 })();
