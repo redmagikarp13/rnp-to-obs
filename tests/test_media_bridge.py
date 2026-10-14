@@ -152,6 +152,27 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_shell_do_dock_tem_zona_fixa_e_quatro_grupos(self):
+        html = self.client.get('/control').text
+        for marcador in ('dock-statusbar', 'dock-audio-fixed', 'dock-tabs', 'dock-groups'):
+            self.assertIn(marcador, html, f'Shell do dock precisa de {marcador}.')
+        for grupo in ('conexao', 'palco', 'cameras', 'chat'):
+            self.assertIn(f'data-group="{grupo}"', html, f'Grupo {grupo} ausente.')
+        # O mixer fixo vem ANTES das abas (zona fixa no topo).
+        self.assertLess(html.index('dock-audio-fixed'), html.index('dock-tabs'),
+                        'O mixer fixo deve vir antes da barra de abas.')
+        # Apresentação/Slides mora no grupo Palco, não solto depois de Chat.
+        palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
+        self.assertIn('Apresentação', palco, 'Slides/Apresentação deve estar no grupo Palco.')
+
+    def test_barra_de_status_nao_duplica_medidor_master(self):
+        html = self.client.get('/control').text
+        barra = html[html.index('dock-statusbar'):html.index('dock-audio-fixed')]
+        self.assertNotIn('vuMasterBar', barra,
+                         'Barra de status não pode repetir o medidor master do mixer.')
+        fixa = html[html.index('dock-audio-fixed'):html.index('dock-tabs')]
+        self.assertIn('vuMasterBar', fixa, 'O medidor master vive no mixer fixo.')
+
     def test_dock_sem_link_de_teste_webrtc(self):
         # WebRTC hoje é o transporte padrão, não um experimento: o link "Abrir teste
         # WebRTC" no topo da mesa só adicionava ruído. O /webrtc em si permanece

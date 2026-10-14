@@ -181,3 +181,70 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 .channel-title, .poll-question { color: var(--text); }
 .channel-tag, .meter-db-readout, .mod-title { color: var(--text-muted); }
+
+/* ==========================================================================
+   SHELL RESPONSIVO (spec Adendo 2026-10-14)
+   Estreito: zona fixa empilhada + abas (só o grupo ativo).
+   Largo (>=900px): abas somem, os 4 grupos viram colunas auto-fit.
+   A troca é puramente CSS; o markup dos grupos é o mesmo nos dois modos.
+   ========================================================================== */
+
+.dock-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+}
+.dock-statusbar h1 { margin: 0; font-size: 14px; }
+.dock-statusbar-fps { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.dock-statusbar-theme {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+.dock-statusbar-theme select { width: auto; padding: 2px 6px; font-size: 11px; }
+.dock-statusbar .btn-danger { margin-left: auto; }
+
+.dock-audio-fixed { margin-bottom: 8px; }
+.dock-audio-fixed .card { margin-bottom: 0; }
+
+.dock-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.dock-tab {
+    flex: 1;
+    padding: 6px 0;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-disabled);
+    cursor: pointer;
+}
+.dock-tab.is-active {
+    background: var(--primary);
+    border-color: var(--primary-border);
+    color: var(--primary-text);
+}
+
+.dock-group { display: none; }
+.dock-group.is-active { display: block; }
+
+@media (min-width: 900px) {
+    .dock-tabs { display: none; }
+    .dock-groups {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 8px;
+        align-items: start;
+    }
+    .dock-group,
+    .dock-group.is-active { display: block; }
+}

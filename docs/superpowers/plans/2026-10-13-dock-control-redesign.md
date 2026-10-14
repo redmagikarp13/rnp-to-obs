@@ -28,6 +28,24 @@
 - **Nunca rodar a suíte com uma instância da ponte no ar** (3333/3334): contenção de CPU faz testes aleatórios travarem. Verificar com `Get-NetTCPConnection -LocalPort 3333,3334 -State Listen` antes.
 - **Commits:** um por tarefa, no fim do ciclo verde. Não usar `git add -A` cego; adicionar os arquivos nomeados na tarefa.
 
+## Emenda 2026-10-14 (sobrepõe o texto das Tasks 4 e 5 onde conflitar)
+
+O spec ganhou o **Adendo 2026-10-14** (UI intuitiva + responsiva, validado no companion
+visual). Onde a Task 4/5 abaixo disser "5 abas", "aba Áudio" ou "VU na barra de status
+(`vuBarSegments`/`vuBarDb`)", **vale o adendo**, não este plano:
+
+- **Zona fixa:** barra de status **+ card mixer de áudio**, sempre visíveis.
+- **Barra de status SEM medidor master** (conexão · fps · tema · Parar). O master vive só
+  no mixer; os IDs `vuBarSegments`/`vuBarDb` não existem.
+- **4 grupos** (não 5 abas): Conexão · Palco · Câmeras · Chat & Enquete. O áudio avançado
+  (limiar de fala, monitor local, links individuais) fica recolhido no card fixo de áudio.
+- **Responsivo:** estreito (< ~900px) = zona fixa + barra de 4 abas (só a ativa visível);
+  largo (≥ ~900px) = abas desaparecem e os 4 grupos viram colunas
+  `repeat(auto-fit, minmax(260px, 1fr))`; mixer vira faixa horizontal. Troca puramente CSS,
+  markup único (sem DOM duplicado).
+- Teste de responsividade obrigatório: largo mostra os 4 grupos e nenhuma barra de abas;
+  estreito o inverso.
+
 ---
 
 ### Task 1: Infra de assets estáticos do dock
