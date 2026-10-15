@@ -990,6 +990,15 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                          'Os 5 blocos de span 1 fecham a segunda linha.')
         self.assertLess(min(linhas['largos']), min(linhas['uns']),
                         'A linha dos blocos largos vem antes da dos estreitos.')
+        alturas = await self.receiver.evaluate("""() => {
+            const h = s => [...document.querySelectorAll('.dock-bloco[data-span="' + s + '"]')]
+                .map(b => Math.round(b.getBoundingClientRect().height));
+            return { largos: h('2'), uns: h('1') };
+        }""")
+        self.assertEqual(len(set(alturas['largos'])), 1,
+                         'Na mesma linha os blocos esticam juntos (sem vão vertical).')
+        self.assertEqual(len(set(alturas['uns'])), 1,
+                         'Os blocos de span 1 também fecham a linha sem vão.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {
