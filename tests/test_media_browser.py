@@ -980,14 +980,14 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                         'Um tile 2x2 deve fechar quadrado no largo.')
         await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 18,
-                         'Em 3840px o mosaico usa 18 colunas (9 quadrados por linha).')
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 6,
+                         'Em 3840px o mosaico mantém 6 colunas (grade 3x3 de quadrados).')
         self.assertLess(await self.receiver.evaluate(quadrado), 0.15,
                         'Um tile 2x2 deve fechar quadrado em 3840.')
         tops = await self.receiver.evaluate("""() => [...document.querySelectorAll('.dock-bloco')]
             .map(b => Math.round(b.getBoundingClientRect().top))""")
-        self.assertEqual(len(set(tops)), 1,
-                         'Em 3840 os nove quadrados fecham uma única linha, sem vãos.')
+        self.assertEqual(len(set(tops)), 3,
+                         'Em 3840 os nove quadrados fecham 3 linhas de 3, sem vãos.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {

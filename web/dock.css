@@ -728,9 +728,11 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
     /* Tiles TODOS quadrados (2x2): linha de grade = medida da coluna. 9 blocos x 4
-       células = 36 células; 6 colunas no largo (3 quadrados por linha, 6 linhas) e
-       18 colunas em >=2400 (os 9 quadrados numa linha só) são divisões exatas, então
-       não sobra vão em nenhuma resolução — e em 3840 cabe sem rolagem vertical. */
+       células = 36 células = 6 colunas x 6 linhas exatas: 3 quadrados por linha,
+       sem vão em nenhuma largura larga. Em 3840 os quadrados saem ~1265px e o
+       mosaico rola verticalmente — escolha do usuário (3x3 grande em vez de uma
+       faixa de 9 pequenos). minmax(0,1fr): com 1fr puro o conteúdo largo do mixer
+       inflava as trilhas e destruía o quadrado. */
     .dock-mosaico {
         grid-template-columns: repeat(6, minmax(0, 1fr));
         grid-auto-rows: calc((100vw - 28px - 40px) / 6);
@@ -739,12 +741,6 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-bloco.is-off { display: block; }
     .dock-bloco[data-span="2"] { grid-column: span 2; }
     .dock-bloco[data-rows="2"] { grid-row: span 2; }
-}
-@media (min-width: 2400px) {
-    .dock-mosaico {
-        grid-template-columns: repeat(18, minmax(0, 1fr));
-        grid-auto-rows: calc((100vw - 28px - 136px) / 18);
-    }
 }
 .dock-bloco .card + .card { margin-top: 10px; }
 
