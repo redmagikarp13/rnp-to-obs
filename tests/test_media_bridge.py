@@ -208,6 +208,16 @@ class MediaRoutesTests(unittest.TestCase):
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
 
+    def test_youtube_nao_fica_aninhado_no_form_row(self):
+        # O card do YouTube já foi inserido dentro do .input-group do Nome (dentro do
+        # .form-row de 2 colunas): herdou meia largura e espremeu o e-mail. Entre o
+        # input do Nome e o link do YouTube precisam fechar input, input-group e
+        # form-row — senão o YouTube está aninhado na coluna errada.
+        html = self.client.get('/control').text
+        entre = html[html.index('id="userName"'):html.index('id="ytUrl"')]
+        self.assertGreaterEqual(entre.count('</div>'), 3,
+                                'O card do YouTube não pode ficar aninhado no input-group do Nome.')
+
     def test_palco_composto_desmembrado_em_blocos(self):
         # O card "Palco Composto" agrupava preview + presets + Libras; no mosaico
         # cada um deve ser um bloco 1x1 independente.

@@ -480,6 +480,12 @@ h1, .header h1 { color: var(--text); }
 }
 
 .section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: var(--label-tracking);
@@ -606,6 +612,8 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     top: calc(100% + 6px);
     right: 0;
     width: min(520px, 94vw);
+    max-height: calc(100vh - 70px);
+    overflow: auto;
     z-index: 40;
     background: var(--surface);
     border: 1px solid var(--border-strong);
@@ -620,11 +628,13 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     padding: 0;
     border-top: none;
 }
-.dock-popover .card + .card {
+.dock-popover .card + .card,
+.dock-popover .card .card {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--border);
 }
+.dock-popover .actions .btn { white-space: nowrap; }
 
 .dock-audio-fixed { margin-bottom: 8px; }
 .dock-audio-fixed .card { margin-bottom: 0; }

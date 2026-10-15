@@ -2579,6 +2579,12 @@ async def get_control_panel():
             <div class="input-group">
                 <label>Nome do Convidado:</label>
                 <input type="text" id="userName" value="{state.user_name}" onchange="autoSaveField('user_name', this.value)">
+            </div>
+            <div class="input-group">
+                <label>E-mail:</label>
+                <input type="email" id="userEmail" value="{state.user_email}" onchange="autoSaveField('user_email', this.value)">
+            </div>
+        </div>
     <!-- INTEGRAÇÃO COM YOUTUBE LIVE CHAT -->
     <div class="card" >
         <div class="section-title">
@@ -2602,12 +2608,6 @@ async def get_control_panel():
             <button id="btnYtDisconnect" class="btn btn-ctrl" onclick="handleYtDisconnect()">⏹ Parar</button>
         </div>
     </div>
-            </div>
-            <div class="input-group">
-                <label>E-mail:</label>
-                <input type="email" id="userEmail" value="{state.user_email}" onchange="autoSaveField('user_email', this.value)">
-            </div>
-        </div>
         <div class="actions">
             <button id="btnConnect" class="btn btn-primary" onclick="handleConnect()">⚡ Conectar à RNP</button>
             <button id="btnDisconnect" class="btn btn-danger" onclick="handleDisconnect()">⏹ Desconectar</button>
