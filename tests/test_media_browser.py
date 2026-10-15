@@ -969,6 +969,18 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.wait_for_timeout(600)
         self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active .dock-group-body'), 1,
                          'No estreito o grupo ativo vira coluna única.')
+        await self.receiver.set_viewport_size({'width': 2200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 6,
+                         'No ultra-largo o mosaico sobe para 6 trilhos.')
+        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        frac = await self.receiver.evaluate("""() => {
+            const g = document.getElementById('group-audio').getBoundingClientRect();
+            const c = document.getElementById('dockGroups').getBoundingClientRect();
+            return g.width / c.width;
+        }""")
+        self.assertLess(frac, 0.6, 'O bloco de Áudio não pode ocupar a linha inteira.')
 
     async def test_menu_de_conexao_abre_e_fecha(self):
         # Popover: fechado por padrão, abre no clique do botão da barra, fecha ao

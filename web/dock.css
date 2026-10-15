@@ -638,8 +638,20 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 .dock-audio-fixed { margin-bottom: 8px; }
 .dock-audio-fixed .card { margin-bottom: 0; }
-/* O bloco de Áudio (mixer) é o 2x1 do mosaico: linha inteira no largo. */
-.dock-group[data-group="audio"] { grid-column: span 4; }
+/* O bloco de Áudio tem a mesma largura dos demais (span 2); o card usa duas
+   colunas internas no largo: rack à esquerda, monitor local/dica à direita —
+   assim o espaço à direita dos canais fixos vira útil em vez de vazio. */
+@media (min-width: 900px) {
+    #audioDockCard {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 12px;
+        align-items: start;
+    }
+    #audioDockCard > *:not(.audio-mixer-rack):not(.audio-monitor-bar) { grid-column: 1 / -1; }
+    #audioDockCard .audio-mixer-rack { grid-column: 1; }
+    #audioDockCard .audio-monitor-bar { grid-column: 2; }
+}
 /* Mesa de verdade: cada canal com largura CONSTANTE (não estica com a tela);
    a linha empacota à esquerda e sobra espaço à direita, como num console. */
 .dock-group[data-group="audio"] .audio-channel-strip { flex: 0 0 170px; width: 170px; }
@@ -701,6 +713,12 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
         display: block;
         grid-column: span 2;
     }
+}
+
+/* Ultra-largo (telas de produção/monitor dedicado): 6 trilhos, três grupos por
+   linha — sem isso cada bloco estica a ~600px e o mosaico vira deserto. */
+@media (min-width: 2000px) {
+    .dock-groups { grid-template-columns: repeat(6, 1fr); }
 }
 
 /* Preview desativado: o src foi zerado (para de decodificar); o contêiner explica. */
