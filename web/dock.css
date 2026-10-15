@@ -708,6 +708,14 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
        sua altura natural; column-fill balance distribui sem vãos internos. */
     .dock-mosaico { columns: 2; }
     .dock-bloco.is-off { display: block; }
+    /* O preview do palco é o painel mais consultado: com height inline legado de
+       180px ele virava uma faixa. Em coluna larga a altura acompanha a largura
+       (16:9, o aspecto do vídeo), então o tile cresce junto com a tela. */
+    .dock-bloco[data-bloco="palco-preview"] .obs-grid-preview-box {
+        height: auto !important;
+        aspect-ratio: 16 / 9;
+        min-height: 220px;
+    }
 }
 @media (min-width: 1800px) {
     .dock-mosaico { columns: 3; }

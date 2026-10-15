@@ -1000,6 +1000,22 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         }""")
         self.assertLess(frac, 0.6, 'O bloco mixer não pode ocupar a linha inteira.')
 
+    async def test_preview_do_palco_tem_altura_proporcional_no_largo(self):
+        # O preview do palco com height inline de 180px virava faixa em coluna larga.
+        # No largo a caixa acompanha a largura em 16:9 (o aspecto do vídeo).
+        await self.receiver.goto(self.url + '/control')
+        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        prop = await self.receiver.evaluate("""() => {
+            const r = document.querySelector(
+                '[data-bloco="palco-preview"] .obs-grid-preview-box').getBoundingClientRect();
+            return { ratio: r.width / r.height, h: r.height };
+        }""")
+        self.assertGreater(prop['h'], 250,
+                           'O preview do palco precisa de altura real no largo.')
+        self.assertLess(abs(prop['ratio'] - 16 / 9), 0.2,
+                        'A caixa do preview deve manter o aspecto 16:9.')
+
     async def test_menu_de_conexao_abre_e_fecha(self):
         # Popover: fechado por padrão, abre no clique do botão da barra, fecha ao
         # clicar fora. Por ser overlay, não ocupa fluxo em nenhuma largura.
