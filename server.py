@@ -2780,7 +2780,7 @@ async def get_control_panel():
             </span>
         </div>
     <div class="dock-group-body">
-    <div class="card" >
+    <div class="card" data-block="palco-preview">
         <div class="section-title">
             <span style="display: flex; align-items: center; gap: 6px">
                 <span>🎭 Palco Composto (Slides + Câmeras)</span>
@@ -2792,6 +2792,10 @@ async def get_control_panel():
         <div class="obs-grid-preview-box" style="height: 180px">
             <iframe id="stagePreviewIframe" src="/stage?audio=0"></iframe>
         </div>
+    </div>
+
+    <div class="card" data-block="palco-presets">
+        <div class="section-title"><span>Presets de Cena</span></div>
 
         <div class="preset-buttons-grid">
             <button id="btnPreset_side-by-side" class="btn-ctrl active-preset" onclick="setStagePreset('side-by-side')">
@@ -2815,6 +2819,10 @@ async def get_control_panel():
         </div>
 
         <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
+    </div>
+
+    <div class="card" data-block="palco-libras">
+        <div class="section-title"><span>Libras</span></div>
         <div class="grid-options-bar" style="margin-top: 8px">
             <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
                 <label style="margin: 0; font-size: 12px; font-weight: 700">🤟 Tamanho Libras:</label>

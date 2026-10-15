@@ -194,6 +194,24 @@ class MediaRoutesTests(unittest.TestCase):
         conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
         self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
 
+    def test_palco_composto_desmembrado_em_blocos(self):
+        # O card "Palco Composto" agrupava preview + presets + Libras; no mosaico
+        # cada um deve ser um bloco 1x1 independente.
+        html = self.client.get('/control').text
+        for bloco in ('palco-preview', 'palco-presets', 'palco-libras'):
+            self.assertIn(f'data-block="{bloco}"', html, f'Bloco {bloco} ausente.')
+        i_prev = html.index('data-block="palco-preview"')
+        i_pres = html.index('data-block="palco-presets"')
+        i_lib = html.index('data-block="palco-libras"')
+        self.assertLess(i_prev, html.index('stagePreviewIframe'),
+                        'O preview deve estar dentro do bloco preview.')
+        self.assertLess(html.index('stagePreviewIframe'), i_pres,
+                        'O preview deve terminar antes do bloco de presets.')
+        self.assertLess(i_pres, html.index('preset-buttons-grid'))
+        self.assertLess(html.index('preset-buttons-grid'), i_lib,
+                        'Os presets devem terminar antes do bloco de Libras.')
+        self.assertLess(i_lib, html.index('selLibrasSize'))
+
     def test_aviso_webrtc_e_bloco_com_card_na_conexao(self):
         # O aviso de modo WebRTC ficou órfão (parágrafo solto no corpo do Palco,
         # renderizando como coluna sem card no mosaico). Virou bloco com card.
