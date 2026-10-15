@@ -620,7 +620,7 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    width: min(460px, 92vw);
+    width: min(520px, 94vw);
     z-index: 40;
     background: var(--surface);
     border: 1px solid var(--border-strong);
@@ -634,6 +634,11 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     background: transparent;
     padding: 0;
     border-top: none;
+}
+.dock-popover .card + .card {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
 }
 
 .dock-audio-fixed { margin-bottom: 8px; }

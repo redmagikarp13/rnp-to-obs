@@ -2573,7 +2573,7 @@ async def get_control_panel():
         <span id="saveToast" class="badge" style="display:none">Salvo!</span>
         <button onclick="handleExitApplication()" class="btn btn-danger" title="Desconectar da sala e encerrar o servidor e aplicativo">Parar</button>
         <span class="dock-connect-wrap">
-            <button id="btnConnectMenu" class="btn btn-ctrl" aria-expanded="false" aria-controls="connectPopover" title="Configuração de conexão com a sala RNP">Sala ▾</button>
+            <button id="btnConnectMenu" class="btn btn-ctrl" aria-expanded="false" aria-controls="connectPopover" title="Configuração de conexão com a sala RNP">Conexões ▾</button>
             <div class="dock-popover" id="connectPopover" hidden>
     <div class="card" id="connectPanelCard">
         <div class="input-group">
@@ -2584,6 +2584,29 @@ async def get_control_panel():
             <div class="input-group">
                 <label>Nome do Convidado:</label>
                 <input type="text" id="userName" value="{state.user_name}" onchange="autoSaveField('user_name', this.value)">
+    <!-- INTEGRAÇÃO COM YOUTUBE LIVE CHAT -->
+    <div class="card" >
+        <div class="section-title">
+            <span style="display: flex; align-items: center; gap: 6px">
+                <span>🔴 YouTube Live Chat</span>
+            </span>
+            <div id="ytStatusBadge" class="badge disconnected" style="font-size: 10.5px">● Desconectado</div>
+        </div>
+        <div class="input-group">
+            <label>Link ou ID da Transmissão do YouTube:</label>
+            <input type="text" id="ytUrl" placeholder="Ex: https://youtube.com/live/xxxx ou watch?v=xxxx" value="{state.youtube_url}" onchange="autoSaveField('youtube_url', this.value)">
+        </div>
+        <div style="margin-top: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px">
+            <input type="checkbox" id="chkYtAutoConnect" {chk_yt_auto_connect} onchange="autoSaveField('youtube_auto_connect', this.checked)" style="width: 16px; height: 16px; cursor: pointer">
+            <label for="chkYtAutoConnect" style="margin: 0; font-size: 12px; cursor: pointer; user-select: none">
+                Conectar chat do YouTube automaticamente ao conectar à sala
+            </label>
+        </div>
+        <div class="actions">
+            <button id="btnYtConnect" class="btn btn-danger" style="flex:1" onclick="handleYtConnect()">▶️ Integrar Chat do YouTube</button>
+            <button id="btnYtDisconnect" class="btn btn-ctrl" onclick="handleYtDisconnect()">⏹ Parar</button>
+        </div>
+    </div>
             </div>
             <div class="input-group">
                 <label>E-mail:</label>
@@ -2906,29 +2929,6 @@ async def get_control_panel():
         <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px"></div>
     </div>
 
-    <!-- INTEGRAÇÃO COM YOUTUBE LIVE CHAT -->
-    <div class="card" >
-        <div class="section-title">
-            <span style="display: flex; align-items: center; gap: 6px">
-                <span>🔴 YouTube Live Chat</span>
-            </span>
-            <div id="ytStatusBadge" class="badge disconnected" style="font-size: 10.5px">● Desconectado</div>
-        </div>
-        <div class="input-group">
-            <label>Link ou ID da Transmissão do YouTube:</label>
-            <input type="text" id="ytUrl" placeholder="Ex: https://youtube.com/live/xxxx ou watch?v=xxxx" value="{state.youtube_url}" onchange="autoSaveField('youtube_url', this.value)">
-        </div>
-        <div style="margin-top: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px">
-            <input type="checkbox" id="chkYtAutoConnect" {chk_yt_auto_connect} onchange="autoSaveField('youtube_auto_connect', this.checked)" style="width: 16px; height: 16px; cursor: pointer">
-            <label for="chkYtAutoConnect" style="margin: 0; font-size: 12px; cursor: pointer; user-select: none">
-                Conectar chat do YouTube automaticamente ao conectar à sala
-            </label>
-        </div>
-        <div class="actions">
-            <button id="btnYtConnect" class="btn btn-danger" style="flex:1" onclick="handleYtConnect()">▶️ Integrar Chat do YouTube</button>
-            <button id="btnYtDisconnect" class="btn btn-ctrl" onclick="handleYtDisconnect()">⏹ Parar</button>
-        </div>
-    </div>
 
     <!-- SEÇÃO DEDICADA DE ÁUDIO DA SALA & TRANSMISSÃO OBS -->
     <div class="card">

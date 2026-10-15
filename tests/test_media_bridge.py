@@ -194,6 +194,19 @@ class MediaRoutesTests(unittest.TestCase):
         conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
         self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
 
+    def test_youtube_mora_no_popover_de_conexoes(self):
+        # Integrar o chat do YouTube é uma conexão de fonte, como a RNP: mora no
+        # popover de Conexões da barra, não como bloco do Palco.
+        html = self.client.get('/control').text
+        self.assertLess(html.index('id="connectPopover"'), html.index('btnYtConnect'),
+                        'O controle do YouTube deve estar dentro do popover.')
+        self.assertLess(html.index('btnYtConnect'), html.index('dock-monitor-fixed'),
+                        'O popover termina antes do monitor.')
+        palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
+        self.assertNotIn('btnYtConnect', palco, 'O YouTube sai do grupo Palco.')
+        barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
+        self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
+
     def test_palco_composto_desmembrado_em_blocos(self):
         # O card "Palco Composto" agrupava preview + presets + Libras; no mosaico
         # cada um deve ser um bloco 1x1 independente.

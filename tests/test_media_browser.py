@@ -1000,6 +1000,9 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.click('#btnConnectMenu')
         await self.receiver.wait_for_timeout(200)
         self.assertFalse(await self.receiver.evaluate(fechado), 'O botão da barra abre o popover.')
+        self.assertTrue(await self.receiver.evaluate(
+            "() => document.getElementById('btnYtConnect').checkVisibility()"),
+            'O controle de YouTube deve ficar visível dentro do popover aberto.')
         await self.receiver.click('h1')
         await self.receiver.wait_for_timeout(200)
         self.assertTrue(await self.receiver.evaluate(fechado), 'Clicar fora fecha o popover.')
