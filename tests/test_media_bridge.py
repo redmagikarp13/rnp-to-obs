@@ -167,15 +167,15 @@ class MediaRoutesTests(unittest.TestCase):
     def test_ordem_dos_grupos_e_configuravel_e_validada(self):
         # A ordem dos painéis é preferência persistida no config do servidor (todos os
         # clientes iguais), então /api/grid/config precisa validar como permutação.
-        ordem = ['palco', 'conexao', 'chat', 'cameras']
+        ordem = ['palco', 'conexao', 'audio', 'chat', 'cameras']
         r = self.client.post('/api/grid/config', json={'dock_group_order': ordem})
         self.assertEqual(r.status_code, 200)
-        self.assertIn('data-dock-order="palco,conexao,chat,cameras"',
+        self.assertIn('data-dock-order="palco,conexao,audio,chat,cameras"',
                       self.client.get('/control').text,
                       'O dock deve renderizar os grupos na ordem salva.')
-        for invalida in (['conexao', 'conexao', 'palco', 'cameras'],
-                         ['conexao', 'palco', 'cameras'],
-                         ['conexao', 'palco', 'cameras', 'chat', 'extra'],
+        for invalida in (['conexao', 'conexao', 'palco', 'cameras', 'audio'],
+                         ['conexao', 'palco', 'cameras', 'audio'],
+                         ['conexao', 'palco', 'cameras', 'audio', 'chat', 'extra'],
                          'conexao,palco'):
             r = self.client.post('/api/grid/config', json={'dock_group_order': invalida})
             self.assertEqual(r.status_code, 400, f'Ordem inválida {invalida} deve ser rejeitada.')
@@ -187,9 +187,9 @@ class MediaRoutesTests(unittest.TestCase):
         # fixa (comprimido no estreito, completo no largo) e sai do grupo Conexão.
         html = self.client.get('/control').text
         self.assertIn('dock-monitor-fixed', html)
-        self.assertLess(html.index('dock-monitor-fixed'), html.index('dock-audio-fixed'),
-                        'O monitor deve vir antes do mixer, na zona fixa.')
-        mon = html[html.index('dock-monitor-fixed'):html.index('dock-audio-fixed')]
+        self.assertLess(html.index('dock-monitor-fixed'), html.index('dock-tabs'),
+                        'O monitor deve vir antes das abas, na zona fixa.')
+        mon = html[html.index('dock-monitor-fixed'):html.index('dock-tabs')]
         self.assertIn('healthPillRnp', mon, 'O monitor completo mora na zona fixa.')
         conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
         self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
@@ -241,33 +241,38 @@ class MediaRoutesTests(unittest.TestCase):
         # Pedido do usuário: o aviso de anti-inatividade é estado global da sessão,
         # então mora ao lado do indicador de conexão, não enterrado no grupo Conexão.
         html = self.client.get('/control').text
-        barra = html[html.index('dock-statusbar'):html.index('dock-audio-fixed')]
+        barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('shieldBadge', barra,
                       'O escudo anti-inatividade deve ficar na barra de status.')
         conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
         self.assertNotIn('shieldBadge', conexao,
                          'O escudo não pode ficar duplicado no grupo Conexão.')
 
-    def test_shell_do_dock_tem_zona_fixa_e_quatro_grupos(self):
+    def test_shell_tem_zona_fixa_e_cinco_grupos_com_mixer_como_bloco(self):
+        # O mixer deixou de ser fixo: virou bloco do grupo Áudio (5ª aba). A zona
+        # fixa fica só com barra de status + monitor de fontes.
         html = self.client.get('/control').text
-        for marcador in ('dock-statusbar', 'dock-audio-fixed', 'dock-tabs', 'dock-groups'):
+        for marcador in ('dock-statusbar', 'dock-monitor-fixed', 'dock-tabs', 'dock-groups'):
             self.assertIn(marcador, html, f'Shell do dock precisa de {marcador}.')
-        for grupo in ('conexao', 'palco', 'cameras', 'chat'):
+        for grupo in ('conexao', 'palco', 'cameras', 'audio', 'chat'):
             self.assertIn(f'data-group="{grupo}"', html, f'Grupo {grupo} ausente.')
-        # O mixer fixo vem ANTES das abas (zona fixa no topo).
-        self.assertLess(html.index('dock-audio-fixed'), html.index('dock-tabs'),
-                        'O mixer fixo deve vir antes da barra de abas.')
-        # Apresentação/Slides mora no grupo Palco, não solto depois de Chat.
+        self.assertNotIn('dock-audio-fixed', html,
+                         'O mixer não é mais zona fixa: virou bloco reordenável.')
+        audio = html[html.index('id="group-audio"'):html.index('id="group-chat"')]
+        self.assertIn('audioDockCard', audio, 'O mixer mora no grupo Áudio.')
+        self.assertLess(html.index('dock-monitor-fixed'), html.index('dock-tabs'),
+                        'O monitor continua na zona fixa, antes das abas.')
         palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
         self.assertIn('Apresentação', palco, 'Slides/Apresentação deve estar no grupo Palco.')
+        self.assertIn('pollDockCard', palco, 'A enquete é bloco do Palco.')
 
     def test_barra_de_status_nao_duplica_medidor_master(self):
         html = self.client.get('/control').text
-        barra = html[html.index('dock-statusbar'):html.index('dock-audio-fixed')]
+        barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertNotIn('vuMasterBar', barra,
                          'Barra de status não pode repetir o medidor master do mixer.')
-        fixa = html[html.index('dock-audio-fixed'):html.index('dock-tabs')]
-        self.assertIn('vuMasterBar', fixa, 'O medidor master vive no mixer fixo.')
+        audio = html[html.index('id="group-audio"'):html.index('id="group-chat"')]
+        self.assertIn('vuMasterBar', audio, 'O medidor master vive no bloco de Áudio.')
 
     def test_dock_sem_link_de_teste_webrtc(self):
         # WebRTC hoje é o transporte padrão, não um experimento: o link "Abrir teste

@@ -68,7 +68,12 @@
 
     if (groupsBox) {
         const salva = (groupsBox.dataset.dockOrder || '').split(',').filter(Boolean);
-        if (salva.length === 4) applyGroupOrder(salva);
+        const presentes = groups.map(g => g.dataset.group);
+        // Valida por conjunto (não por contagem fixa): adicionou/removeu um grupo no
+        // futuro, a ordem salva migra em vez de ser silenciosamente ignorada.
+        if (salva.length === presentes.length && presentes.every(g => salva.includes(g))) {
+            applyGroupOrder(salva);
+        }
         document.addEventListener('click', (e) => {
             const btn = e.target.closest('.dock-move');
             if (!btn) return;

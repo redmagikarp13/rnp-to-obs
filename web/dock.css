@@ -638,9 +638,11 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 .dock-audio-fixed { margin-bottom: 8px; }
 .dock-audio-fixed .card { margin-bottom: 0; }
+/* O bloco de Áudio (mixer) é o 2x1 do mosaico: linha inteira no largo. */
+.dock-group[data-group="audio"] { grid-column: span 4; }
 /* Os canais preenchem a linha em qualquer largura (sem vão morto à direita). */
-.dock-audio-fixed .audio-channel-strip { flex: 1 1 150px; }
-.dock-audio-fixed #noIndividualChannelsPlaceholder { flex: 1 1 150px; }
+.dock-group[data-group="audio"] .audio-channel-strip { flex: 1 1 150px; }
+.dock-group[data-group="audio"] #noIndividualChannelsPlaceholder { flex: 1 1 150px; }
 
 .dock-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .dock-tab {
@@ -658,6 +660,13 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     background: var(--primary);
     border-color: var(--primary-border);
     color: var(--primary-text);
+}
+/* 5 abas não cabem com rótulo longo em dock muito estreito: troca por curto. */
+.tab-short { display: none; }
+@media (max-width: 599px) {
+    .tab-long { display: none; }
+    .tab-short { display: inline; }
+    .dock-tab { font-size: 10px; }
 }
 
 .dock-group { display: none; }
@@ -813,9 +822,10 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     }
     .dock-monitor-fixed .pill-dot { width: 9px; height: 9px; flex-shrink: 0; }
     .dock-monitor-fixed .card { padding: 8px 10px; }
-    .dock-audio-fixed .mixer-info { display: none; }
-    .dock-audio-fixed .vu-track-vertical { height: 48px; }
-    .dock-audio-fixed .audio-mixer-rack { max-height: 190px; overflow-x: auto; overflow-y: hidden; }
-    .dock-audio-fixed #noIndividualChannelsPlaceholder { height: 150px; min-height: 0; }
-    .dock-audio-fixed em { display: none; }
+    .dock-group[data-group="audio"] .mixer-info { display: none; }
+    .dock-group[data-group="audio"] .meter-scale-vertical { display: none; }
+    .dock-group[data-group="audio"] .vu-track-vertical { height: 48px; }
+    .dock-group[data-group="audio"] .audio-mixer-rack { max-height: 190px; overflow-x: auto; overflow-y: hidden; }
+    .dock-group[data-group="audio"] #noIndividualChannelsPlaceholder { height: 150px; min-height: 0; }
+    .dock-group[data-group="audio"] em { display: none; }
 }

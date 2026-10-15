@@ -907,6 +907,7 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                                      self.url.replace('http:', 'ws:') + '/ws/pcm_in')
         await self.producer.wait_for_function("RnpMedia.audioInfo().every(a => a.peak > 0.05)", timeout=10000)
         await self.receiver.goto(self.url + '/control')
+        await self.receiver.evaluate("() => RnpDock.activateTab('audio')")
         await self.receiver.wait_for_selector('[data-audio-id="audio-w_a"]', timeout=10000)
         await self.receiver.wait_for_function(
             "parseFloat(document.querySelector('[data-audio-id=audio-w_a] .vu-fill-vertical').style.height || '0') > 5",
@@ -1035,7 +1036,7 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.wait_for_timeout(600)
         largo = await self.receiver.evaluate(estado)
         self.assertFalse(largo['abas'], 'No largo as abas desaparecem.')
-        self.assertEqual(largo['visiveis'], 4, 'No largo os 4 grupos ficam visíveis.')
+        self.assertEqual(largo['visiveis'], 5, 'No largo os 5 grupos ficam visíveis.')
 
     async def test_mixer_controla_canal_real_sem_afetar_outro(self):
         await self.producer.evaluate('(url) => RnpMedia.startPcm(url)', self.url.replace('http:', 'ws:') + '/ws/pcm_in')
@@ -1061,6 +1062,7 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
     async def test_dock_lista_audio_sem_camera_e_aplica_mute(self):
         await self.producer.evaluate("() => document.querySelectorAll('video').forEach(v => v.remove())")
         await self.receiver.goto(self.url + '/control')
+        await self.receiver.evaluate("() => RnpDock.activateTab('audio')")
         await self.receiver.locator('[data-audio-id="audio-w_a"] button[data-action=mute]').click(timeout=6000)
         for _ in range(40):
             if self.state.audio_controls.get('audio-w_a', {}).get('muted'):

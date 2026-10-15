@@ -111,7 +111,7 @@ def parse_speak_threshold(value):
 
 # Ordem dos painéis do dock (preferência persistida no config do servidor, para que
 # todos os clientes — dock do OBS, janela, navegador — vejam a mesma ordem).
-DOCK_GROUPS = ('conexao', 'palco', 'cameras', 'chat')
+DOCK_GROUPS = ('conexao', 'palco', 'cameras', 'audio', 'chat')
 
 
 def parse_group_order(value):
@@ -272,6 +272,12 @@ class BridgeState:
         self.speak_peak_threshold: float = (
             _limiar if _limiar is not None else DEFAULT_SPEAK_PEAK_THRESHOLD)
         _ordem = parse_group_order(cfg.get("dock_group_order"))
+        if _ordem is None:
+            # Migração: ordem salva antes da 5ª aba (4 chaves) ganha Áudio após Câmeras.
+            salva = cfg.get("dock_group_order")
+            if isinstance(salva, list) and sorted(salva) == ['cameras', 'chat', 'conexao', 'palco']:
+                _ordem = [k for k in salva]
+                _ordem.insert(_ordem.index('cameras') + 1, 'audio')
         self.dock_group_order: list = _ordem if _ordem is not None else list(DOCK_GROUPS)
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
@@ -2662,129 +2668,12 @@ async def get_control_panel():
 
     <!-- SALVAR / CARREGAR CONFIGURAÇÕES -->
     </div>
-    <div class="dock-audio-fixed">
-    <div class="card" id="audioDockCard">
-        <div class="section-title">
-            <span style="display: flex; align-items: center; gap: 8px">
-                <span>🔊</span> Transmissão de Áudio da Sala & Mixer OBS
-            </span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn-ctrl" onclick="testAudioVuMeter()" style="font-size: 11.5px; padding: 4px 10px" title="Testar animação de todos os medidores de áudio">
-                    🧪 Testar Medidores
-                </button>
-            </div>
-        </div>
-
-        <!-- Informação do Mixer Unificado -->
-        <div class="mixer-info">
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
-                <span class="source-health-dot ok"></span>
-                <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte. O master geral sai pelo <strong>/stage</strong> (PCM Float32 48kHz) — marque "Controlar áudio via OBS" nessa fonte.</span>
-            </div>
-            <span class="badge connected" style="font-size: 11px">OBS: /stage</span>
-        </div>
-
-        <!-- SENSIBILIDADE DA DETECÇÃO DE FALA: recolhido por padrão (ajuste raro,
-             não operação; no card fixo ele não pode empurrar as abas da dobra). -->
-        <details class="dock-advanced">
-            <summary>Sensibilidade da detecção de fala</summary>
-            <div style="border: 1px solid; border-radius: 8px; padding: 9px 12px; margin-top: 8px; margin-bottom: 12px">
-                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
-                    <label for="speakThreshold" style="font-size: 11.5px; font-weight: 700">Limiar (0,005 a 0,5)</label>
-                    <input type="number" id="speakThreshold" min="0.005" max="0.5" step="0.005"
-                           value="{state.speak_peak_threshold}" onchange="saveSpeakThreshold(this)"
-                           style="width: 96px">
-                    <span id="speakThresholdHint" style="font-size: 11px">
-                        Pico mínimo do microfone para marcar alguém como falando.
-                    </span>
-                </div>
-                <div style="font-size: 10.5px; margin-top: 6px; line-height: 1.55">
-                    O indicador acende pouco enquanto a pessoa fala? <strong>Baixe</strong> o valor.
-                    Acende sozinho com ruído da sala? <strong>Aumente</strong>.
-                    Referência medida em sala real: silêncio ≈ 0,001 · fala ≈ 0,02 a 0,15.
-                    Vale para o indicador na name-tag e para os chips de voz de quem fala sem câmera.
-                </div>
-            </div>
-        </details>
-
-        <!-- MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS -->
-        <div class="audio-mixer-rack" id="audioMixerRack">
-            <!-- CANAL MASTER (GERAL) -->
-            <div class="audio-channel-strip master-channel" id="channelStripMaster">
-                <div class="channel-header">
-                    <span style="font-size: 18px">🎛️</span>
-                    <span class="channel-title">Master Geral</span>
-                    <span class="channel-tag" >OBS: /stage</span>
-                </div>
-
-                <div class="channel-meter-box">
-                    <div class="meter-scale-vertical">
-                        <span style="font-weight:bold">0</span>
-                        <span >-3</span>
-                        <span >-6</span>
-                        <span>-12</span>
-                        <span>-20</span>
-                        <span>-30</span>
-                        <span>-40</span>
-                        <span>-60</span>
-                    </div>
-                    <div class="vu-track-vertical">
-                        <div class="vu-fill-vertical" id="vuMasterBar"></div>
-                        <div class="vu-peak-vertical" id="vuMasterPeak"></div>
-                    </div>
-                </div>
-
-                <div class="meter-db-readout" id="vuMasterDbText">-∞ dB (0%)</div>
-
-                <div class="channel-tag" title="O master é reproduzido pela fonte /stage no OBS">Master via /stage</div>
-
-                <div class="channel-fader-box">
-                    <div style="display:flex; justify-content:space-between; width:100%; font-size:10px">
-                        <span>Vol:</span>
-                        <span id="lblMasterVol">100%</span>
-                    </div>
-                    <input type="range" id="rngMasterVol" min="0" max="1.5" step="0.05" value="1" style="width:100%; cursor:pointer" oninput="updateMasterVol(this.value)">
-                    <button class="btn-ctrl" id="btnMuteMaster" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px" onclick="toggleMasterMute()">
-                        🔊 Ativo
-                    </button>
-                </div>
-            </div>
-
-            <!-- FONTES INDIVIDUAIS (GERADAS DINAMICAMENTE PARA CADA CÂMERA / PARTICIPANTE) -->
-            <div id="individualChannelsContainer" style="display: flex; gap: 12px; align-items: stretch"></div>
-
-            <!-- PLACEHOLDER QUANDO NÃO HÁ FONTES ADICIONAIS -->
-            <div class="audio-channel-strip" id="noIndividualChannelsPlaceholder" style="border-style: dashed; opacity: 0.7; justify-content: center; min-width: 140px; text-align: center">
-                <span style="font-size: 24px; margin-bottom: 6px">🎙️</span>
-                <span style="font-size: 11px; font-weight: 700">Fontes Individuais</span>
-                <p style="font-size: 10px; margin-top: 4px; line-height: 1.3">Aguardando participantes entrarem com câmera/voz na sala RNP.</p>
-            </div>
-        </div>
-
-        <!-- Monitor Local de Áudio (Para ouvir ou mutar no computador da live) -->
-        <div class="audio-monitor-controls-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
-            <div style="display: flex; align-items: center; gap: 10px">
-                <button id="btnMuteMonitor" class="btn-ctrl" style="padding: 6px 12px; font-size: 12px; border-radius: 6px" onclick="toggleMonitorMute()">
-                    🔊 <span id="lblMonitorStatus">Monitor Local: Ligado</span>
-                </button>
-                <div style="display: flex; align-items: center; gap: 6px">
-                    <span style="font-size: 11.5px; font-weight: 600">Volume Local:</span>
-                    <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 85px; cursor: pointer" oninput="updateMonitorVol(this.value)">
-                </div>
-            </div>
-            <div style="font-size: 11px">
-                💡 <em>Dica OBS: Cole a URL em uma Fonte de Navegador e marque "Controlar áudio via OBS" nas propriedades.</em>
-            </div>
-        </div>
-    </div>
-
-    <!-- CONFIGURAÇÕES DE GRID, FOCO E ESTILO DE NOMES -->
-    </div>
     <nav class="dock-tabs" id="dockTabs" role="tablist" aria-label="Seções do dock">
-        <button class="dock-tab is-active" role="tab" aria-selected="true" data-tab="conexao">Conexão</button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="palco">Palco</button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="cameras">Câmeras</button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat">Chat & Enquete</button>
+        <button class="dock-tab is-active" role="tab" aria-selected="true" data-tab="conexao"><span class="tab-long">Conexão</span><span class="tab-short">Conex</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="palco"><span class="tab-long">Palco</span><span class="tab-short">Palco</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="cameras"><span class="tab-long">Câmeras</span><span class="tab-short">Câm</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="audio"><span class="tab-long">Áudio</span><span class="tab-short">Áudio</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat"><span class="tab-long">Chat</span><span class="tab-short">Chat</span></button>
     </nav>
     <div class="dock-groups" id="dockGroups" data-dock-order="{dock_order_csv}">
     <section class="dock-group" data-group="conexao" id="group-conexao">
@@ -3044,7 +2933,6 @@ async def get_control_panel():
     {PCM_AUDIO_SCRIPT}
     {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
 
-    <script src="/assets/audio-mixer.js"></script>
     </div>
     </section>
     <section class="dock-group" data-group="cameras" id="group-cameras">
@@ -3125,9 +3013,136 @@ async def get_control_panel():
     <!-- SEÇÃO EXCLUSIVA DE TEMAS, DESTAQUES E GERENCIAMENTO DO CHAT -->
     </div>
     </section>
+    <section class="dock-group" data-group="audio" id="group-audio">
+        <div class="dock-group-head">
+            <span class="dock-group-name">Áudio</span>
+            <span class="dock-group-move">
+                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Áudio para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Áudio para a direita">›</button>
+            </span>
+        </div>
+    <div class="dock-group-body">
+    <div class="card" id="audioDockCard">
+        <div class="section-title">
+            <span style="display: flex; align-items: center; gap: 8px">
+                <span>🔊</span> Transmissão de Áudio da Sala & Mixer OBS
+            </span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button class="btn-ctrl" onclick="testAudioVuMeter()" style="font-size: 11.5px; padding: 4px 10px" title="Testar animação de todos os medidores de áudio">
+                    🧪 Testar Medidores
+                </button>
+            </div>
+        </div>
+
+        <!-- Informação do Mixer Unificado -->
+        <div class="mixer-info">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+                <span class="source-health-dot ok"></span>
+                <span><strong>Mixer Broadcast:</strong> Medidores verticais calibrados para cada fonte. O master geral sai pelo <strong>/stage</strong> (PCM Float32 48kHz) — marque "Controlar áudio via OBS" nessa fonte.</span>
+            </div>
+            <span class="badge connected" style="font-size: 11px">OBS: /stage</span>
+        </div>
+
+        <!-- SENSIBILIDADE DA DETECÇÃO DE FALA: recolhido por padrão (ajuste raro,
+             não operação; no card fixo ele não pode empurrar as abas da dobra). -->
+        <details class="dock-advanced">
+            <summary>Sensibilidade da detecção de fala</summary>
+            <div style="border: 1px solid; border-radius: 8px; padding: 9px 12px; margin-top: 8px; margin-bottom: 12px">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                    <label for="speakThreshold" style="font-size: 11.5px; font-weight: 700">Limiar (0,005 a 0,5)</label>
+                    <input type="number" id="speakThreshold" min="0.005" max="0.5" step="0.005"
+                           value="{state.speak_peak_threshold}" onchange="saveSpeakThreshold(this)"
+                           style="width: 96px">
+                    <span id="speakThresholdHint" style="font-size: 11px">
+                        Pico mínimo do microfone para marcar alguém como falando.
+                    </span>
+                </div>
+                <div style="font-size: 10.5px; margin-top: 6px; line-height: 1.55">
+                    O indicador acende pouco enquanto a pessoa fala? <strong>Baixe</strong> o valor.
+                    Acende sozinho com ruído da sala? <strong>Aumente</strong>.
+                    Referência medida em sala real: silêncio ≈ 0,001 · fala ≈ 0,02 a 0,15.
+                    Vale para o indicador na name-tag e para os chips de voz de quem fala sem câmera.
+                </div>
+            </div>
+        </details>
+
+        <!-- MESA DE SOM BROADCAST COM MEDIDORES VERTICAIS -->
+        <div class="audio-mixer-rack" id="audioMixerRack">
+            <!-- CANAL MASTER (GERAL) -->
+            <div class="audio-channel-strip master-channel" id="channelStripMaster">
+                <div class="channel-header">
+                    <span style="font-size: 18px">🎛️</span>
+                    <span class="channel-title">Master Geral</span>
+                    <span class="channel-tag" >OBS: /stage</span>
+                </div>
+
+                <div class="channel-meter-box">
+                    <div class="meter-scale-vertical">
+                        <span style="font-weight:bold">0</span>
+                        <span >-3</span>
+                        <span >-6</span>
+                        <span>-12</span>
+                        <span>-20</span>
+                        <span>-30</span>
+                        <span>-40</span>
+                        <span>-60</span>
+                    </div>
+                    <div class="vu-track-vertical">
+                        <div class="vu-fill-vertical" id="vuMasterBar"></div>
+                        <div class="vu-peak-vertical" id="vuMasterPeak"></div>
+                    </div>
+                </div>
+
+                <div class="meter-db-readout" id="vuMasterDbText">-∞ dB (0%)</div>
+
+                <div class="channel-tag" title="O master é reproduzido pela fonte /stage no OBS">Master via /stage</div>
+
+                <div class="channel-fader-box">
+                    <div style="display:flex; justify-content:space-between; width:100%; font-size:10px">
+                        <span>Vol:</span>
+                        <span id="lblMasterVol">100%</span>
+                    </div>
+                    <input type="range" id="rngMasterVol" min="0" max="1.5" step="0.05" value="1" style="width:100%; cursor:pointer" oninput="updateMasterVol(this.value)">
+                    <button class="btn-ctrl" id="btnMuteMaster" style="width:100%; padding:3px 6px; font-size:10.5px; margin-top:2px" onclick="toggleMasterMute()">
+                        🔊 Ativo
+                    </button>
+                </div>
+            </div>
+
+            <!-- FONTES INDIVIDUAIS (GERADAS DINAMICAMENTE PARA CADA CÂMERA / PARTICIPANTE) -->
+            <div id="individualChannelsContainer" style="display: flex; gap: 12px; align-items: stretch"></div>
+
+            <!-- PLACEHOLDER QUANDO NÃO HÁ FONTES ADICIONAIS -->
+            <div class="audio-channel-strip" id="noIndividualChannelsPlaceholder" style="border-style: dashed; opacity: 0.7; justify-content: center; min-width: 140px; text-align: center">
+                <span style="font-size: 24px; margin-bottom: 6px">🎙️</span>
+                <span style="font-size: 11px; font-weight: 700">Fontes Individuais</span>
+                <p style="font-size: 10px; margin-top: 4px; line-height: 1.3">Aguardando participantes entrarem com câmera/voz na sala RNP.</p>
+            </div>
+        </div>
+
+        <!-- Monitor Local de Áudio (Para ouvir ou mutar no computador da live) -->
+        <div class="audio-monitor-controls-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+            <div style="display: flex; align-items: center; gap: 10px">
+                <button id="btnMuteMonitor" class="btn-ctrl" style="padding: 6px 12px; font-size: 12px; border-radius: 6px" onclick="toggleMonitorMute()">
+                    🔊 <span id="lblMonitorStatus">Monitor Local: Ligado</span>
+                </button>
+                <div style="display: flex; align-items: center; gap: 6px">
+                    <span style="font-size: 11.5px; font-weight: 600">Volume Local:</span>
+                    <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 85px; cursor: pointer" oninput="updateMonitorVol(this.value)">
+                </div>
+            </div>
+            <div style="font-size: 11px">
+                💡 <em>Dica OBS: Cole a URL em uma Fonte de Navegador e marque "Controlar áudio via OBS" nas propriedades.</em>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIGURAÇÕES DE GRID, FOCO E ESTILO DE NOMES -->
+    </div>
+    </section>
     <section class="dock-group" data-group="chat" id="group-chat">
         <div class="dock-group-head">
-            <span class="dock-group-name">Chat & Enquete</span>
+            <span class="dock-group-name">Chat</span>
             <span class="dock-group-move">
                 <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Chat e Enquete para a esquerda">‹</button>
                 <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Chat e Enquete para a direita">›</button>
@@ -4392,6 +4407,7 @@ async def get_control_panel():
         setInterval(fetchStatus, 250);
         fetchStatus();
     </script>
+    <script src="/assets/audio-mixer.js"></script>
     <script src="/assets/dock.js"></script>
 </body>
 </html>
