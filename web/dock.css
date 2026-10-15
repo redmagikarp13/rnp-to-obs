@@ -712,20 +712,16 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
-    /* Mosaico: 4 trilhos; blocos largos ocupam 2. dense deixa os 1x1 preencherem
-       os buracos que os 2x1 deixam ao pular de linha. */
+    /* Mosaico 2x2: 4 trilhos em QUALQUER largura larga, cada bloco span 2 = dois
+       blocos por linha. Os breakpoints de 6/10 trilhos foram removidos: em 3840 eles
+       espalhavam os blocos numa linha só e deixavam desertos verticais gigantes sob
+       os blocos baixos. Com 2 por linha + stretch, as linhas fecham sem vãos.
+       dense deixa os 1x1 preencherem os buracos que os 2x1 deixam ao pular de linha. */
     .dock-mosaico { grid-template-columns: repeat(4, 1fr); grid-auto-flow: row dense; }
     .dock-bloco.is-off { display: block; }
     .dock-bloco[data-span="2"] { grid-column: span 2; }
 }
-/* Tela de produção 3840x1440: com 10 trilhos, os 5 blocos span 2 fecham a primeira
-   linha e os 5 de span 1 a segunda — sem rolagem vertical numa tela de 1440. */
-@media (min-width: 1800px) {
-    .dock-mosaico { grid-template-columns: repeat(6, 1fr); }
-}
-@media (min-width: 2400px) {
-    .dock-mosaico { grid-template-columns: repeat(10, 1fr); }
-}
+.dock-bloco .card + .card { margin-top: 10px; }
 
 /* Preview desativado: o src foi zerado (para de decodificar); o contêiner explica. */
 .preview-off { position: relative; }

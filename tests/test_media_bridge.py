@@ -168,7 +168,7 @@ class MediaRoutesTests(unittest.TestCase):
         # A ordem dos blocos é preferência persistida no config do servidor (todos os
         # clientes iguais), então /api/grid/config precisa validar como permutação.
         ordem = ['fontes', 'mixer', 'chat', 'cameras', 'palco-preview',
-                 'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso']
+                 'palco-presets', 'palco-libras', 'enquete', 'slides']
         r = self.client.post('/api/grid/config', json={'dock_block_order': ordem})
         self.assertEqual(r.status_code, 200)
         self.assertIn('data-block-order="' + ','.join(ordem) + '"',
@@ -275,15 +275,16 @@ class MediaRoutesTests(unittest.TestCase):
                         'Os presets devem terminar antes do bloco de Libras.')
         self.assertLess(i_lib, html.index('selLibrasSize'))
 
-    def test_aviso_webrtc_e_bloco_com_card_na_conexao(self):
-        # O aviso de modo WebRTC ficou órfão (parágrafo solto no corpo do Palco,
-        # renderizando como coluna sem card no mosaico). Virou bloco da categoria Conexão.
+    def test_aviso_webrtc_mora_dentro_do_bloco_de_fontes(self):
+        # O aviso de modo WebRTC era um bloco 1x1 próprio que sobrava como tile vazio
+        # no mosaico. É informação de setup das fontes, então mora DENTRO do card de
+        # Fontes para o OBS Studio (que lista as URLs), não como bloco separado.
         html = self.client.get('/control').text
-        aviso = html[html.index('data-bloco="aviso"'):]
-        self.assertIn('dock-notice', aviso, 'O aviso deve ser um card no bloco aviso.')
-        self.assertIn('Modo WebRTC', aviso)
-        self.assertIn('data-bloco="aviso" data-cat="conexao"', html,
-                      'O bloco do aviso pertence à categoria Conexão.')
+        self.assertNotIn('data-bloco="aviso"', html,
+                         'O aviso não pode mais ser um bloco próprio do mosaico.')
+        fontes = html[html.index('data-bloco="fontes"'):html.index('data-bloco="palco-preview"')]
+        self.assertIn('dock-notice', fontes, 'O aviso deve estar dentro do bloco de Fontes.')
+        self.assertIn('Modo WebRTC', fontes)
 
     def test_conexao_vira_menu_dropdown_na_barra(self):
         # Decisão do usuário: o painel de conexão deixa de ser bloco e vira popover
@@ -345,7 +346,7 @@ class MediaRoutesTests(unittest.TestCase):
         for marcador in ('dock-statusbar', 'dock-monitor-fixed', 'dock-tabs', 'dock-mosaico'):
             self.assertIn(marcador, html, f'Shell do dock precisa de {marcador}.')
         for bloco in ('mixer', 'fontes', 'palco-preview', 'cameras', 'chat',
-                      'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso'):
+                      'palco-presets', 'palco-libras', 'enquete', 'slides'):
             self.assertIn(f'data-bloco="{bloco}"', html, f'Bloco {bloco} ausente.')
         self.assertNotIn('dock-group', html, 'Os grupos foram abolidos em favor dos blocos.')
         self.assertNotIn('dock-audio-fixed', html,

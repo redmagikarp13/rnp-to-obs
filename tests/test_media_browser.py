@@ -952,9 +952,10 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(w, 220, 'O strip do master não pode esticar com a largura da tela.')
 
     async def test_mosaico_adapta_colunas_por_largura(self):
-        # Mosaico de blocos: 1 trilha no estreito (abas filtram por categoria),
-        # 4 no largo, 6 no ultra-largo e 10 em 3840 — onde os 5 blocos span 2
-        # fecham a primeira linha e os 5 de span 1 a segunda.
+        # Mosaico 2x2 no largo: 4 trilhos com cada bloco span 2 = dois blocos por
+        # linha, em QUALQUER largura larga (os breakpoints de 6/10 trilhos deixavam
+        # desertos verticais em 3840). No estreito: 1 trilha e abas filtrando por
+        # categoria. stretch + dense fecham os vãos vertical e horizontal.
         await self.receiver.goto(self.url + '/control')
         trilhas = ("(sel) => getComputedStyle(document.querySelector(sel))"
                    ".gridTemplateColumns.split(' ').length")
@@ -963,42 +964,30 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.wait_for_timeout(600)
         self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 1,
                          'No estreito o mosaico é coluna única.')
-        self.assertEqual(await self.receiver.evaluate(visiveis), 2,
+        self.assertEqual(await self.receiver.evaluate(visiveis), 1,
                          'No estreito só os blocos da categoria ativa aparecem.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 4,
-                         'No largo o mosaico tem 4 trilhos.')
-        self.assertEqual(await self.receiver.evaluate(visiveis), 10,
+                         'No largo o mosaico tem 4 trilhos (2 blocos por linha).')
+        self.assertEqual(await self.receiver.evaluate(visiveis), 9,
                          'No largo todos os blocos aparecem, sem filtro de aba.')
-        await self.receiver.set_viewport_size({'width': 2200, 'height': 900})
-        await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 6,
-                         'No ultra-largo o mosaico sobe para 6 trilhos.')
-        await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
-        await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 10,
-                         'Em 3840px o mosaico usa 10 trilhos.')
-        linhas = await self.receiver.evaluate("""() => {
-            const t = s => [...document.querySelectorAll('.dock-bloco[data-span="' + s + '"]')]
-                .map(b => Math.round(b.getBoundingClientRect().top));
-            return { largos: t('2'), uns: t('1') };
+        for largura in (2200, 3840):
+            await self.receiver.set_viewport_size({'width': largura, 'height': 1440})
+            await self.receiver.wait_for_timeout(600)
+            self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 4,
+                             f'Em {largura}px o mosaico continua 2x2 (4 trilhos).')
+        par = await self.receiver.evaluate("""() => {
+            const a = document.querySelector('[data-bloco="mixer"]').getBoundingClientRect();
+            const b = document.querySelector('[data-bloco="fontes"]').getBoundingClientRect();
+            return { mesmoTop: Math.round(a.top) === Math.round(b.top),
+                     mesmaAltura: Math.round(a.height) === Math.round(b.height),
+                     ladoALado: Math.round(a.right) <= Math.round(b.left) + 2 };
         }""")
-        self.assertEqual(len(set(linhas['largos'])), 1,
-                         'Em 3840x1440 os 5 blocos span 2 fecham a primeira linha.')
-        self.assertEqual(len(set(linhas['uns'])), 1,
-                         'Os 5 blocos de span 1 fecham a segunda linha.')
-        self.assertLess(min(linhas['largos']), min(linhas['uns']),
-                        'A linha dos blocos largos vem antes da dos estreitos.')
-        alturas = await self.receiver.evaluate("""() => {
-            const h = s => [...document.querySelectorAll('.dock-bloco[data-span="' + s + '"]')]
-                .map(b => Math.round(b.getBoundingClientRect().height));
-            return { largos: h('2'), uns: h('1') };
-        }""")
-        self.assertEqual(len(set(alturas['largos'])), 1,
-                         'Na mesma linha os blocos esticam juntos (sem vão vertical).')
-        self.assertEqual(len(set(alturas['uns'])), 1,
-                         'Os blocos de span 1 também fecham a linha sem vão.')
+        self.assertTrue(par['mesmoTop'], 'Os dois primeiros blocos dividem a linha.')
+        self.assertTrue(par['ladoALado'], 'Dois blocos por linha, lado a lado.')
+        self.assertTrue(par['mesmaAltura'],
+                        'Na mesma linha os blocos esticam juntos (sem vão vertical).')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {
@@ -1081,13 +1070,13 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.wait_for_timeout(600)
         estreito = await self.receiver.evaluate(estado)
         self.assertTrue(estreito['abas'], 'No estreito a barra de abas deve aparecer.')
-        self.assertEqual(estreito['visiveis'], 2,
+        self.assertEqual(estreito['visiveis'], 1,
                          'No estreito só os blocos da categoria ativa ficam visíveis.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         largo = await self.receiver.evaluate(estado)
         self.assertFalse(largo['abas'], 'No largo as abas desaparecem.')
-        self.assertEqual(largo['visiveis'], 10, 'No largo os 10 blocos ficam visíveis.')
+        self.assertEqual(largo['visiveis'], 9, 'No largo os 9 blocos ficam visíveis.')
 
     async def test_mixer_controla_canal_real_sem_afetar_outro(self):
         await self.producer.evaluate('(url) => RnpMedia.startPcm(url)', self.url.replace('http:', 'ws:') + '/ws/pcm_in')

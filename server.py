@@ -112,7 +112,7 @@ def parse_speak_threshold(value):
 # Blocos do mosaico do dock (a unidade de reordenação e de span). A ordem é
 # preferência persistida no config do servidor, para que todos os clientes vejam igual.
 DOCK_BLOCKS = ('mixer', 'fontes', 'palco-preview', 'cameras', 'chat',
-               'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso')
+               'palco-presets', 'palco-libras', 'enquete', 'slides')
 
 
 def _dock_asset_version() -> int:
@@ -293,7 +293,12 @@ class BridgeState:
         _limiar = parse_speak_threshold(cfg.get("speak_peak_threshold"))
         self.speak_peak_threshold: float = (
             _limiar if _limiar is not None else DEFAULT_SPEAK_PEAK_THRESHOLD)
-        _ordem = parse_block_order(cfg.get("dock_block_order"))
+        _salva = cfg.get("dock_block_order")
+        if isinstance(_salva, list):
+            # Migração: ordens salvas antes de um bloco ser fundido/removido (ex.:
+            # 'aviso' dentro de 'fontes') perdem a chave órfã em vez de invalidar tudo.
+            _salva = [k for k in _salva if k in DOCK_BLOCKS]
+        _ordem = parse_block_order(_salva)
         self.dock_block_order: list = _ordem if _ordem is not None else list(DOCK_BLOCKS)
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
@@ -2932,6 +2937,9 @@ async def get_control_panel():
                  os áudios individuais ficam no rack de áudio abaixo, com link próprio. -->
         </div>
     </div>
+        <div class="card dock-notice">
+            {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
+        </div>
     </section>
     <section class="dock-bloco" data-bloco="palco-preview" data-cat="palco" data-span="2">
         <div class="dock-bloco-head">
@@ -3257,17 +3265,6 @@ async def get_control_panel():
         <div class="thumb-box" style="height: 200px">
             <img id="thumbScreen" src="/raw_frame/presentation" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
         </div>
-    </div>
-    </section>
-    <section class="dock-bloco" data-bloco="aviso" data-cat="conexao" data-span="1">
-        <div class="dock-bloco-head">
-            <span class="dock-bloco-move">
-                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco aviso para a esquerda">‹</button>
-                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco aviso para a direita">›</button>
-            </span>
-        </div>
-    <div class="card dock-notice">
-        {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
     </div>
     </section>
     </div>
