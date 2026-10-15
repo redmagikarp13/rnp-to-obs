@@ -973,6 +973,14 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.wait_for_timeout(600)
         self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 6,
                          'No ultra-largo o mosaico sobe para 6 trilhos.')
+        await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 10,
+                         'Em 3840px o mosaico usa 10 trilhos (5 grupos por linha).')
+        tops = await self.receiver.evaluate(
+            "() => [...document.querySelectorAll('.dock-group')].map(g => Math.round(g.getBoundingClientRect().top))")
+        self.assertEqual(len(set(tops)), 1,
+                         'Em 3840x1440 os 5 grupos devem caber numa única linha.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {

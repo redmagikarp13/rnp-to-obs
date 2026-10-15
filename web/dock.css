@@ -703,10 +703,15 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     }
 }
 
-/* Ultra-largo (telas de produção/monitor dedicado): 6 trilhos, três grupos por
-   linha — sem isso cada bloco estica a ~600px e o mosaico vira deserto. */
-@media (min-width: 2000px) {
+/* Ultra-largo: mais trilhos para os blocos não esticarem nem haver deserto.
+   1800-2399: 6 trilhos (3 grupos/linha). >=2400 (ex.: 3840x1440): 10 trilhos,
+   os 5 grupos span 2 cabem em UMA linha — sem buraco e sem rolagem vertical,
+   que é o que importa numa tela de 1440 de altura. */
+@media (min-width: 1800px) {
     .dock-groups { grid-template-columns: repeat(6, 1fr); }
+}
+@media (min-width: 2400px) {
+    .dock-groups { grid-template-columns: repeat(10, 1fr); }
 }
 
 /* Preview desativado: o src foi zerado (para de decodificar); o contêiner explica. */
