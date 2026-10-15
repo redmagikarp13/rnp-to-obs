@@ -145,16 +145,6 @@
         // real. Sem isto o medidor individual ficaria refém de um poll de 500ms.
         const pws = new WebSocket(url.replace('/ws/pcm_in', '/ws/peaks_in'));
         pws.onerror = () => pws.close();
-        // A ponte avisa quantas mesas ouvem os picos (/ws/peaks_out). Com zero
-        // ouvintes o sampler pausa: ler o AnalyserNode de toda trilha a 60 ms sem
-        // ninguém olhando é CPU queimada no piso da ponte.
-        let peaksWanted = false;
-        pws.onmessage = ev => {
-            try {
-                const m = JSON.parse(ev.data);
-                if (m.type === 'peaks_listeners') peaksWanted = m.n > 0;
-            } catch (_) {}
-        };
         proc.onaudioprocess = event => {
             if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000 * 4 / 4) {
                 ws.send(event.inputBuffer.getChannelData(0).buffer);
@@ -201,7 +191,6 @@
         // suavemente (tau=300ms), então quem fala continua "aceso" nas pausas curtas.
         const PEAK_TAU = 0.30;
         const samplePeaks = () => {
-            if (!peaksWanted) return;   // ninguém ouvindo a mesa: não amostra
             const now = performance.now();
             for (const node of nodes.values()) {
                 node.analyser.getFloatTimeDomainData(node.samples);

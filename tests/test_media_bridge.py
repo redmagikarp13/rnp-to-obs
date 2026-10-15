@@ -208,18 +208,21 @@ class MediaRoutesTests(unittest.TestCase):
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
 
-    def test_adaptador_sabe_quantas_mesas_ouvem_os_picos(self):
-        # O sampler de 60 ms lia o AnalyserNode de toda trilha mesmo sem ninguém
-        # ouvindo /ws/peaks_out. A ponte agora informa a contagem de assinantes ao
-        # adaptador por /ws/peaks_in; com zero, ele pausa a amostragem.
-        with self.client.websocket_connect('/ws/peaks_in') as prod:
-            self.assertEqual(prod.receive_json(), {'type': 'peaks_listeners', 'n': 0},
-                             'Sem mesa aberta, o adaptador começa pausado.')
-            with self.client.websocket_connect('/ws/peaks_out'):
-                self.assertEqual(prod.receive_json()['n'], 1,
-                                 'Abriu a mesa: o adaptador fica sabendo.')
-            self.assertEqual(prod.receive_json()['n'], 0,
-                             'Fechou a mesa: o adaptador pausa de novo.')
+    def test_sampler_de_picos_nao_pode_ser_gateado_por_ouvintes(self):
+        # Gatear o sampler por assinantes de /ws/peaks_out quebrou a detecção de
+        # fala: o servidor lê audioInfo().peak no sync_loop mesmo com a mesa do
+        # dock fechada. O pico precisa continuar sendo amostrado sempre.
+        js = self.client.get('/assets/media-source.js').text
+        self.assertNotIn('peaksWanted', js,
+                         'O sampler de picos não pode pausar por falta de ouvintes da mesa.')
+
+    def test_picos_sao_repassados_a_mesa_sem_interpretar(self):
+        # A ponte é só um fan-out do pacote de picos: o que entra em /ws/peaks_in
+        # sai igual em /ws/peaks_out, sem leitura nem transformação.
+        with self.client.websocket_connect('/ws/peaks_out') as mesa:
+            with self.client.websocket_connect('/ws/peaks_in') as prod:
+                prod.send_text('{"cam1": 0.42}')
+                self.assertEqual(mesa.receive_json(), {'cam1': 0.42})
 
     def test_youtube_nao_fica_aninhado_no_form_row(self):
         # O card do YouTube já foi inserido dentro do .input-group do Nome (dentro do

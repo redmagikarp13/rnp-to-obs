@@ -248,7 +248,6 @@ class BridgeState:
         self.latest_presentation_frame: Optional[bytes] = None
         self.pcm_clients: Set[WebSocket] = set()
         self.peaks_clients: Set[WebSocket] = set()
-        self.peaks_producers: Set[WebSocket] = set()
         self.last_speaker_map: Dict[str, bool] = {}
         self.audio_channels: List[dict] = []
         self.audio_controls: Dict[str, dict] = {}
@@ -1624,13 +1623,10 @@ async def ws_peaks_in(websocket: WebSocket):
     # Picos por trilha empurrados pelo adaptador (media-source.js) na cadência do
     # sampler (60ms). A ponte só repassa o pacote aos clientes da mesa do dock,
     # sem interpretar: o medidor individual deixa de depender de poll de 500ms.
-    # O adaptador recebe a contagem de assinantes da mesa: com zero ouvintes ele
-    # pausa o sampler (ler o AnalyserNode de toda trilha a 60ms sem ninguém olhando
-    # é CPU queimada no piso da ponte).
+    # O sampler não pode pausar por falta de ouvintes da mesa: o próprio servidor
+    # lê os picos (audioInfo) no sync_loop para detecção de fala e chips de voz.
     await websocket.accept()
-    state.peaks_producers.add(websocket)
     try:
-        await _broadcast_peaks_listeners()
         while True:
             msg = await websocket.receive_text()
             for client in list(state.peaks_clients):
@@ -1640,30 +1636,16 @@ async def ws_peaks_in(websocket: WebSocket):
                     state.peaks_clients.discard(client)
     except (WebSocketDisconnect, Exception):
         pass
-    finally:
-        state.peaks_producers.discard(websocket)
 
 @app.websocket("/ws/peaks_out")
 async def ws_peaks_out(websocket: WebSocket):
     await websocket.accept()
     state.peaks_clients.add(websocket)
-    await _broadcast_peaks_listeners()
     try:
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
         state.peaks_clients.discard(websocket)
-        await _broadcast_peaks_listeners()
-
-
-async def _broadcast_peaks_listeners():
-    """Avisa o adaptador quantas mesas ouvem os picos agora."""
-    payload = json.dumps({"type": "peaks_listeners", "n": len(state.peaks_clients)})
-    for prod in list(state.peaks_producers):
-        try:
-            await prod.send_text(payload)
-        except Exception:
-            state.peaks_producers.discard(prod)
 
 # --------------------------------------------------------------------------
 # API REST
