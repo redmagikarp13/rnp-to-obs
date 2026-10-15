@@ -937,6 +937,18 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
+    async def test_mixer_canais_com_largura_fixa(self):
+        # Mesa de verdade: cada canal tem largura constante, não estica com a tela.
+        # Sem isso, o master virava um bloco de 500px quando o Áudio ocupava a linha.
+        await self.receiver.goto(self.url + '/control')
+        await self.receiver.evaluate("() => RnpDock.activateTab('audio')")
+        await self.receiver.set_viewport_size({'width': 1400, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        w = await self.receiver.evaluate(
+            "() => document.getElementById('channelStripMaster').getBoundingClientRect().width")
+        self.assertGreater(w, 140, 'Strip estreito demais não caberia o fader.')
+        self.assertLess(w, 220, 'O strip do master não pode esticar com a largura da tela.')
+
     async def test_mosaico_adapta_colunas_por_largura(self):
         # Mosaico: 4 trilhos no largo (grupos span 2 = 2x2), auto-fit no médio
         # (2 colunas) e coluna única no estreito — sem vãos mortos.

@@ -640,9 +640,10 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 .dock-audio-fixed .card { margin-bottom: 0; }
 /* O bloco de Áudio (mixer) é o 2x1 do mosaico: linha inteira no largo. */
 .dock-group[data-group="audio"] { grid-column: span 4; }
-/* Os canais preenchem a linha em qualquer largura (sem vão morto à direita). */
-.dock-group[data-group="audio"] .audio-channel-strip { flex: 1 1 150px; }
-.dock-group[data-group="audio"] #noIndividualChannelsPlaceholder { flex: 1 1 150px; }
+/* Mesa de verdade: cada canal com largura CONSTANTE (não estica com a tela);
+   a linha empacota à esquerda e sobra espaço à direita, como num console. */
+.dock-group[data-group="audio"] .audio-channel-strip { flex: 0 0 170px; width: 170px; }
+.dock-group[data-group="audio"] #noIndividualChannelsPlaceholder { flex: 0 0 280px; }
 
 .dock-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .dock-tab {
