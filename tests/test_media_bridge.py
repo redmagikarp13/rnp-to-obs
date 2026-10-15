@@ -208,6 +208,19 @@ class MediaRoutesTests(unittest.TestCase):
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
 
+    def test_adaptador_sabe_quantas_mesas_ouvem_os_picos(self):
+        # O sampler de 60 ms lia o AnalyserNode de toda trilha mesmo sem ninguém
+        # ouvindo /ws/peaks_out. A ponte agora informa a contagem de assinantes ao
+        # adaptador por /ws/peaks_in; com zero, ele pausa a amostragem.
+        with self.client.websocket_connect('/ws/peaks_in') as prod:
+            self.assertEqual(prod.receive_json(), {'type': 'peaks_listeners', 'n': 0},
+                             'Sem mesa aberta, o adaptador começa pausado.')
+            with self.client.websocket_connect('/ws/peaks_out'):
+                self.assertEqual(prod.receive_json()['n'], 1,
+                                 'Abriu a mesa: o adaptador fica sabendo.')
+            self.assertEqual(prod.receive_json()['n'], 0,
+                             'Fechou a mesa: o adaptador pausa de novo.')
+
     def test_youtube_nao_fica_aninhado_no_form_row(self):
         # O card do YouTube já foi inserido dentro do .input-group do Nome (dentro do
         # .form-row de 2 colunas): herdou meia largura e espremeu o e-mail. Entre o
