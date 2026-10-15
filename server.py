@@ -2939,7 +2939,6 @@ async def get_control_panel():
     <div class="dock-statusbar" id="dockStatusbar">
         <h1><span>RNP to OBS</span>{ifes_logo}</h1>
         <span id="statusBadge" class="badge disconnected">● Desconectado</span>
-        <button id="btnBarConnect" class="btn btn-primary" style="display:none" onclick="handleConnect()">Conectar</button>
         <span id="shieldBadge" class="badge" title="Blindagem anti-inatividade: confirma sozinho o modal de verificação da RNP">🛡️ Anti-Inatividade</span>
         <span class="dock-statusbar-fps"><span id="dockFps">--</span> fps</span>
         <label class="dock-statusbar-theme" for="selControlTheme">Estilo
@@ -2955,6 +2954,34 @@ async def get_control_panel():
         </span>
         <span id="saveToast" class="badge" style="display:none">Salvo!</span>
         <button onclick="handleExitApplication()" class="btn btn-danger" title="Desconectar da sala e encerrar o servidor e aplicativo">Parar</button>
+        <span class="dock-connect-wrap">
+            <button id="btnConnectMenu" class="btn btn-ctrl" aria-expanded="false" aria-controls="connectPopover" title="Configuração de conexão com a sala RNP">Sala ▾</button>
+            <div class="dock-popover" id="connectPopover" hidden>
+    <div class="card" id="connectPanelCard">
+        <div class="input-group">
+            <label>URL da Sala RNP:</label>
+            <input type="text" id="roomUrl" value="{state.room_url}" onchange="autoSaveField('room_url', this.value)">
+        </div>
+        <div class="form-row">
+            <div class="input-group">
+                <label>Nome do Convidado:</label>
+                <input type="text" id="userName" value="{state.user_name}" onchange="autoSaveField('user_name', this.value)">
+            </div>
+            <div class="input-group">
+                <label>E-mail:</label>
+                <input type="email" id="userEmail" value="{state.user_email}" onchange="autoSaveField('user_email', this.value)">
+            </div>
+        </div>
+        <div class="actions">
+            <button id="btnConnect" class="btn btn-primary" onclick="handleConnect()">⚡ Conectar à RNP</button>
+            <button id="btnDisconnect" class="btn btn-danger" onclick="handleDisconnect()">⏹ Desconectar</button>
+        </div>
+        <div class="log-box" id="logBox">> Pronto para conectar.</div>
+    </div>
+
+    <!-- 🎭 PRESETS DE CENA AO VIVO (SLIDES + CÂMERAS) -->
+            </div>
+        </span>
     </div>
     <div class="dock-monitor-fixed">
     <div class="card" style="padding: 10px 14px">
@@ -3140,7 +3167,6 @@ async def get_control_panel():
 
     <!-- CONFIGURAÇÕES DE GRID, FOCO E ESTILO DE NOMES -->
     </div>
-    <div id="dockConnectFixed"></div>
     <nav class="dock-tabs" id="dockTabs" role="tablist" aria-label="Seções do dock">
         <button class="dock-tab is-active" role="tab" aria-selected="true" data-tab="conexao">Conexão</button>
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="palco">Palco</button>
@@ -3237,29 +3263,6 @@ async def get_control_panel():
     </div>
 
     <!-- SALA RNP -->
-    <div class="card" id="connectPanelCard">
-        <div class="input-group">
-            <label>URL da Sala RNP:</label>
-            <input type="text" id="roomUrl" value="{state.room_url}" onchange="autoSaveField('room_url', this.value)">
-        </div>
-        <div class="form-row">
-            <div class="input-group">
-                <label>Nome do Convidado:</label>
-                <input type="text" id="userName" value="{state.user_name}" onchange="autoSaveField('user_name', this.value)">
-            </div>
-            <div class="input-group">
-                <label>E-mail:</label>
-                <input type="email" id="userEmail" value="{state.user_email}" onchange="autoSaveField('user_email', this.value)">
-            </div>
-        </div>
-        <div class="actions">
-            <button id="btnConnect" class="btn btn-primary" onclick="handleConnect()">⚡ Conectar à RNP</button>
-            <button id="btnDisconnect" class="btn btn-danger" onclick="handleDisconnect()">⏹ Desconectar</button>
-        </div>
-        <div class="log-box" id="logBox">> Pronto para conectar.</div>
-    </div>
-
-    <!-- 🎭 PRESETS DE CENA AO VIVO (SLIDES + CÂMERAS) -->
     </section>
     <section class="dock-group" data-group="palco" id="group-palco">
         <div class="dock-group-head">
@@ -4158,8 +4161,6 @@ async def get_control_panel():
                     badge.innerHTML = '● Desconectado';
                 }}
 
-                const barConnect = document.getElementById('btnBarConnect');
-                if (barConnect) barConnect.style.display = (data.connected || data.connecting) ? 'none' : '';
 
                 const ytBadge = document.getElementById('ytStatusBadge');
                 if (data.youtube_connected) {{

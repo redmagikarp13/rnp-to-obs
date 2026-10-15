@@ -215,9 +215,27 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 .dock-bar-config { display: flex; gap: 4px; }
 .dock-bar-config .btn { padding: 2px 7px; font-size: 11px; }
 
-#dockConnectFixed { margin-bottom: 8px; }
-#dockConnectFixed:empty { display: none; margin: 0; }
-#dockConnectFixed .card { margin-bottom: 0; }
+/* Popover de conexão ancorado na barra: overlay, não ocupa fluxo. */
+.dock-connect-wrap { position: relative; display: flex; }
+.dock-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: min(460px, 92vw);
+    z-index: 40;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
+    padding: 10px;
+}
+.dock-popover .card {
+    margin: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+    border-top: none;
+}
 
 .dock-audio-fixed { margin-bottom: 8px; }
 .dock-audio-fixed .card { margin-bottom: 0; }

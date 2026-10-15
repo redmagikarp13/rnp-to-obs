@@ -936,19 +936,19 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
-    async def test_painel_conexao_sobe_no_largo_e_desce_no_estreito(self):
-        # Mesmo DOM, dois endereços: no largo o painel de conexão mora na zona fixa;
-        # no estreito volta para a aba Conexão para não empurrar as abas da dobra.
+    async def test_menu_de_conexao_abre_e_fecha(self):
+        # Popover: fechado por padrão, abre no clique do botão da barra, fecha ao
+        # clicar fora. Por ser overlay, não ocupa fluxo em nenhuma largura.
         await self.receiver.goto(self.url + '/control')
-        pai = "() => document.getElementById('connectPanelCard').parentElement.id"
-        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
-        await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(pai), 'dockConnectFixed',
-                         'No largo o painel de conexão fica na zona fixa.')
-        await self.receiver.set_viewport_size({'width': 400, 'height': 900})
-        await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(pai), 'group-conexao',
-                         'No estreito o painel volta para a aba Conexão.')
+        await self.receiver.wait_for_timeout(800)
+        fechado = "() => document.getElementById('connectPopover').hidden"
+        self.assertTrue(await self.receiver.evaluate(fechado), 'Popover começa fechado.')
+        await self.receiver.click('#btnConnectMenu')
+        await self.receiver.wait_for_timeout(200)
+        self.assertFalse(await self.receiver.evaluate(fechado), 'O botão da barra abre o popover.')
+        await self.receiver.click('h1')
+        await self.receiver.wait_for_timeout(200)
+        self.assertTrue(await self.receiver.evaluate(fechado), 'Clicar fora fecha o popover.')
 
     async def test_reordenar_grupos_persiste_apos_reload(self):
         # As setas do cabeçalho de cada grupo movem o grupo (e a aba correspondente)

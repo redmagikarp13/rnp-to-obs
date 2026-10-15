@@ -83,19 +83,27 @@
         });
     }
 
-    // Painel de conexão: mesmo DOM, dois endereços. No largo mora na zona fixa
-    // (junto do monitor e do mixer); no estreito volta para a aba Conexão, senão
-    // empurra as abas para baixo da dobra. Reparenta por matchMedia, sem duplicar.
-    const connectCard = document.getElementById('connectPanelCard');
-    const connectFixed = document.getElementById('dockConnectFixed');
-    const connectTab = document.getElementById('group-conexao');
-    const mqLargo = window.matchMedia('(min-width: 900px)');
-    function placeConnect() {
-        if (!connectCard || !connectFixed || !connectTab) return;
-        (mqLargo.matches ? connectFixed : connectTab).appendChild(connectCard);
+    // Painel de conexão como popover ancorado na barra: overlay, não ocupa fluxo em
+    // largura nenhuma (não empurra a dobra no estreito). Abre no botão, fecha fora/Esc.
+    const connectMenu = document.getElementById('btnConnectMenu');
+    const connectPop = document.getElementById('connectPopover');
+    function setConnectMenu(aberto) {
+        if (!connectPop || !connectMenu) return;
+        connectPop.hidden = !aberto;
+        connectMenu.setAttribute('aria-expanded', aberto ? 'true' : 'false');
     }
-    if (mqLargo.addEventListener) mqLargo.addEventListener('change', placeConnect);
-    placeConnect();
+    if (connectMenu) {
+        connectMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setConnectMenu(connectPop.hidden);
+        });
+    }
+    document.addEventListener('click', (e) => {
+        if (connectPop && !connectPop.hidden && !connectPop.contains(e.target)) setConnectMenu(false);
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') setConnectMenu(false);
+    });
 
     // Previews ao vivo (grid de câmeras, apresentação) pesam CPU. O toggle zera o src
     // (para de decodificar de verdade) e marca o contêiner para o placeholder; o estado

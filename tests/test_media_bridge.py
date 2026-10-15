@@ -162,7 +162,7 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('Memória & Persistência', html,
                          'O card de memória some: virou os botões da barra.')
         self.assertIn('id="connectPanelCard"', html)
-        self.assertIn('id="dockConnectFixed"', html)
+        self.assertIn('id="connectPopover"', html)
 
     def test_ordem_dos_grupos_e_configuravel_e_validada(self):
         # A ordem dos painéis é preferência persistida no config do servidor (todos os
@@ -194,13 +194,21 @@ class MediaRoutesTests(unittest.TestCase):
         conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
         self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
 
-    def test_barra_tem_conectar_contextual(self):
-        # Reconexão rápida sem abrir o formulário de URL: a barra oferece Conectar
-        # quando desconectado (o formulário permanece na aba Conexão).
+    def test_conexao_vira_menu_dropdown_na_barra(self):
+        # Decisão do usuário: o painel de conexão deixa de ser bloco e vira popover
+        # ancorado na barra de status (não ocupa fluxo, então não empurra a dobra).
         html = self.client.get('/control').text
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
-        self.assertIn('btnBarConnect', barra,
-                      'A barra precisa do Conectar contextual para reconexão rápida.')
+        self.assertIn('btnConnectMenu', barra, 'A barra precisa do botão do menu de conexão.')
+        self.assertIn('id="connectPopover"', barra, 'O popover mora na barra.')
+        pop = html[html.index('id="connectPopover"'):]
+        self.assertIn('connectPanelCard', pop[:6000],
+                      'O painel de conexão deve morar dentro do popover.')
+        self.assertNotIn('dockConnectFixed', html,
+                         'O contêiner de reparenting por largura foi abolido.')
+        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
+        self.assertNotIn('connectPanelCard', conexao,
+                         'O painel sai do grupo Conexão (virou popover).')
 
     def test_cada_fonte_tem_um_unico_botao_de_link(self):
         # Os links de fonte existiam 2-3x (tile na Conexão + botão solto em outra
