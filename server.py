@@ -2947,6 +2947,7 @@ async def get_control_panel():
                 <option value="ifes" {sel_th_ifes}>Ifes</option>
             </select>
         </label>
+        <span class="dock-bar-right">
         <span class="dock-bar-config">
             <button id="btnBarSave" class="btn btn-ctrl" onclick="saveAllConfigurations()" title="Salvar todas as configurações em disco">Salvar</button>
             <button id="btnBarReload" class="btn btn-ctrl" onclick="loadAllConfigurations()" title="Recarregar configurações do disco">Recarregar</button>
@@ -2981,6 +2982,7 @@ async def get_control_panel():
 
     <!-- 🎭 PRESETS DE CENA AO VIVO (SLIDES + CÂMERAS) -->
             </div>
+        </span>
         </span>
     </div>
     <div class="dock-monitor-fixed">

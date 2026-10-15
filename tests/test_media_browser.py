@@ -936,6 +936,27 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
+    async def test_mosaico_adapta_colunas_por_largura(self):
+        # Mosaico: 4 trilhos no largo (grupos span 2 = 2x2), auto-fit no médio
+        # (2 colunas) e coluna única no estreito — sem vãos mortos.
+        await self.receiver.goto(self.url + '/control')
+        trilhas = ("(sel) => getComputedStyle(document.querySelector(sel))"
+                   ".gridTemplateColumns.split(' ').length")
+        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 4,
+                         'No largo o mosaico tem 4 trilhos.')
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active'), 2,
+                         'Cada grupo ocupa 2 trilhos (2x2).')
+        await self.receiver.set_viewport_size({'width': 780, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active'), 2,
+                         'No médio o grupo ativo usa 2 colunas (auto-fit).')
+        await self.receiver.set_viewport_size({'width': 400, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active'), 1,
+                         'No estreito o grupo ativo vira coluna única.')
+
     async def test_menu_de_conexao_abre_e_fecha(self):
         # Popover: fechado por padrão, abre no clique do botão da barra, fecha ao
         # clicar fora. Por ser overlay, não ocupa fluxo em nenhuma largura.

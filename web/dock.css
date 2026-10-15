@@ -211,7 +211,15 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     font-weight: 600;
 }
 .dock-statusbar-theme select { width: auto; padding: 2px 6px; font-size: 11px; }
-.dock-statusbar .btn-danger { margin-left: auto; }
+/* Cluster direito da barra: quebra junto, sem órfãos nem vãos no meio. */
+.dock-bar-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-left: auto;
+}
 .dock-bar-config { display: flex; gap: 4px; }
 .dock-bar-config .btn { padding: 2px 7px; font-size: 11px; }
 
@@ -239,6 +247,9 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 .dock-audio-fixed { margin-bottom: 8px; }
 .dock-audio-fixed .card { margin-bottom: 0; }
+/* Os canais preenchem a linha em qualquer largura (sem vão morto à direita). */
+.dock-audio-fixed .audio-channel-strip { flex: 1 1 150px; }
+.dock-audio-fixed #noIndividualChannelsPlaceholder { flex: 1 1 150px; }
 
 .dock-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .dock-tab {
@@ -259,18 +270,34 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 
 .dock-group { display: none; }
-.dock-group.is-active { display: block; }
+/* Mosaico interno: os cards do grupo ativo se distribuem em colunas auto-fit,
+   então larguras médias não deixam o vão que uma coluna única deixaria. */
+.dock-group.is-active {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 8px;
+    align-items: start;
+}
+.dock-group .card { margin-bottom: 0; }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
+    /* Mosaico 2x2: 4 trilhos, cada grupo reordenável ocupa 2 (spans uniformes
+       preservam a previsibilidade das setas de reordenação). */
     .dock-groups {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(4, 1fr);
         gap: 8px;
         align-items: start;
     }
     .dock-group,
-    .dock-group.is-active { display: block; }
+    .dock-group.is-active {
+        display: grid;
+        grid-column: span 2;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 8px;
+        align-items: start;
+    }
 }
 
 /* Preview desativado: o src foi zerado (para de decodificar); o contêiner explica. */
