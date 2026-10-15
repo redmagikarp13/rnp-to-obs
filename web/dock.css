@@ -686,40 +686,17 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-tab { font-size: 10px; }
 }
 
-/* Modelo de blocos: cada card é cidadão do mosaico (categoria + span + reordenação).
-   No estreito as abas filtram por categoria (.is-off esconde); no largo o CSS mostra
-   tudo e os spans montam o mosaico. Span 2 só a partir de 900px — abaixo disso o grid
-   tem 1 trilha e um span 2 criaria trilha implícita (estouro horizontal).
-   align-items: stretch + dense matam os dois vazios: o vertical (a linha dimensiona
-   pelo bloco mais alto e os baixos ficavam com vão embaixo) e o horizontal (um 2x1
-   que não cabe no fim da linha pulava para a próxima deixando buraco — o dense faz
-   os 1x1 voltarem para preenchê-lo). Com dense, a ordem salva é PRIORIDADE de
-   colocação, não posição visual exata: é o preço de não sobrar espaço. */
-.dock-bloco { position: relative; display: flex; flex-direction: column; }
-.dock-bloco > .card {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;              /* tile menor que o conteúdo rola dentro, não vaza */
-    display: flex;
-    flex-direction: column;
-}
-.dock-bloco .obs-grid-preview-box,
-.dock-bloco .thumb-box {
-    /* As caixas de preview trazem height inline legado; dentro do tile quem dita a
-       altura é o tile (flex), senão o preview fica comprido e fino com vão embaixo. */
-    height: auto !important;
-    flex: 1 1 auto;
-    min-height: 140px;
-}
+/* Modelo de blocos em MASONRY de colunas: cada painel mantém sua altura natural e
+   as colunas empilham sem vãos internos (só o fundo irregular de fim de coluna,
+   que lê como natural). Tiles quadrados/linhas stretch foram tentados e rejeitados
+   pelo usuário em tela 3840x1440: quadrados deixam deserto abaixo ou rolagem de
+   2,6 telas; stretch deixa painel comprido e fino. Colunas: 1 no estreito (abas
+   filtram por categoria), 2 no largo, 3 em >=1800, 4 em >=2400.
+   A ordem salva é a ordem do DOM, que nas colunas corre de cima a baixo por coluna
+   (column-major) — as setas movem nessa ordem. */
+.dock-bloco { position: relative; break-inside: avoid; -webkit-column-break-inside: avoid; margin-bottom: 8px; }
 .dock-bloco.is-off { display: none; }
-.dock-bloco[data-span="2"] { grid-column: span 1; }
-.dock-bloco[data-rows="2"] { grid-row: auto; }   /* estreito: altura pelo conteúdo */
-.dock-mosaico {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-    align-items: stretch;
-}
+.dock-mosaico { columns: 1; column-gap: 8px; }
 .dock-mosaico .card { margin-bottom: 0; }
 /* Aviso de modo (WebRTC/legado): bloco de leitura, não de operação. */
 .dock-notice { font-size: 11px; color: var(--text-muted); line-height: 1.55; }
@@ -727,20 +704,16 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
-    /* Tiles TODOS quadrados (2x2): linha de grade = medida da coluna. 9 blocos x 4
-       células = 36 células = 6 colunas x 6 linhas exatas: 3 quadrados por linha,
-       sem vão em nenhuma largura larga. Em 3840 os quadrados saem ~1265px e o
-       mosaico rola verticalmente — escolha do usuário (3x3 grande em vez de uma
-       faixa de 9 pequenos). minmax(0,1fr): com 1fr puro o conteúdo largo do mixer
-       inflava as trilhas e destruía o quadrado. */
-    .dock-mosaico {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        grid-auto-rows: calc((100vw - 28px - 40px) / 6);
-        grid-auto-flow: row dense;
-    }
+    /* Masonry: 2 colunas no largo, 3 em >=1800, 4 em >=2400 (3840). Cada painel com
+       sua altura natural; column-fill balance distribui sem vãos internos. */
+    .dock-mosaico { columns: 2; }
     .dock-bloco.is-off { display: block; }
-    .dock-bloco[data-span="2"] { grid-column: span 2; }
-    .dock-bloco[data-rows="2"] { grid-row: span 2; }
+}
+@media (min-width: 1800px) {
+    .dock-mosaico { columns: 3; }
+}
+@media (min-width: 2400px) {
+    .dock-mosaico { columns: 4; }
 }
 .dock-bloco .card + .card { margin-top: 10px; }
 

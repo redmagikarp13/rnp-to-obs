@@ -952,42 +952,45 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(w, 220, 'O strip do master não pode esticar com a largura da tela.')
 
     async def test_mosaico_adapta_colunas_por_largura(self):
-        # Mosaico 2x2 no largo: 4 trilhos com cada bloco span 2 = dois blocos por
-        # linha, em QUALQUER largura larga (os breakpoints de 6/10 trilhos deixavam
-        # desertos verticais em 3840). No estreito: 1 trilha e abas filtrando por
-        # categoria. stretch + dense fecham os vãos vertical e horizontal.
+        # Masonry de colunas: cada painel com sua altura natural, colunas empilhando
+        # sem vãos internos. 1 coluna no estreito (abas filtram), 2 no largo, 3 em
+        # >=1800 e 4 em >=2400 (3840). Tiles quadrados e linhas stretch foram
+        # rejeitados pelo usuário em tela 2,67:1.
         await self.receiver.goto(self.url + '/control')
-        trilhas = ("(sel) => getComputedStyle(document.querySelector(sel))"
-                   ".gridTemplateColumns.split(' ').length")
+        colunas = ("(sel) => getComputedStyle(document.querySelector(sel)).columnCount")
         visiveis = "() => [...document.querySelectorAll('.dock-bloco')].filter(b => b.checkVisibility()).length"
         await self.receiver.set_viewport_size({'width': 400, 'height': 900})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 1,
+        self.assertEqual(await self.receiver.evaluate(colunas, '.dock-mosaico'), '1',
                          'No estreito o mosaico é coluna única.')
         self.assertEqual(await self.receiver.evaluate(visiveis), 1,
                          'No estreito só os blocos da categoria ativa aparecem.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 6,
-                         'No largo o mosaico tem 6 colunas (3 quadrados por linha).')
+        self.assertEqual(await self.receiver.evaluate(colunas, '.dock-mosaico'), '2',
+                         'No largo o mosaico tem 2 colunas.')
         self.assertEqual(await self.receiver.evaluate(visiveis), 9,
                          'No largo todos os blocos aparecem, sem filtro de aba.')
-        quadrado = """() => {
-            const r = document.querySelector('[data-bloco="mixer"]').getBoundingClientRect();
-            return Math.abs(r.width - r.height) / r.width;
-        }"""
-        self.assertLess(await self.receiver.evaluate(quadrado), 0.15,
-                        'Um tile 2x2 deve fechar quadrado no largo.')
+        await self.receiver.set_viewport_size({'width': 2200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(colunas, '.dock-mosaico'), '3',
+                         'No ultra-largo o mosaico tem 3 colunas.')
         await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 6,
-                         'Em 3840px o mosaico mantém 6 colunas (grade 3x3 de quadrados).')
-        self.assertLess(await self.receiver.evaluate(quadrado), 0.15,
-                        'Um tile 2x2 deve fechar quadrado em 3840.')
-        tops = await self.receiver.evaluate("""() => [...document.querySelectorAll('.dock-bloco')]
-            .map(b => Math.round(b.getBoundingClientRect().top))""")
-        self.assertEqual(len(set(tops)), 3,
-                         'Em 3840 os nove quadrados fecham 3 linhas de 3, sem vãos.')
+        self.assertEqual(await self.receiver.evaluate(colunas, '.dock-mosaico'), '4',
+                         'Em 3840px o mosaico tem 4 colunas.')
+        sem_estouro = await self.receiver.evaluate("""() => {
+            const m = document.getElementById('dockMosaico');
+            return m.scrollWidth <= m.clientWidth + 2;
+        }""")
+        self.assertTrue(sem_estouro, 'O mosaico não pode ter rolagem horizontal.')
+        naturais = await self.receiver.evaluate("""() => {
+            const a = document.querySelector('[data-bloco="mixer"]').getBoundingClientRect();
+            const b = document.querySelector('[data-bloco="palco-libras"]').getBoundingClientRect();
+            return a.height > b.height + 50;
+        }""")
+        self.assertTrue(naturais,
+                        'Cada painel mantém sua altura natural (não estica pelo vizinho).')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {
