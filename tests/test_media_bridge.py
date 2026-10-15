@@ -290,11 +290,16 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(com_cor, [],
                          f'{len(com_cor)} inline styles ainda pintam cor por cima dos tokens.')
 
-    def test_css_legado_sem_blocos_de_tema(self):
-        # Os 5 blocos `body.theme-X .component` eram o mecanismo legado de tema; com
-        # tokens, tema é só override de variável — bloco de tema em CSS é defeito.
-        self.assertNotIn('body.theme-', server.CONTROL_PANEL_CSS,
-                         'CONTROL_PANEL_CSS não pode mais conter overrides por tema.')
+    def test_control_sem_style_inline_e_css_base_no_asset(self):
+        # O CSS do dock vive só em web/dock.css: nenhum <style> inline no /control,
+        # e o base migrado (geometria do rack/chat/enquete) está no asset.
+        html = self.client.get('/control').text
+        self.assertNotIn('<style>', html, 'O /control não pode mais injetar CSS inline.')
+        css = self.client.get('/assets/dock.css').text
+        self.assertIn('.audio-mixer-rack', css, 'O base migrado deve estar no dock.css.')
+        sem_comentarios = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+        self.assertIsNone(re.search(r'body\.theme-\w+\s+\.[\w-]+', sem_comentarios),
+                          'Nem no asset pode haver override de componente por tema.')
 
     def test_dock_css_estiliza_componentes_com_tokens(self):
         css = self.client.get('/assets/dock.css').text
