@@ -2766,6 +2766,9 @@ async def get_control_panel():
     </div>
 
     <!-- SALA RNP -->
+    <div class="card dock-notice">
+        {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
+    </div>
     </div>
     </section>
     <section class="dock-group" data-group="palco" id="group-palco">
@@ -2930,8 +2933,6 @@ async def get_control_panel():
         </div>
     </div>
 
-    {PCM_AUDIO_SCRIPT}
-    {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
 
     </div>
     </section>
@@ -4407,6 +4408,7 @@ async def get_control_panel():
         setInterval(fetchStatus, 250);
         fetchStatus();
     </script>
+    {PCM_AUDIO_SCRIPT}
     <script src="/assets/audio-mixer.js"></script>
     <script src="/assets/dock.js"></script>
 </body>

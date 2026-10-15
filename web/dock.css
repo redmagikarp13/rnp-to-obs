@@ -681,6 +681,9 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     align-items: start;
 }
 .dock-group-body .card { margin-bottom: 0; }
+/* Aviso de modo (WebRTC/legado): bloco de leitura, não de operação. */
+.dock-notice { font-size: 11px; color: var(--text-muted); line-height: 1.55; }
+.dock-notice p { margin: 0; }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }

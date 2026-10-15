@@ -194,6 +194,16 @@ class MediaRoutesTests(unittest.TestCase):
         conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
         self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
 
+    def test_aviso_webrtc_e_bloco_com_card_na_conexao(self):
+        # O aviso de modo WebRTC ficou órfão (parágrafo solto no corpo do Palco,
+        # renderizando como coluna sem card no mosaico). Virou bloco com card.
+        html = self.client.get('/control').text
+        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
+        self.assertIn('dock-notice', conexao, 'O aviso deve ser um card na Conexão.')
+        self.assertIn('Modo WebRTC', conexao)
+        palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
+        self.assertNotIn('Modo WebRTC', palco, 'O aviso não pode ficar órfão no Palco.')
+
     def test_conexao_vira_menu_dropdown_na_barra(self):
         # Decisão do usuário: o painel de conexão deixa de ser bloco e vira popover
         # ancorado na barra de status (não ocupa fluxo, então não empurra a dobra).
