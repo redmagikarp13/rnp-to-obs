@@ -3184,6 +3184,7 @@ async def get_control_panel():
                 <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Conexão para a direita">›</button>
             </span>
         </div>
+    <div class="dock-group-body">
     <div class="card" style="padding: 12px 14px">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px">
             <div style="display: flex; align-items: center; gap: 8px">
@@ -3265,6 +3266,7 @@ async def get_control_panel():
     </div>
 
     <!-- SALA RNP -->
+    </div>
     </section>
     <section class="dock-group" data-group="palco" id="group-palco">
         <div class="dock-group-head">
@@ -3274,6 +3276,7 @@ async def get_control_panel():
                 <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Palco para a direita">›</button>
             </span>
         </div>
+    <div class="dock-group-body">
     <div class="card" >
         <div class="section-title">
             <span style="display: flex; align-items: center; gap: 6px">
@@ -3431,6 +3434,7 @@ async def get_control_panel():
     {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
 
     <script src="/assets/audio-mixer.js"></script>
+    </div>
     </section>
     <section class="dock-group" data-group="cameras" id="group-cameras">
         <div class="dock-group-head">
@@ -3440,6 +3444,7 @@ async def get_control_panel():
                 <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Câmeras para a direita">›</button>
             </span>
         </div>
+    <div class="dock-group-body">
     <div class="card">
         <div class="section-title">
             <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
@@ -3507,6 +3512,7 @@ async def get_control_panel():
     </div>
 
     <!-- SEÇÃO EXCLUSIVA DE TEMAS, DESTAQUES E GERENCIAMENTO DO CHAT -->
+    </div>
     </section>
     <section class="dock-group" data-group="chat" id="group-chat">
         <div class="dock-group-head">
@@ -3516,6 +3522,7 @@ async def get_control_panel():
                 <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Chat e Enquete para a direita">›</button>
             </span>
         </div>
+    <div class="dock-group-body">
     <div class="card">
         <div class="section-title">
             <span>💬 Chat & Destaque (Lower-Third)</span>
@@ -3593,6 +3600,7 @@ async def get_control_panel():
     </div>
 
     <!-- SEÇÃO APRESENTAÇÃO -->
+    </div>
     </section>
     </div>
     <script>

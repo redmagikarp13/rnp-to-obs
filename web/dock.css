@@ -271,14 +271,16 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 .dock-group { display: none; }
 /* Mosaico interno: os cards do grupo ativo se distribuem em colunas auto-fit,
-   então larguras médias não deixam o vão que uma coluna única deixaria. */
-.dock-group.is-active {
+   então larguras médias não deixam o vão que uma coluna única deixaria. O head
+   fica FORA deste grid (senão o span 1/-1 impediria o auto-fit de colapsar). */
+.dock-group.is-active { display: block; }
+.dock-group-body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 8px;
     align-items: start;
 }
-.dock-group .card { margin-bottom: 0; }
+.dock-group-body .card { margin-bottom: 0; }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
@@ -292,11 +294,8 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     }
     .dock-group,
     .dock-group.is-active {
-        display: grid;
+        display: block;
         grid-column: span 2;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 8px;
-        align-items: start;
     }
 }
 
