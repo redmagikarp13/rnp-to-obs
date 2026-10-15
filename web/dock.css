@@ -212,6 +212,12 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 .dock-statusbar-theme select { width: auto; padding: 2px 6px; font-size: 11px; }
 .dock-statusbar .btn-danger { margin-left: auto; }
+.dock-bar-config { display: flex; gap: 4px; }
+.dock-bar-config .btn { padding: 2px 7px; font-size: 11px; }
+
+#dockConnectFixed { margin-bottom: 8px; }
+#dockConnectFixed:empty { display: none; margin: 0; }
+#dockConnectFixed .card { margin-bottom: 0; }
 
 .dock-audio-fixed { margin-bottom: 8px; }
 .dock-audio-fixed .card { margin-bottom: 0; }

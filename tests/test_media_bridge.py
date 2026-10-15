@@ -152,6 +152,18 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertNotIn('ifes-logo.png', self.client.get('/control').text,
                          'O logo Ifes não deve aparecer no tema broadcast.')
 
+    def test_salvar_recarregar_padroes_na_barra_e_painel_conexao_marcado(self):
+        # Pedido do usuário: Salvar/Recarregar/Padrões sobem para junto do seletor de
+        # tema; o painel de conexão fica marcado para o dock.js reposicionar por largura.
+        html = self.client.get('/control').text
+        barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
+        for idb in ('btnBarSave', 'btnBarReload', 'btnBarDefaults'):
+            self.assertIn(idb, barra, f'{idb} deve estar na barra de status.')
+        self.assertNotIn('Memória & Persistência', html,
+                         'O card de memória some: virou os botões da barra.')
+        self.assertIn('id="connectPanelCard"', html)
+        self.assertIn('id="dockConnectFixed"', html)
+
     def test_ordem_dos_grupos_e_configuravel_e_validada(self):
         # A ordem dos painéis é preferência persistida no config do servidor (todos os
         # clientes iguais), então /api/grid/config precisa validar como permutação.

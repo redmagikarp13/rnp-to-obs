@@ -83,6 +83,20 @@
         });
     }
 
+    // Painel de conexão: mesmo DOM, dois endereços. No largo mora na zona fixa
+    // (junto do monitor e do mixer); no estreito volta para a aba Conexão, senão
+    // empurra as abas para baixo da dobra. Reparenta por matchMedia, sem duplicar.
+    const connectCard = document.getElementById('connectPanelCard');
+    const connectFixed = document.getElementById('dockConnectFixed');
+    const connectTab = document.getElementById('group-conexao');
+    const mqLargo = window.matchMedia('(min-width: 900px)');
+    function placeConnect() {
+        if (!connectCard || !connectFixed || !connectTab) return;
+        (mqLargo.matches ? connectFixed : connectTab).appendChild(connectCard);
+    }
+    if (mqLargo.addEventListener) mqLargo.addEventListener('change', placeConnect);
+    placeConnect();
+
     // Previews ao vivo (grid de câmeras, apresentação) pesam CPU. O toggle zera o src
     // (para de decodificar de verdade) e marca o contêiner para o placeholder; o estado
     // persiste por operador em localStorage. O poll que refresca o thumb da apresentação

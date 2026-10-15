@@ -936,6 +936,20 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
         self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
 
+    async def test_painel_conexao_sobe_no_largo_e_desce_no_estreito(self):
+        # Mesmo DOM, dois endereços: no largo o painel de conexão mora na zona fixa;
+        # no estreito volta para a aba Conexão para não empurrar as abas da dobra.
+        await self.receiver.goto(self.url + '/control')
+        pai = "() => document.getElementById('connectPanelCard').parentElement.id"
+        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(pai), 'dockConnectFixed',
+                         'No largo o painel de conexão fica na zona fixa.')
+        await self.receiver.set_viewport_size({'width': 400, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(pai), 'group-conexao',
+                         'No estreito o painel volta para a aba Conexão.')
+
     async def test_reordenar_grupos_persiste_apos_reload(self):
         # As setas do cabeçalho de cada grupo movem o grupo (e a aba correspondente)
         # e a ordem persiste no config do servidor — sobrevive a reload.

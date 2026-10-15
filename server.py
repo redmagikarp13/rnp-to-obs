@@ -2948,6 +2948,11 @@ async def get_control_panel():
                 <option value="ifes" {sel_th_ifes}>Ifes</option>
             </select>
         </label>
+        <span class="dock-bar-config">
+            <button id="btnBarSave" class="btn btn-ctrl" onclick="saveAllConfigurations()" title="Salvar todas as configurações em disco">Salvar</button>
+            <button id="btnBarReload" class="btn btn-ctrl" onclick="loadAllConfigurations()" title="Recarregar configurações do disco">Recarregar</button>
+            <button id="btnBarDefaults" class="btn btn-ctrl" onclick="resetAllConfigurations()" title="Restaurar configurações padrão">Padrões</button>
+        </span>
         <span id="saveToast" class="badge" style="display:none">Salvo!</span>
         <button onclick="handleExitApplication()" class="btn btn-danger" title="Desconectar da sala e encerrar o servidor e aplicativo">Parar</button>
     </div>
@@ -3135,6 +3140,7 @@ async def get_control_panel():
 
     <!-- CONFIGURAÇÕES DE GRID, FOCO E ESTILO DE NOMES -->
     </div>
+    <div id="dockConnectFixed"></div>
     <nav class="dock-tabs" id="dockTabs" role="tablist" aria-label="Seções do dock">
         <button class="dock-tab is-active" role="tab" aria-selected="true" data-tab="conexao">Conexão</button>
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="palco">Palco</button>
@@ -3150,21 +3156,6 @@ async def get_control_panel():
                 <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Conexão para a direita">›</button>
             </span>
         </div>
-    <div class="card" >
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-            <div>
-                <strong style="font-size: 13px">💾 Memória & Persistência</strong>
-                <p style="font-size: 11px">Salvo em disco e restaurado no F5.</p>
-            </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn btn-success" style="padding: 5px 10px; font-size: 11.5px" onclick="saveAllConfigurations()">💾 Salvar</button>
-                <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px" onclick="loadAllConfigurations()">📂 Recarregar</button>
-                <button class="btn btn-ctrl" style="padding: 5px 10px; font-size: 11.5px" onclick="resetAllConfigurations()">🔄 Padrões</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 🔗 CENTRAL DE FONTES DO OBS STUDIO (LINKS RÁPIDOS PARA MONTAR AS CENAS) -->
     <div class="card" style="padding: 12px 14px">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px">
             <div style="display: flex; align-items: center; gap: 8px">
@@ -3246,7 +3237,7 @@ async def get_control_panel():
     </div>
 
     <!-- SALA RNP -->
-    <div class="card">
+    <div class="card" id="connectPanelCard">
         <div class="input-group">
             <label>URL da Sala RNP:</label>
             <input type="text" id="roomUrl" value="{state.room_url}" onchange="autoSaveField('room_url', this.value)">
