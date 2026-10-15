@@ -208,6 +208,15 @@ class MediaRoutesTests(unittest.TestCase):
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
 
+    def test_assets_do_dock_tem_cache_buster_no_html(self):
+        # Clientes (OBS/CEF sobretudo) seguram o CSS/JS velho mesmo com no-store,
+        # porque o href não muda entre deploys. O HTML precisa carregar um ?v= que
+        # muda quando os arquivos mudam, para forçar refetch no próximo load.
+        html = self.client.get('/control').text
+        for asset in ('dock.css', 'dock.js', 'audio-mixer.js'):
+            self.assertRegex(html, rf'/assets/{re.escape(asset)}\?v=\d+',
+                             f'O asset {asset} precisa de cache-buster no HTML.')
+
     def test_camada_de_componentes_cobre_geometria_basica(self):
         # Guarda contra a poda: o bloco migrado já não traz .card/body/.badge, então
         # a camada de componentes precisa prover a geometria (não só a cor). Sem o

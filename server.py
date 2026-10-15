@@ -115,6 +115,27 @@ DOCK_BLOCKS = ('mixer', 'fontes', 'palco-preview', 'cameras', 'chat',
                'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso')
 
 
+def _dock_asset_version() -> int:
+    """Soma dos mtimes dos assets do dock: muda quando qualquer um muda.
+
+    Clientes de browser-source (OBS/CEF) seguram CSS/JS velho mesmo com
+    Cache-Control no-store, porque o href não muda entre deploys. Um ?v= derivado
+    dos mtimes força refetch no próximo load da página, sem depender de o operador
+    lembrar de hard-reload.
+    """
+    total = 0
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+    for nome in ('dock.css', 'dock.js', 'audio-mixer.js', 'media-source.js'):
+        try:
+            total += int(os.path.getmtime(os.path.join(base, nome)))
+        except OSError:
+            pass
+    return total
+
+
+DOCK_ASSET_VERSION = _dock_asset_version()
+
+
 def parse_block_order(value):
     """Devolve a ordem como lista válida (permutação de DOCK_BLOCKS), ou None."""
     if not isinstance(value, (list, tuple)):
@@ -2554,7 +2575,7 @@ async def get_control_panel():
     <link rel="icon" type="image/png" href="/app_icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <!-- Design system do dock: tokens + base migrado + componentes + shell. -->
-    <link rel="stylesheet" href="/assets/dock.css">
+    <link rel="stylesheet" href="/assets/dock.css?v={DOCK_ASSET_VERSION}">
 </head>
 <body class="theme-{state.control_theme}">
     <div class="dock-statusbar" id="dockStatusbar">
@@ -4429,8 +4450,8 @@ async def get_control_panel():
         fetchStatus();
     </script>
     {PCM_AUDIO_SCRIPT}
-    <script src="/assets/audio-mixer.js"></script>
-    <script src="/assets/dock.js"></script>
+    <script src="/assets/audio-mixer.js?v={DOCK_ASSET_VERSION}"></script>
+    <script src="/assets/dock.js?v={DOCK_ASSET_VERSION}"></script>
 </body>
 </html>
     """
