@@ -2729,7 +2729,7 @@ async def get_control_panel():
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat"><span class="tab-long">Chat</span><span class="tab-short">Chat</span></button>
     </nav>
     <div class="dock-mosaico" id="dockMosaico" data-block-order="{dock_order_csv}">
-    <section class="dock-bloco" data-bloco="mixer" data-cat="audio" data-span="2">
+    <section class="dock-bloco" data-bloco="mixer" data-cat="audio" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco mixer para a esquerda">‹</button>
@@ -2851,7 +2851,7 @@ async def get_control_panel():
         </div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="fontes" data-cat="conexao" data-span="2">
+    <section class="dock-bloco" data-bloco="fontes" data-cat="conexao" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco fontes para a esquerda">‹</button>
@@ -2941,7 +2941,7 @@ async def get_control_panel():
             {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
         </div>
     </section>
-    <section class="dock-bloco" data-bloco="palco-preview" data-cat="palco" data-span="2">
+    <section class="dock-bloco" data-bloco="palco-preview" data-cat="palco" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-preview para a esquerda">‹</button>
@@ -2962,7 +2962,7 @@ async def get_control_panel():
         </div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="cameras" data-cat="cameras" data-span="2">
+    <section class="dock-bloco" data-bloco="cameras" data-cat="cameras" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco cameras para a esquerda">‹</button>
@@ -3035,7 +3035,7 @@ async def get_control_panel():
         </div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="chat" data-cat="chat" data-span="2">
+    <section class="dock-bloco" data-bloco="chat" data-cat="chat" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco chat para a esquerda">‹</button>
@@ -3118,7 +3118,7 @@ async def get_control_panel():
         </div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="palco-presets" data-cat="palco" data-span="1">
+    <section class="dock-bloco" data-bloco="palco-presets" data-cat="palco" data-span="1" data-rows="1">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-presets para a esquerda">‹</button>
@@ -3152,7 +3152,7 @@ async def get_control_panel():
         <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="palco-libras" data-cat="palco" data-span="1">
+    <section class="dock-bloco" data-bloco="palco-libras" data-cat="palco" data-span="1" data-rows="1">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-libras para a esquerda">‹</button>
@@ -3183,7 +3183,7 @@ async def get_control_panel():
         </div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="enquete" data-cat="palco" data-span="1">
+    <section class="dock-bloco" data-bloco="enquete" data-cat="palco" data-span="1" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco enquete para a esquerda">‹</button>
@@ -3250,7 +3250,7 @@ async def get_control_panel():
         <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px"></div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="slides" data-cat="palco" data-span="1">
+    <section class="dock-bloco" data-bloco="slides" data-cat="palco" data-span="1" data-rows="1">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco slides para a esquerda">‹</button>

@@ -696,9 +696,24 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
    os 1x1 voltarem para preenchê-lo). Com dense, a ordem salva é PRIORIDADE de
    colocação, não posição visual exata: é o preço de não sobrar espaço. */
 .dock-bloco { position: relative; display: flex; flex-direction: column; }
-.dock-bloco > .card { flex: 1 1 auto; }
+.dock-bloco > .card {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;              /* tile menor que o conteúdo rola dentro, não vaza */
+    display: flex;
+    flex-direction: column;
+}
+.dock-bloco .obs-grid-preview-box,
+.dock-bloco .thumb-box {
+    /* As caixas de preview trazem height inline legado; dentro do tile quem dita a
+       altura é o tile (flex), senão o preview fica comprido e fino com vão embaixo. */
+    height: auto !important;
+    flex: 1 1 auto;
+    min-height: 140px;
+}
 .dock-bloco.is-off { display: none; }
 .dock-bloco[data-span="2"] { grid-column: span 1; }
+.dock-bloco[data-rows="2"] { grid-row: auto; }   /* estreito: altura pelo conteúdo */
 .dock-mosaico {
     display: grid;
     grid-template-columns: 1fr;
@@ -712,14 +727,25 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
-    /* Mosaico 2x2: 4 trilhos em QUALQUER largura larga, cada bloco span 2 = dois
-       blocos por linha. Os breakpoints de 6/10 trilhos foram removidos: em 3840 eles
-       espalhavam os blocos numa linha só e deixavam desertos verticais gigantes sob
-       os blocos baixos. Com 2 por linha + stretch, as linhas fecham sem vãos.
-       dense deixa os 1x1 preencherem os buracos que os 2x1 deixam ao pular de linha. */
-    .dock-mosaico { grid-template-columns: repeat(4, 1fr); grid-auto-flow: row dense; }
+    /* Tiles QUADRADOS: a linha de grade tem a mesma medida da coluna, então um bloco
+       2x2 fecha um quadrado (metade da largura do mosaico). 4 colunas no largo =
+       2 tiles por linha; 8 colunas no ultra-largo (3840) = 4 tiles quadrados por
+       linha. dense preenche os vãos com os tiles 2x1; stretch não é mais necessário
+       porque a altura vem das linhas uniformes, não do vizinho mais alto. */
+    .dock-mosaico {
+        grid-template-columns: repeat(4, 1fr);
+        grid-auto-rows: calc((100vw - 28px - 24px) / 4);
+        grid-auto-flow: row dense;
+    }
     .dock-bloco.is-off { display: block; }
     .dock-bloco[data-span="2"] { grid-column: span 2; }
+    .dock-bloco[data-rows="2"] { grid-row: span 2; }
+}
+@media (min-width: 2400px) {
+    .dock-mosaico {
+        grid-template-columns: repeat(8, 1fr);
+        grid-auto-rows: calc((100vw - 28px - 56px) / 8);
+    }
 }
 .dock-bloco .card + .card { margin-top: 10px; }
 

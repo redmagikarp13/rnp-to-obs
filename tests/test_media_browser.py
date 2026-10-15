@@ -969,25 +969,25 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 4,
-                         'No largo o mosaico tem 4 trilhos (2 blocos por linha).')
+                         'No largo o mosaico tem 4 colunas de tiles.')
         self.assertEqual(await self.receiver.evaluate(visiveis), 9,
                          'No largo todos os blocos aparecem, sem filtro de aba.')
-        for largura in (2200, 3840):
-            await self.receiver.set_viewport_size({'width': largura, 'height': 1440})
-            await self.receiver.wait_for_timeout(600)
-            self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 4,
-                             f'Em {largura}px o mosaico continua 2x2 (4 trilhos).')
-        par = await self.receiver.evaluate("""() => {
-            const a = document.querySelector('[data-bloco="mixer"]').getBoundingClientRect();
-            const b = document.querySelector('[data-bloco="fontes"]').getBoundingClientRect();
-            return { mesmoTop: Math.round(a.top) === Math.round(b.top),
-                     mesmaAltura: Math.round(a.height) === Math.round(b.height),
-                     ladoALado: Math.round(a.right) <= Math.round(b.left) + 2 };
-        }""")
-        self.assertTrue(par['mesmoTop'], 'Os dois primeiros blocos dividem a linha.')
-        self.assertTrue(par['ladoALado'], 'Dois blocos por linha, lado a lado.')
-        self.assertTrue(par['mesmaAltura'],
-                        'Na mesma linha os blocos esticam juntos (sem vão vertical).')
+        quadrado = """() => {
+            const r = document.querySelector('[data-bloco="mixer"]').getBoundingClientRect();
+            return Math.abs(r.width - r.height) / r.width;
+        }"""
+        self.assertLess(await self.receiver.evaluate(quadrado), 0.15,
+                        'Um tile 2x2 deve fechar quadrado no largo.')
+        await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 8,
+                         'Em 3840px o mosaico usa 8 colunas (4 tiles quadrados por linha).')
+        self.assertLess(await self.receiver.evaluate(quadrado), 0.15,
+                        'Um tile 2x2 deve fechar quadrado em 3840.')
+        tops = await self.receiver.evaluate("""() => ['mixer', 'fontes', 'palco-preview', 'cameras']
+            .map(k => Math.round(document.querySelector('[data-bloco="' + k + '"]').getBoundingClientRect().top))""")
+        self.assertEqual(len(set(tops)), 1,
+                         'Em 3840 os quatro tiles 2x2 fecham a primeira linha.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {
