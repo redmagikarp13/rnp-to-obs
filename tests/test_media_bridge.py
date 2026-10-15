@@ -208,6 +208,20 @@ class MediaRoutesTests(unittest.TestCase):
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
 
+    def test_camada_de_componentes_cobre_geometria_basica(self):
+        # Guarda contra a poda: o bloco migrado já não traz .card/body/.badge, então
+        # a camada de componentes precisa prover a geometria (não só a cor). Sem o
+        # padding do card/body o conteúdo encosta nas bordas; sem o pill do badge ele
+        # vira barra retangular.
+        css = self.client.get('/assets/dock.css').text
+        comp = css[css.index('CAMADA DE COMPONENTES'):]
+        card = comp[comp.index('.card {'):comp.index('}', comp.index('.card {'))]
+        self.assertIn('padding:', card, '.card precisa de padding na camada de componentes.')
+        body = comp[comp.index('body {'):comp.index('}', comp.index('body {'))]
+        self.assertIn('padding:', body, 'body precisa de padding na camada de componentes.')
+        badge = comp[comp.index('.badge {'):comp.index('}', comp.index('.badge {'))]
+        self.assertIn('border-radius:', badge, '.badge precisa do pill na camada de componentes.')
+
     def test_sampler_de_picos_nao_pode_ser_gateado_por_ouvintes(self):
         # Gatear o sampler por assinantes de /ws/peaks_out quebrou a detecção de
         # fala: o servidor lê audioInfo().peak no sync_loop mesmo com a mesa do
