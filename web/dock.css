@@ -727,14 +727,13 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
-    /* Tiles QUADRADOS: a linha de grade tem a mesma medida da coluna, então um bloco
-       2x2 fecha um quadrado (metade da largura do mosaico). 4 colunas no largo =
-       2 tiles por linha; 8 colunas no ultra-largo (3840) = 4 tiles quadrados por
-       linha. dense preenche os vãos com os tiles 2x1; stretch não é mais necessário
-       porque a altura vem das linhas uniformes, não do vizinho mais alto. */
+    /* Tiles TODOS quadrados (2x2): linha de grade = medida da coluna. 9 blocos x 4
+       células = 36 células; 6 colunas no largo (3 quadrados por linha, 6 linhas) e
+       18 colunas em >=2400 (os 9 quadrados numa linha só) são divisões exatas, então
+       não sobra vão em nenhuma resolução — e em 3840 cabe sem rolagem vertical. */
     .dock-mosaico {
-        grid-template-columns: repeat(4, 1fr);
-        grid-auto-rows: calc((100vw - 28px - 24px) / 4);
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-auto-rows: calc((100vw - 28px - 40px) / 6);
         grid-auto-flow: row dense;
     }
     .dock-bloco.is-off { display: block; }
@@ -743,8 +742,8 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 @media (min-width: 2400px) {
     .dock-mosaico {
-        grid-template-columns: repeat(8, 1fr);
-        grid-auto-rows: calc((100vw - 28px - 56px) / 8);
+        grid-template-columns: repeat(18, minmax(0, 1fr));
+        grid-auto-rows: calc((100vw - 28px - 136px) / 18);
     }
 }
 .dock-bloco .card + .card { margin-top: 10px; }

@@ -968,8 +968,8 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                          'No estreito só os blocos da categoria ativa aparecem.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 4,
-                         'No largo o mosaico tem 4 colunas de tiles.')
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 6,
+                         'No largo o mosaico tem 6 colunas (3 quadrados por linha).')
         self.assertEqual(await self.receiver.evaluate(visiveis), 9,
                          'No largo todos os blocos aparecem, sem filtro de aba.')
         quadrado = """() => {
@@ -980,14 +980,14 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                         'Um tile 2x2 deve fechar quadrado no largo.')
         await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 8,
-                         'Em 3840px o mosaico usa 8 colunas (4 tiles quadrados por linha).')
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 18,
+                         'Em 3840px o mosaico usa 18 colunas (9 quadrados por linha).')
         self.assertLess(await self.receiver.evaluate(quadrado), 0.15,
                         'Um tile 2x2 deve fechar quadrado em 3840.')
-        tops = await self.receiver.evaluate("""() => ['mixer', 'fontes', 'palco-preview', 'cameras']
-            .map(k => Math.round(document.querySelector('[data-bloco="' + k + '"]').getBoundingClientRect().top))""")
+        tops = await self.receiver.evaluate("""() => [...document.querySelectorAll('.dock-bloco')]
+            .map(b => Math.round(b.getBoundingClientRect().top))""")
         self.assertEqual(len(set(tops)), 1,
-                         'Em 3840 os quatro tiles 2x2 fecham a primeira linha.')
+                         'Em 3840 os nove quadrados fecham uma única linha, sem vãos.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {

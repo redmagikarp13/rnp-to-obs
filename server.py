@@ -3118,7 +3118,7 @@ async def get_control_panel():
         </div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="palco-presets" data-cat="palco" data-span="1" data-rows="1">
+    <section class="dock-bloco" data-bloco="palco-presets" data-cat="palco" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-presets para a esquerda">‹</button>
@@ -3152,7 +3152,7 @@ async def get_control_panel():
         <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="palco-libras" data-cat="palco" data-span="1" data-rows="1">
+    <section class="dock-bloco" data-bloco="palco-libras" data-cat="palco" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-libras para a esquerda">‹</button>
@@ -3250,7 +3250,7 @@ async def get_control_panel():
         <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px"></div>
     </div>
     </section>
-    <section class="dock-bloco" data-bloco="slides" data-cat="palco" data-span="1" data-rows="1">
+    <section class="dock-bloco" data-bloco="slides" data-cat="palco" data-span="2" data-rows="2">
         <div class="dock-bloco-head">
             <span class="dock-bloco-move">
                 <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco slides para a esquerda">‹</button>
