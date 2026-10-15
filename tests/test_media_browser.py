@@ -1059,25 +1059,26 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
             "() => document.getElementById('dockTabs').getBoundingClientRect().top")
         self.assertLess(top, 800, 'No estreito a barra de abas deve ficar acima da dobra.')
 
-    async def test_responsivo_largo_mostra_grupos_sem_abas(self):
-        # Estreito: barra de abas visível e só o grupo ativo; largo: os 4 grupos
-        # visíveis e nenhuma barra de abas (disclosure progressivo).
+    async def test_responsivo_largo_mostra_blocos_sem_abas(self):
+        # Estreito: barra de abas visível e só os blocos da categoria ativa; largo:
+        # todos os blocos visíveis e nenhuma barra de abas (disclosure progressivo).
         await self.receiver.goto(self.url + '/control')
         estado = """() => ({
             abas: getComputedStyle(document.getElementById('dockTabs')).display !== 'none',
-            visiveis: [...document.querySelectorAll('.dock-group')]
+            visiveis: [...document.querySelectorAll('.dock-bloco')]
                 .filter(g => getComputedStyle(g).display !== 'none').length,
         })"""
         await self.receiver.set_viewport_size({'width': 400, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         estreito = await self.receiver.evaluate(estado)
         self.assertTrue(estreito['abas'], 'No estreito a barra de abas deve aparecer.')
-        self.assertEqual(estreito['visiveis'], 1, 'No estreito só o grupo ativo fica visível.')
+        self.assertEqual(estreito['visiveis'], 2,
+                         'No estreito só os blocos da categoria ativa ficam visíveis.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         largo = await self.receiver.evaluate(estado)
         self.assertFalse(largo['abas'], 'No largo as abas desaparecem.')
-        self.assertEqual(largo['visiveis'], 5, 'No largo os 5 grupos ficam visíveis.')
+        self.assertEqual(largo['visiveis'], 10, 'No largo os 10 blocos ficam visíveis.')
 
     async def test_mixer_controla_canal_real_sem_afetar_outro(self):
         await self.producer.evaluate('(url) => RnpMedia.startPcm(url)', self.url.replace('http:', 'ws:') + '/ws/pcm_in')

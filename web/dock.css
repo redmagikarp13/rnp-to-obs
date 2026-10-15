@@ -90,7 +90,6 @@ body.theme-ifes {
    ========================================================================== */
 
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
-body { background: #0b1120; color: #f8fafc; padding: 14px; min-height: 100vh; overflow-x: hidden; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #030712; }
@@ -99,13 +98,6 @@ body { background: #0b1120; color: #f8fafc; padding: 14px; min-height: 100vh; ov
 
 .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
 h1 { font-size: 18px; font-weight: 800; color: #38bdf8; letter-spacing: -0.5px; display: flex; align-items: center; gap: 6px; }
-
-.badge { padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
-.badge.connected { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
-.badge.disconnected { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
-.badge.connecting { background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid #eab308; }
-
-.card { background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px; margin-bottom: 12px; backdrop-filter: blur(12px); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .input-group { margin-bottom: 10px; }
 label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
@@ -116,14 +108,11 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
 .btn { padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .btn-primary { background: #38bdf8; color: #0f172a; flex: 1; }
 .btn-primary:hover { background: #0ea5e9; }
-.btn-danger { background: #ef4444; color: #ffffff; }
 .btn-danger:hover { background: #dc2626; }
 .btn-success { background: #10b981; color: #ffffff; }
 .btn-success:hover { background: #059669; }
 
 .log-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 7px; padding: 10px 12px; font-family: monospace; font-size: 12px; color: #38bdf8; margin-top: 10px; min-height: 38px; display: flex; align-items: center; word-break: break-all; }
-
-.section-title { font-size: 15px; font-weight: 700; color: #38bdf8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .mod-box { background: #1e293b; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: border-color 0.2s; }
 .mod-title { font-weight: 700; font-size: 13.5px; color: #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
@@ -136,7 +125,6 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
 .cam-controls { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
 .btn-ctrl { padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: #cbd5e1; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex: 1; min-width: 70px; text-align: center; }
 .btn-ctrl:hover { background: #1e293b; color: #fff; }
-.btn-ctrl.active-focus { background: #eab308 !important; color: #000 !important; border-color: #eab308 !important; box-shadow: 0 0 10px rgba(234, 179, 8, 0.6); }
 .btn-ctrl.active-pin { background: #10b981 !important; color: #000 !important; border-color: #10b981 !important; box-shadow: 0 0 10px rgba(16, 185, 129, 0.6); }
 .btn-ctrl.active-libras { background: #06b6d4 !important; color: #082f49 !important; border-color: #06b6d4 !important; box-shadow: 0 0 10px rgba(6, 182, 212, 0.7); }
 .btn-ctrl.active-preset { background: #38bdf8 !important; color: #0f172a !important; border-color: #38bdf8 !important; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
@@ -444,17 +432,14 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
 }
 
 @media (max-width: 640px) {
-    body { padding: 8px 6px !important; }
     .header { margin-bottom: 10px !important; }
     .header h1 { font-size: 16px !important; }
-    .card { padding: 10px 8px !important; margin-bottom: 10px !important; border-radius: 9px !important; }
     .form-row { grid-template-columns: 1fr !important; gap: 6px !important; }
     .input-group { margin-bottom: 6px !important; }
     .input-group label { font-size: 11px !important; margin-bottom: 2px !important; }
     input[type="text"], input[type="email"], select { padding: 6px 8px !important; font-size: 12px !important; }
     .btn { padding: 7px 12px !important; font-size: 12px !important; }
     .actions { gap: 6px !important; }
-    .section-title { font-size: 13.5px !important; margin-bottom: 8px !important; }
     .grid-options-bar { padding: 8px !important; gap: 8px !important; flex-direction: column !important; align-items: stretch !important; }
     .grid-opt-group { width: 100% !important; justify-content: space-between !important; }
     .grid-opt-group select { flex: 1 !important; max-width: 60% !important; }
@@ -575,9 +560,9 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 
 /* ==========================================================================
    SHELL RESPONSIVO (spec Adendo 2026-10-14)
-   Estreito: zona fixa empilhada + abas (só o grupo ativo).
-   Largo (>=900px): abas somem, os 4 grupos viram colunas auto-fit.
-   A troca é puramente CSS; o markup dos grupos é o mesmo nos dois modos.
+   Estreito: zona fixa empilhada + abas (filtro por categoria de blocos).
+   Largo (>=900px): abas somem; o CSS mostra todos os blocos no mosaico.
+   A troca é puramente CSS; o markup dos blocos é o mesmo nos dois modos.
    ========================================================================== */
 
 .dock-statusbar {
