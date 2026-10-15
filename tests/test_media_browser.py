@@ -919,6 +919,7 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         # Desligar o preview precisa PARAR de carregar a fonte (src about:blank),
         # e o poll que refresca o thumb da apresentação não pode ressuscitá-lo.
         await self.receiver.goto(self.url + '/control')
+        await self.receiver.evaluate("() => RnpDock.activateTab('cameras')")
         await self.receiver.click('#btnToggleCamPreview')
         await self.receiver.wait_for_timeout(300)
         estado = await self.receiver.evaluate("""() => ({
@@ -932,6 +933,7 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('/cameras/grid', await self.receiver.evaluate(
             "() => document.getElementById('gridPreviewIframe').getAttribute('src')"),
             'Religar o preview deve restaurar a fonte.')
+        await self.receiver.evaluate("() => RnpDock.activateTab('palco')")
         await self.receiver.click('#btnToggleScreenPreview')
         await self.receiver.wait_for_timeout(1600)
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
@@ -950,45 +952,52 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(w, 220, 'O strip do master não pode esticar com a largura da tela.')
 
     async def test_mosaico_adapta_colunas_por_largura(self):
-        # Mosaico: 4 trilhos no largo (grupos span 2 = 2x2), auto-fit no médio
-        # (2 colunas) e coluna única no estreito — sem vãos mortos.
+        # Mosaico de blocos: 1 trilha no estreito (abas filtram por categoria),
+        # 4 no largo, 6 no ultra-largo e 10 em 3840 — onde os 5 blocos span 2
+        # fecham a primeira linha e os 5 de span 1 a segunda.
         await self.receiver.goto(self.url + '/control')
         trilhas = ("(sel) => getComputedStyle(document.querySelector(sel))"
                    ".gridTemplateColumns.split(' ').length")
-        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
-        await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 4,
-                         'No largo o mosaico tem 4 trilhos.')
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active .dock-group-body'), 2,
-                         'Cada grupo ocupa 2 trilhos (2x2).')
-        await self.receiver.set_viewport_size({'width': 780, 'height': 900})
-        await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active .dock-group-body'), 2,
-                         'No médio o grupo ativo usa 2 colunas (auto-fit).')
+        visiveis = "() => [...document.querySelectorAll('.dock-bloco')].filter(b => b.checkVisibility()).length"
         await self.receiver.set_viewport_size({'width': 400, 'height': 900})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-group.is-active .dock-group-body'), 1,
-                         'No estreito o grupo ativo vira coluna única.')
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 1,
+                         'No estreito o mosaico é coluna única.')
+        self.assertEqual(await self.receiver.evaluate(visiveis), 2,
+                         'No estreito só os blocos da categoria ativa aparecem.')
+        await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
+        await self.receiver.wait_for_timeout(600)
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 4,
+                         'No largo o mosaico tem 4 trilhos.')
+        self.assertEqual(await self.receiver.evaluate(visiveis), 10,
+                         'No largo todos os blocos aparecem, sem filtro de aba.')
         await self.receiver.set_viewport_size({'width': 2200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 6,
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 6,
                          'No ultra-largo o mosaico sobe para 6 trilhos.')
         await self.receiver.set_viewport_size({'width': 3840, 'height': 1440})
         await self.receiver.wait_for_timeout(600)
-        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-groups'), 10,
-                         'Em 3840px o mosaico usa 10 trilhos (5 grupos por linha).')
-        tops = await self.receiver.evaluate(
-            "() => [...document.querySelectorAll('.dock-group')].map(g => Math.round(g.getBoundingClientRect().top))")
-        self.assertEqual(len(set(tops)), 1,
-                         'Em 3840x1440 os 5 grupos devem caber numa única linha.')
+        self.assertEqual(await self.receiver.evaluate(trilhas, '.dock-mosaico'), 10,
+                         'Em 3840px o mosaico usa 10 trilhos.')
+        linhas = await self.receiver.evaluate("""() => {
+            const t = s => [...document.querySelectorAll('.dock-bloco[data-span="' + s + '"]')]
+                .map(b => Math.round(b.getBoundingClientRect().top));
+            return { largos: t('2'), uns: t('1') };
+        }""")
+        self.assertEqual(len(set(linhas['largos'])), 1,
+                         'Em 3840x1440 os 5 blocos span 2 fecham a primeira linha.')
+        self.assertEqual(len(set(linhas['uns'])), 1,
+                         'Os 5 blocos de span 1 fecham a segunda linha.')
+        self.assertLess(min(linhas['largos']), min(linhas['uns']),
+                        'A linha dos blocos largos vem antes da dos estreitos.')
         await self.receiver.set_viewport_size({'width': 1200, 'height': 900})
         await self.receiver.wait_for_timeout(600)
         frac = await self.receiver.evaluate("""() => {
-            const g = document.getElementById('group-audio').getBoundingClientRect();
-            const c = document.getElementById('dockGroups').getBoundingClientRect();
+            const g = document.querySelector('[data-bloco="mixer"]').getBoundingClientRect();
+            const c = document.getElementById('dockMosaico').getBoundingClientRect();
             return g.width / c.width;
         }""")
-        self.assertLess(frac, 0.6, 'O bloco de Áudio não pode ocupar a linha inteira.')
+        self.assertLess(frac, 0.6, 'O bloco mixer não pode ocupar a linha inteira.')
 
     async def test_menu_de_conexao_abre_e_fecha(self):
         # Popover: fechado por padrão, abre no clique do botão da barra, fecha ao
@@ -1007,25 +1016,22 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.wait_for_timeout(200)
         self.assertTrue(await self.receiver.evaluate(fechado), 'Clicar fora fecha o popover.')
 
-    async def test_reordenar_grupos_persiste_apos_reload(self):
-        # As setas do cabeçalho de cada grupo movem o grupo (e a aba correspondente)
-        # e a ordem persiste no config do servidor — sobrevive a reload.
+    async def test_reordenar_blocos_persiste_apos_reload(self):
+        # As setas de cada bloco movem o bloco no mosaico e a ordem persiste no
+        # config do servidor — sobrevive a reload.
         await self.receiver.goto(self.url + '/control')
-        antes = await self.receiver.evaluate(
-            "() => [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group)")
-        await self.receiver.click('#group-conexao .dock-move[data-move="1"]')
-        await self.receiver.wait_for_timeout(500)
-        depois = await self.receiver.evaluate(
-            "() => [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group)")
-        self.assertEqual(depois, antes[1:2] + antes[:1] + antes[2:],
-                         'Mover para a direita deve trocar o grupo de lugar.')
-        abas = await self.receiver.evaluate(
-            "() => [...document.querySelectorAll('.dock-tab')].map(b => b.dataset.tab)")
-        self.assertEqual(abas, depois, 'As abas acompanham a ordem dos grupos.')
+        antes = await self.receiver.evaluate("() => RnpDock.currentOrder()")
+        await self.receiver.click('.dock-bloco[data-bloco="mixer"] .dock-move[data-move="1"]')
+        await self.receiver.wait_for_timeout(600)
+        depois = await self.receiver.evaluate("() => RnpDock.currentOrder()")
+        self.assertEqual(depois, [antes[1], antes[0]] + antes[2:],
+                         'Mover para a direita deve trocar o bloco de lugar.')
+        salva = await self.receiver.evaluate(
+            "() => fetch('/api/config').then(r => r.json()).then(c => c.dock_block_order)")
+        self.assertEqual(salva, depois, 'A ordem deve ser gravada no config do servidor.')
         await self.receiver.reload(wait_until='domcontentloaded')
         await self.receiver.wait_for_timeout(800)
-        recarregado = await self.receiver.evaluate(
-            "() => [...document.querySelectorAll('.dock-group')].map(g => g.dataset.group)")
+        recarregado = await self.receiver.evaluate("() => RnpDock.currentOrder()")
         self.assertEqual(recarregado, depois, 'A ordem deve persistir após reload.')
 
     async def test_monitor_comprime_no_estreito(self):

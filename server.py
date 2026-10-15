@@ -109,16 +109,17 @@ def parse_speak_threshold(value):
     return parsed
 
 
-# Ordem dos painéis do dock (preferência persistida no config do servidor, para que
-# todos os clientes — dock do OBS, janela, navegador — vejam a mesma ordem).
-DOCK_GROUPS = ('conexao', 'palco', 'cameras', 'audio', 'chat')
+# Blocos do mosaico do dock (a unidade de reordenação e de span). A ordem é
+# preferência persistida no config do servidor, para que todos os clientes vejam igual.
+DOCK_BLOCKS = ('mixer', 'fontes', 'palco-preview', 'cameras', 'chat',
+               'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso')
 
 
-def parse_group_order(value):
-    """Devolve a ordem como lista válida (permutação de DOCK_GROUPS), ou None."""
+def parse_block_order(value):
+    """Devolve a ordem como lista válida (permutação de DOCK_BLOCKS), ou None."""
     if not isinstance(value, (list, tuple)):
         return None
-    if sorted(value) != sorted(DOCK_GROUPS):
+    if sorted(value) != sorted(DOCK_BLOCKS):
         return None
     return list(value)
 
@@ -144,7 +145,7 @@ DEFAULT_CONFIG = {
     "grid_layout_mode": "auto",
     "camera_format": "original",
     "speak_peak_threshold": DEFAULT_SPEAK_PEAK_THRESHOLD,
-    "dock_group_order": list(DOCK_GROUPS),
+    "dock_block_order": list(DOCK_BLOCKS),
     "stage_preset": "side-by-side",
     "libras_size": "equal",
     "libras_auto_detect": True,
@@ -271,14 +272,8 @@ class BridgeState:
         _limiar = parse_speak_threshold(cfg.get("speak_peak_threshold"))
         self.speak_peak_threshold: float = (
             _limiar if _limiar is not None else DEFAULT_SPEAK_PEAK_THRESHOLD)
-        _ordem = parse_group_order(cfg.get("dock_group_order"))
-        if _ordem is None:
-            # Migração: ordem salva antes da 5ª aba (4 chaves) ganha Áudio após Câmeras.
-            salva = cfg.get("dock_group_order")
-            if isinstance(salva, list) and sorted(salva) == ['cameras', 'chat', 'conexao', 'palco']:
-                _ordem = [k for k in salva]
-                _ordem.insert(_ordem.index('cameras') + 1, 'audio')
-        self.dock_group_order: list = _ordem if _ordem is not None else list(DOCK_GROUPS)
+        _ordem = parse_block_order(cfg.get("dock_block_order"))
+        self.dock_block_order: list = _ordem if _ordem is not None else list(DOCK_BLOCKS)
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
         self.custom_camera_names: Dict[str, str] = cfg.get("custom_camera_names", {})
@@ -371,7 +366,7 @@ class BridgeState:
             "camera_name_style": self.camera_name_style,
             "camera_format": self.camera_format,
             "speak_peak_threshold": self.speak_peak_threshold,
-            "dock_group_order": self.dock_group_order,
+            "dock_block_order": self.dock_block_order,
             "grid_layout_mode": self.grid_layout_mode,
             "stage_preset": self.stage_preset,
             "libras_size": self.libras_size,
@@ -1806,14 +1801,14 @@ async def api_grid_config(req: Request):
                  "message": f"speak_peak_threshold deve ser um número entre {SPEAK_PEAK_MIN} e {SPEAK_PEAK_MAX}"},
                 status_code=400)
         data["speak_peak_threshold"] = limiar
-    if "dock_group_order" in data:
-        ordem = parse_group_order(data["dock_group_order"])
+    if "dock_block_order" in data:
+        ordem = parse_block_order(data["dock_block_order"])
         if ordem is None:
             return JSONResponse(
                 {"status": "error",
-                 "message": f"dock_group_order deve ser uma permutação de {list(DOCK_GROUPS)}"},
+                 "message": f"dock_block_order deve ser uma permutação de {list(DOCK_BLOCKS)}"},
                 status_code=400)
-        data["dock_group_order"] = ordem
+        data["dock_block_order"] = ordem
     if "focused_camera_id" in data:
         state.focused_camera_id = str(data["focused_camera_id"]) if data["focused_camera_id"] is not None else None
     if "pinned_camera_ids" in data:
@@ -1834,8 +1829,8 @@ async def api_grid_config(req: Request):
             state.camera_format = fmt
     if "speak_peak_threshold" in data:
         state.speak_peak_threshold = data["speak_peak_threshold"]
-    if "dock_group_order" in data:
-        state.dock_group_order = data["dock_group_order"]
+    if "dock_block_order" in data:
+        state.dock_block_order = data["dock_block_order"]
     if "stage_preset" in data:
         state.stage_preset = data["stage_preset"]
     if "custom_name" in data and "cam_id" in data:
@@ -2535,7 +2530,7 @@ async def get_control_panel():
         'style="height: 30px; width: auto; margin-left: 9px; vertical-align: -9px">'
         if state.control_theme == "ifes" else '')
     chk_yt_auto_connect = "checked" if state.youtube_auto_connect else ""
-    dock_order_csv = ",".join(state.dock_group_order)
+    dock_order_csv = ",".join(state.dock_block_order)
 
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
 
@@ -2698,339 +2693,14 @@ async def get_control_panel():
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="audio"><span class="tab-long">Áudio</span><span class="tab-short">Áudio</span></button>
         <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat"><span class="tab-long">Chat</span><span class="tab-short">Chat</span></button>
     </nav>
-    <div class="dock-groups" id="dockGroups" data-dock-order="{dock_order_csv}">
-    <section class="dock-group" data-group="conexao" id="group-conexao">
-        <div class="dock-group-head">
-            <span class="dock-group-name">Conexão</span>
-            <span class="dock-group-move">
-                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Conexão para a esquerda">‹</button>
-                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Conexão para a direita">›</button>
+    <div class="dock-mosaico" id="dockMosaico" data-block-order="{dock_order_csv}">
+    <section class="dock-bloco" data-bloco="mixer" data-cat="audio" data-span="2">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco mixer para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco mixer para a direita">›</button>
             </span>
         </div>
-    <div class="dock-group-body">
-    <div class="card" style="padding: 12px 14px">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px">
-            <div style="display: flex; align-items: center; gap: 8px">
-                <span style="font-size: 16px">🔗</span>
-                <div>
-                    <strong style="font-size: 13px">Fontes para o OBS Studio (Montagem Prévia de Cenas)</strong>
-                    <div style="font-size: 11px">Copie os links abaixo e adicione no OBS como <strong>Navegador (Browser Source)</strong> a qualquer momento:</div>
-                </div>
-            </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px">
-            <!-- Enquete -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
-                <span style="font-size: 18px; margin-right: 6px">📊</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Enquete / Votação</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/poll (1920x1080)</div>
-                </div>
-            </button>
-
-            <!-- Palco Composto -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
-                <span style="font-size: 18px; margin-right: 6px">🎭</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Palco Composto</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/stage (1920x1080)</div>
-                </div>
-            </button>
-
-            <!-- Janela Libras -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
-                <span style="font-size: 18px; margin-right: 6px">🤟</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Janela de Libras</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/libras (PIP / Paritária)</div>
-                </div>
-            </button>
-
-            <!-- Chat Feed -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
-                <span style="font-size: 18px; margin-right: 6px">💬</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Feed de Chat (RNP+YT)</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/chat (Transparente)</div>
-                </div>
-            </button>
-
-            <!-- Chat Destaque -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
-                <span style="font-size: 18px; margin-right: 6px">⭐</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Chat em Destaque</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/chat/featured (Lower Third)</div>
-                </div>
-            </button>
-
-            <!-- Grid de Câmeras -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
-                <span style="font-size: 18px; margin-right: 6px">👥</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Grid de Câmeras</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/cameras/grid (1920x1080)</div>
-                </div>
-            </button>
-
-            <!-- Slides / Apresentação -->
-            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/presentation', this)" title="Copiar URL dos Slides da Apresentação">
-                <span style="font-size: 18px; margin-right: 6px">📽️</span>
-                <div style="line-height: 1.2">
-                    <div style="font-weight: 800; font-size: 11.5px">Slides Apresentação</div>
-                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/presentation (Slides Puros)</div>
-                </div>
-            </button>
-
-            <!-- O master de áudio agora vem do /stage (ver botão "Palco Composto");
-                 os áudios individuais ficam no rack de áudio abaixo, com link próprio. -->
-        </div>
-    </div>
-
-    <!-- SALA RNP -->
-    <div class="card dock-notice">
-        {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
-    </div>
-    </div>
-    </section>
-    <section class="dock-group" data-group="palco" id="group-palco">
-        <div class="dock-group-head">
-            <span class="dock-group-name">Palco</span>
-            <span class="dock-group-move">
-                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Palco para a esquerda">‹</button>
-                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Palco para a direita">›</button>
-            </span>
-        </div>
-    <div class="dock-group-body">
-    <div class="card" data-block="palco-preview">
-        <div class="section-title">
-            <span style="display: flex; align-items: center; gap: 6px">
-                <span>🎭 Palco Composto (Slides + Câmeras)</span>
-            </span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap">
-            </div>
-        </div>
-
-        <div class="obs-grid-preview-box" style="height: 180px">
-            <iframe id="stagePreviewIframe" src="/stage?audio=0"></iframe>
-        </div>
-    </div>
-
-    <div class="card" data-block="palco-presets">
-        <div class="section-title"><span>Presets de Cena</span></div>
-
-        <div class="preset-buttons-grid">
-            <button id="btnPreset_side-by-side" class="btn-ctrl active-preset" onclick="setStagePreset('side-by-side')">
-                📺 Lado a Lado (70/30)
-            </button>
-            <button id="btnPreset_bottom-bar" class="btn-ctrl" onclick="setStagePreset('bottom-bar')">
-                ⬇️ Slide Top + Rodapé
-            </button>
-            <button id="btnPreset_pip-bottom-right" class="btn-ctrl" onclick="setStagePreset('pip-bottom-right')">
-                🖼️ PIP Canto Inferior
-            </button>
-            <button id="btnPreset_pip-top-right" class="btn-ctrl" onclick="setStagePreset('pip-top-right')">
-                ↗️ PIP Canto Superior
-            </button>
-            <button id="btnPreset_split-50-50" class="btn-ctrl" onclick="setStagePreset('split-50-50')">
-                ⚖️ Split 50 / 50
-            </button>
-            <button id="btnPreset_slide-only" class="btn-ctrl" onclick="setStagePreset('slide-only')">
-                📊 Somente Slides
-            </button>
-        </div>
-
-        <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
-    </div>
-
-    <div class="card" data-block="palco-libras">
-        <div class="section-title"><span>Libras</span></div>
-        <div class="grid-options-bar" style="margin-top: 8px">
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
-                <label style="margin: 0; font-size: 12px; font-weight: 700">🤟 Tamanho Libras:</label>
-                <select id="selLibrasSize" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateLibrasSizeConfig()">
-                    <option value="equal" {sel_lib_equal}>👥 Igual ao Palestrante (Padrão IFES)</option>
-                    <option value="huge" {sel_lib_huge}>📐 Gigante Flutuante (560x315)</option>
-                    <option value="large" {sel_lib_large}>📺 Grande Flutuante (480x270)</option>
-                    <option value="medium" {sel_lib_med}>▫️ Médio Flutuante (380x214)</option>
-                </select>
-            </div>
-            <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px; flex-wrap: wrap; gap: 6px">
-                <button id="btnAutoLibras" class="btn-ctrl active-pin" style="padding: 3px 8px; font-size: 11px" onclick="toggleLibrasAutoDetect()">
-                    🛡️ Auto-Reconhecimento: ATIVO
-                </button>
-                <div style="display: flex; align-items: center; gap: 6px">
-                    <span id="savedInterpretersCount" style="font-size: 11px">0 salvos</span>
-                    <button class="btn-ctrl" style="padding: 2px 6px; font-size: 10.5px" onclick="clearSavedLibras()" title="Limpar lista de nomes de intérpretes salvos">🗑️ Limpar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- SEÇÃO DE ENQUETE / POLL DA SALA RNP COM MONITORAMENTO E CONTROLE -->
-    <div id="pollDockCard" class="card poll-card" >
-        <div class="poll-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px">
-            <div style="display: flex; align-items: center; gap: 6px">
-                <span style="font-size: 14px">📊</span>
-                <strong style="font-size: 13px" id="pollStatusTitle">Enquete da Sala RNP</strong>
-                <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px">⚪ Standby</span>
-            </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
-                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="clearPoll()">🗑️ Limpar</button>
-            </div>
-        </div>
-
-        <div class="grid-options-bar" style="margin-bottom: 10px">
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
-                <label style="margin: 0; font-size: 12px; font-weight: 700">🎯 Exibir no OBS:</label>
-                <select id="selPollDisplayMode" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
-                    <option value="results_only" {sel_pm_results}>📊 Somente Resultados Finais (Recomendado)</option>
-                    <option value="always" {sel_pm_always}>🗳️ Votação Ao Vivo + Resultados</option>
-                    <option value="hidden" {sel_pm_hidden}>❌ Ocultar no OBS</option>
-                </select>
-            </div>
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
-                <label style="margin: 0; font-size: 12px; font-weight: 600">⏱️ Tempo na Tela:</label>
-                <select id="selPollDuration" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
-                    <option value="10" {sel_pd_10}>⏱️ 10 segundos</option>
-                    <option value="15" {sel_pd_15}>⏱️ 15 segundos (Padrão)</option>
-                    <option value="30" {sel_pd_30}>⏱️ 30 segundos</option>
-                    <option value="60" {sel_pd_60}>⏱️ 60 segundos (1 min)</option>
-                    <option value="0" {sel_pd_inf}>♾️ Fixo (Até Fechar)</option>
-                </select>
-            </div>
-            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
-                <label style="margin: 0; font-size: 12px; font-weight: 600">🎨 Estilo da Enquete:</label>
-                <select id="selPollStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
-                    <option value="neon" {sel_pstyle_neon}>⚡ Neon Glow</option>
-                    <option value="glass" {sel_pstyle_glass}>💎 Glassmorphism</option>
-                    <option value="bubbles" {sel_pstyle_bubbles}>💬 Discord Bubbles</option>
-                    <option value="cyber" {sel_pstyle_cyber}>🎬 Cyberpunk Broadcast</option>
-                    <option value="minimal" {sel_pstyle_min}>📄 Minimal Slate</option>
-                </select>
-            </div>
-            <div style="width: 100%; display: flex; gap: 6px; margin-top: 6px">
-                <button id="btnForcePollShow" class="btn-ctrl" style="flex:1" onclick="toggleForcePoll(true)">
-                    ✨ Mostrar no OBS Agora
-                </button>
-                <button id="btnForcePollHide" class="btn-ctrl" style="flex:1" onclick="toggleForcePoll(false)">
-                    ❌ Ocultar Agora
-                </button>
-            </div>
-        </div>
-
-        <div style="font-size: 11px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px">
-            <span>📡 <strong>Dica OBS:</strong> Cole o link acima em uma fonte de <em>Navegador (1920x1080 transparente)</em>. Ela se ativará automaticamente quando houver enquete.</span>
-        </div>
-
-        <div class="poll-question" id="pollQuestionText" style="font-size: 13px; font-weight: 800; margin-bottom: 8px">Aguardando início de enquete...</div>
-        <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px"></div>
-    </div>
-
-
-    <!-- SEÇÃO DEDICADA DE ÁUDIO DA SALA & TRANSMISSÃO OBS -->
-    <div class="card">
-        <div class="section-title">
-            <span>📊 Apresentação / Slides</span>
-            <button id="btnToggleScreenPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('presentation')">Ocultar preview</button>
-        </div>
-        <div class="thumb-box" style="height: 200px">
-            <img id="thumbScreen" src="/raw_frame/presentation" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
-        </div>
-    </div>
-
-
-    </div>
-    </section>
-    <section class="dock-group" data-group="cameras" id="group-cameras">
-        <div class="dock-group-head">
-            <span class="dock-group-name">Câmeras</span>
-            <span class="dock-group-move">
-                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Câmeras para a esquerda">‹</button>
-                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Câmeras para a direita">›</button>
-            </span>
-        </div>
-    <div class="dock-group-body">
-    <div class="card">
-        <div class="section-title">
-            <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                <button id="btnToggleCamPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('cameras')">Ocultar preview</button>
-            </div>
-        </div>
-
-        <div class="obs-grid-preview-box">
-            <iframe id="gridPreviewIframe" src="/cameras/grid?audio=0"></iframe>
-        </div>
-
-        <div class="grid-options-bar">
-            <div class="grid-opt-group">
-                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px">
-                    <input type="checkbox" id="chkShowNames" {chk_show_names} onchange="updateGridConfig()">
-                    <span>Exibir Nomes</span>
-                </label>
-            </div>
-
-            <div class="grid-opt-group">
-                <label style="margin: 0; font-size: 12px">Estilo:</label>
-                <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
-                    <option value="glass" {sel_glass}>Glass (Vidro)</option>
-                    <option value="pill" {sel_pill}>Pill (Pílula)</option>
-                    <option value="minimal" {sel_min}>Minimal Dark</option>
-                    <option value="glow" {sel_glow}>Neon Glow</option>
-                </select>
-            </div>
-
-            <div class="grid-opt-group">
-                <label style="margin: 0; font-size: 12px">Layout:</label>
-                <select id="selGridLayout" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
-                    <option value="auto" {sel_layout_auto}>🤖 Auto (1920x600)</option>
-                    <option value="row" {sel_layout_row}>➡️ Linha Horizontal</option>
-                    <option value="column" {sel_layout_col}>⬇️ Coluna Vertical</option>
-                    <option value="grid" {sel_layout_grid}>🔲 Grid Quadrantes</option>
-                </select>
-            </div>
-
-            <div class="grid-opt-group">
-                <label style="margin: 0; font-size: 12px">Formato Câmera:</label>
-                <select id="selCamFormat" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
-                    <option value="original" {sel_fmt_original}>📐 Original (sem corte)</option>
-                    <option value="paisagem" {sel_fmt_paisagem}>🖼️ Paisagem 16:9</option>
-                    <option value="quadrada" {sel_fmt_quadrada}>⬜ Quadrada 1:1</option>
-                    <option value="retrato" {sel_fmt_retrato}>📱 Retrato 9:16</option>
-                    <option value="esticado" {sel_fmt_esticado}>↔️ Esticado (preencher)</option>
-                    <option value="auto" {sel_fmt_auto}>🤖 Auto (corte atual)</option>
-                </select>
-            </div>
-
-            <div class="grid-opt-group" style="width: 100%">
-                <button class="btn-ctrl" style="width: 100%" onclick="clearFocusAndPins()">🔄 Restaurar Grid Equilibrado</button>
-            </div>
-        </div>
-
-        <div class="section-title">
-            <span>Câmeras Sincronizadas (<span id="camTotalCount">0</span>)</span>
-        </div>
-
-        <div class="preview-grid" id="camerasGrid">
-            <div style="font-size: 12px; padding: 10px">Nenhuma câmera ligada no momento.</div>
-        </div>
-    </div>
-
-    <!-- SEÇÃO EXCLUSIVA DE TEMAS, DESTAQUES E GERENCIAMENTO DO CHAT -->
-    </div>
-    </section>
-    <section class="dock-group" data-group="audio" id="group-audio">
-        <div class="dock-group-head">
-            <span class="dock-group-name">Áudio</span>
-            <span class="dock-group-move">
-                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Áudio para a esquerda">‹</button>
-                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Áudio para a direita">›</button>
-            </span>
-        </div>
-    <div class="dock-group-body">
     <div class="card" id="audioDockCard">
         <div class="section-title">
             <span style="display: flex; align-items: center; gap: 8px">
@@ -3145,19 +2815,195 @@ async def get_control_panel():
             </div>
         </div>
     </div>
-
-    <!-- CONFIGURAÇÕES DE GRID, FOCO E ESTILO DE NOMES -->
-    </div>
     </section>
-    <section class="dock-group" data-group="chat" id="group-chat">
-        <div class="dock-group-head">
-            <span class="dock-group-name">Chat</span>
-            <span class="dock-group-move">
-                <button class="dock-move" data-move="-1" title="Mover grupo para a esquerda" aria-label="Mover grupo Chat e Enquete para a esquerda">‹</button>
-                <button class="dock-move" data-move="1" title="Mover grupo para a direita" aria-label="Mover grupo Chat e Enquete para a direita">›</button>
+    <section class="dock-bloco" data-bloco="fontes" data-cat="conexao" data-span="2">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco fontes para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco fontes para a direita">›</button>
             </span>
         </div>
-    <div class="dock-group-body">
+    <div class="card" style="padding: 12px 14px">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px">
+            <div style="display: flex; align-items: center; gap: 8px">
+                <span style="font-size: 16px">🔗</span>
+                <div>
+                    <strong style="font-size: 13px">Fontes para o OBS Studio (Montagem Prévia de Cenas)</strong>
+                    <div style="font-size: 11px">Copie os links abaixo e adicione no OBS como <strong>Navegador (Browser Source)</strong> a qualquer momento:</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 8px">
+            <!-- Enquete -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/poll', this)" title="Copiar URL da Enquete (1920x1080 transparente)">
+                <span style="font-size: 18px; margin-right: 6px">📊</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Enquete / Votação</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/poll (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Palco Composto -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/stage', this)" title="Copiar URL do Palco Composto (1920x1080)">
+                <span style="font-size: 18px; margin-right: 6px">🎭</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Palco Composto</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/stage (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Janela Libras -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/libras', this)" title="Copiar URL da Janela de Libras (PIP)">
+                <span style="font-size: 18px; margin-right: 6px">🤟</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Janela de Libras</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/libras (PIP / Paritária)</div>
+                </div>
+            </button>
+
+            <!-- Chat Feed -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/chat', this)" title="Copiar URL do Feed de Chat RNP + YouTube">
+                <span style="font-size: 18px; margin-right: 6px">💬</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Feed de Chat (RNP+YT)</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/chat (Transparente)</div>
+                </div>
+            </button>
+
+            <!-- Chat Destaque -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/chat/featured', this)" title="Copiar URL do Destaque de Mensagem">
+                <span style="font-size: 18px; margin-right: 6px">⭐</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Chat em Destaque</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/chat/featured (Lower Third)</div>
+                </div>
+            </button>
+
+            <!-- Grid de Câmeras -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/cameras/grid', this)" title="Copiar URL do Grid Dinâmico de Webcams">
+                <span style="font-size: 18px; margin-right: 6px">👥</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Grid de Câmeras</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/cameras/grid (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Slides / Apresentação -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/presentation', this)" title="Copiar URL dos Slides da Apresentação">
+                <span style="font-size: 18px; margin-right: 6px">📽️</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Slides Apresentação</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/presentation (Slides Puros)</div>
+                </div>
+            </button>
+
+            <!-- O master de áudio agora vem do /stage (ver botão "Palco Composto");
+                 os áudios individuais ficam no rack de áudio abaixo, com link próprio. -->
+        </div>
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="palco-preview" data-cat="palco" data-span="2">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-preview para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco palco-preview para a direita">›</button>
+            </span>
+        </div>
+    <div class="card" data-block="palco-preview">
+        <div class="section-title">
+            <span style="display: flex; align-items: center; gap: 6px">
+                <span>🎭 Palco Composto (Slides + Câmeras)</span>
+            </span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+            </div>
+        </div>
+
+        <div class="obs-grid-preview-box" style="height: 180px">
+            <iframe id="stagePreviewIframe" src="/stage?audio=0"></iframe>
+        </div>
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="cameras" data-cat="cameras" data-span="2">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco cameras para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco cameras para a direita">›</button>
+            </span>
+        </div>
+    <div class="card">
+        <div class="section-title">
+            <span>🎥 Grid de Câmeras OBS (Ao Vivo)</span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button id="btnToggleCamPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('cameras')">Ocultar preview</button>
+            </div>
+        </div>
+
+        <div class="obs-grid-preview-box">
+            <iframe id="gridPreviewIframe" src="/cameras/grid?audio=0"></iframe>
+        </div>
+
+        <div class="grid-options-bar">
+            <div class="grid-opt-group">
+                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px">
+                    <input type="checkbox" id="chkShowNames" {chk_show_names} onchange="updateGridConfig()">
+                    <span>Exibir Nomes</span>
+                </label>
+            </div>
+
+            <div class="grid-opt-group">
+                <label style="margin: 0; font-size: 12px">Estilo:</label>
+                <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
+                    <option value="glass" {sel_glass}>Glass (Vidro)</option>
+                    <option value="pill" {sel_pill}>Pill (Pílula)</option>
+                    <option value="minimal" {sel_min}>Minimal Dark</option>
+                    <option value="glow" {sel_glow}>Neon Glow</option>
+                </select>
+            </div>
+
+            <div class="grid-opt-group">
+                <label style="margin: 0; font-size: 12px">Layout:</label>
+                <select id="selGridLayout" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
+                    <option value="auto" {sel_layout_auto}>🤖 Auto (1920x600)</option>
+                    <option value="row" {sel_layout_row}>➡️ Linha Horizontal</option>
+                    <option value="column" {sel_layout_col}>⬇️ Coluna Vertical</option>
+                    <option value="grid" {sel_layout_grid}>🔲 Grid Quadrantes</option>
+                </select>
+            </div>
+
+            <div class="grid-opt-group">
+                <label style="margin: 0; font-size: 12px">Formato Câmera:</label>
+                <select id="selCamFormat" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
+                    <option value="original" {sel_fmt_original}>📐 Original (sem corte)</option>
+                    <option value="paisagem" {sel_fmt_paisagem}>🖼️ Paisagem 16:9</option>
+                    <option value="quadrada" {sel_fmt_quadrada}>⬜ Quadrada 1:1</option>
+                    <option value="retrato" {sel_fmt_retrato}>📱 Retrato 9:16</option>
+                    <option value="esticado" {sel_fmt_esticado}>↔️ Esticado (preencher)</option>
+                    <option value="auto" {sel_fmt_auto}>🤖 Auto (corte atual)</option>
+                </select>
+            </div>
+
+            <div class="grid-opt-group" style="width: 100%">
+                <button class="btn-ctrl" style="width: 100%" onclick="clearFocusAndPins()">🔄 Restaurar Grid Equilibrado</button>
+            </div>
+        </div>
+
+        <div class="section-title">
+            <span>Câmeras Sincronizadas (<span id="camTotalCount">0</span>)</span>
+        </div>
+
+        <div class="preview-grid" id="camerasGrid">
+            <div style="font-size: 12px; padding: 10px">Nenhuma câmera ligada no momento.</div>
+        </div>
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="chat" data-cat="chat" data-span="2">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco chat para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco chat para a direita">›</button>
+            </span>
+        </div>
     <div class="card">
         <div class="section-title">
             <span>💬 Chat & Destaque (Lower-Third)</span>
@@ -3233,8 +3079,165 @@ async def get_control_panel():
             </div>
         </div>
     </div>
+    </section>
+    <section class="dock-bloco" data-bloco="palco-presets" data-cat="palco" data-span="1">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-presets para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco palco-presets para a direita">›</button>
+            </span>
+        </div>
+    <div class="card" data-block="palco-presets">
+        <div class="section-title"><span>Presets de Cena</span></div>
 
-    <!-- SEÇÃO APRESENTAÇÃO -->
+        <div class="preset-buttons-grid">
+            <button id="btnPreset_side-by-side" class="btn-ctrl active-preset" onclick="setStagePreset('side-by-side')">
+                📺 Lado a Lado (70/30)
+            </button>
+            <button id="btnPreset_bottom-bar" class="btn-ctrl" onclick="setStagePreset('bottom-bar')">
+                ⬇️ Slide Top + Rodapé
+            </button>
+            <button id="btnPreset_pip-bottom-right" class="btn-ctrl" onclick="setStagePreset('pip-bottom-right')">
+                🖼️ PIP Canto Inferior
+            </button>
+            <button id="btnPreset_pip-top-right" class="btn-ctrl" onclick="setStagePreset('pip-top-right')">
+                ↗️ PIP Canto Superior
+            </button>
+            <button id="btnPreset_split-50-50" class="btn-ctrl" onclick="setStagePreset('split-50-50')">
+                ⚖️ Split 50 / 50
+            </button>
+            <button id="btnPreset_slide-only" class="btn-ctrl" onclick="setStagePreset('slide-only')">
+                📊 Somente Slides
+            </button>
+        </div>
+
+        <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="palco-libras" data-cat="palco" data-span="1">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco palco-libras para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco palco-libras para a direita">›</button>
+            </span>
+        </div>
+    <div class="card" data-block="palco-libras">
+        <div class="section-title"><span>Libras</span></div>
+        <div class="grid-options-bar" style="margin-top: 8px">
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
+                <label style="margin: 0; font-size: 12px; font-weight: 700">🤟 Tamanho Libras:</label>
+                <select id="selLibrasSize" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateLibrasSizeConfig()">
+                    <option value="equal" {sel_lib_equal}>👥 Igual ao Palestrante (Padrão IFES)</option>
+                    <option value="huge" {sel_lib_huge}>📐 Gigante Flutuante (560x315)</option>
+                    <option value="large" {sel_lib_large}>📺 Grande Flutuante (480x270)</option>
+                    <option value="medium" {sel_lib_med}>▫️ Médio Flutuante (380x214)</option>
+                </select>
+            </div>
+            <div style="width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px; flex-wrap: wrap; gap: 6px">
+                <button id="btnAutoLibras" class="btn-ctrl active-pin" style="padding: 3px 8px; font-size: 11px" onclick="toggleLibrasAutoDetect()">
+                    🛡️ Auto-Reconhecimento: ATIVO
+                </button>
+                <div style="display: flex; align-items: center; gap: 6px">
+                    <span id="savedInterpretersCount" style="font-size: 11px">0 salvos</span>
+                    <button class="btn-ctrl" style="padding: 2px 6px; font-size: 10.5px" onclick="clearSavedLibras()" title="Limpar lista de nomes de intérpretes salvos">🗑️ Limpar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="enquete" data-cat="palco" data-span="1">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco enquete para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco enquete para a direita">›</button>
+            </span>
+        </div>
+    <div id="pollDockCard" class="card poll-card" >
+        <div class="poll-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px">
+            <div style="display: flex; align-items: center; gap: 6px">
+                <span style="font-size: 14px">📊</span>
+                <strong style="font-size: 13px" id="pollStatusTitle">Enquete da Sala RNP</strong>
+                <span id="pollBadgeStatus" class="badge disconnected" style="font-size: 10px; padding: 2px 6px">⚪ Standby</span>
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="simulatePoll()" title="Simular uma enquete de teste no OBS para testar o posicionamento">🧪 Testar no OBS</button>
+                <button class="btn btn-ctrl" style="padding: 3px 8px; font-size: 11px" onclick="clearPoll()">🗑️ Limpar</button>
+            </div>
+        </div>
+
+        <div class="grid-options-bar" style="margin-bottom: 10px">
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
+                <label style="margin: 0; font-size: 12px; font-weight: 700">🎯 Exibir no OBS:</label>
+                <select id="selPollDisplayMode" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
+                    <option value="results_only" {sel_pm_results}>📊 Somente Resultados Finais (Recomendado)</option>
+                    <option value="always" {sel_pm_always}>🗳️ Votação Ao Vivo + Resultados</option>
+                    <option value="hidden" {sel_pm_hidden}>❌ Ocultar no OBS</option>
+                </select>
+            </div>
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
+                <label style="margin: 0; font-size: 12px; font-weight: 600">⏱️ Tempo na Tela:</label>
+                <select id="selPollDuration" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
+                    <option value="10" {sel_pd_10}>⏱️ 10 segundos</option>
+                    <option value="15" {sel_pd_15}>⏱️ 15 segundos (Padrão)</option>
+                    <option value="30" {sel_pd_30}>⏱️ 30 segundos</option>
+                    <option value="60" {sel_pd_60}>⏱️ 60 segundos (1 min)</option>
+                    <option value="0" {sel_pd_inf}>♾️ Fixo (Até Fechar)</option>
+                </select>
+            </div>
+            <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
+                <label style="margin: 0; font-size: 12px; font-weight: 600">🎨 Estilo da Enquete:</label>
+                <select id="selPollStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
+                    <option value="neon" {sel_pstyle_neon}>⚡ Neon Glow</option>
+                    <option value="glass" {sel_pstyle_glass}>💎 Glassmorphism</option>
+                    <option value="bubbles" {sel_pstyle_bubbles}>💬 Discord Bubbles</option>
+                    <option value="cyber" {sel_pstyle_cyber}>🎬 Cyberpunk Broadcast</option>
+                    <option value="minimal" {sel_pstyle_min}>📄 Minimal Slate</option>
+                </select>
+            </div>
+            <div style="width: 100%; display: flex; gap: 6px; margin-top: 6px">
+                <button id="btnForcePollShow" class="btn-ctrl" style="flex:1" onclick="toggleForcePoll(true)">
+                    ✨ Mostrar no OBS Agora
+                </button>
+                <button id="btnForcePollHide" class="btn-ctrl" style="flex:1" onclick="toggleForcePoll(false)">
+                    ❌ Ocultar Agora
+                </button>
+            </div>
+        </div>
+
+        <div style="font-size: 11px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px">
+            <span>📡 <strong>Dica OBS:</strong> Cole o link acima em uma fonte de <em>Navegador (1920x1080 transparente)</em>. Ela se ativará automaticamente quando houver enquete.</span>
+        </div>
+
+        <div class="poll-question" id="pollQuestionText" style="font-size: 13px; font-weight: 800; margin-bottom: 8px">Aguardando início de enquete...</div>
+        <div class="poll-options-grid" id="pollOptionsContainer" style="display: flex; flex-direction: column; gap: 6px"></div>
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="slides" data-cat="palco" data-span="1">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco slides para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco slides para a direita">›</button>
+            </span>
+        </div>
+    <div class="card">
+        <div class="section-title">
+            <span>📊 Apresentação / Slides</span>
+            <button id="btnToggleScreenPreview" class="btn-ctrl" onclick="RnpDock.togglePreview('presentation')">Ocultar preview</button>
+        </div>
+        <div class="thumb-box" style="height: 200px">
+            <img id="thumbScreen" src="/raw_frame/presentation" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
+        </div>
+    </div>
+    </section>
+    <section class="dock-bloco" data-bloco="aviso" data-cat="conexao" data-span="1">
+        <div class="dock-bloco-head">
+            <span class="dock-bloco-move">
+                <button class="dock-move" data-move="-1" title="Mover bloco para a esquerda" aria-label="Mover bloco aviso para a esquerda">‹</button>
+                <button class="dock-move" data-move="1" title="Mover bloco para a direita" aria-label="Mover bloco aviso para a direita">›</button>
+            </span>
+        </div>
+    <div class="card dock-notice">
+        {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
     </div>
     </section>
     </div>

@@ -647,8 +647,8 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
    fixa, o rack empacota à esquerda como um console; não há coluna interna extra. */
 /* Mesa de verdade: cada canal com largura CONSTANTE (não estica com a tela);
    a linha empacota à esquerda e sobra espaço à direita, como num console. */
-.dock-group[data-group="audio"] .audio-channel-strip { flex: 0 0 170px; width: 170px; }
-.dock-group[data-group="audio"] #noIndividualChannelsPlaceholder { flex: 0 0 280px; }
+.dock-bloco[data-bloco="mixer"] .audio-channel-strip { flex: 0 0 170px; width: 170px; }
+.dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { flex: 0 0 280px; }
 
 .dock-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .dock-tab {
@@ -675,48 +675,39 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-tab { font-size: 10px; }
 }
 
-.dock-group { display: none; }
-/* Mosaico interno: os cards do grupo ativo se distribuem em colunas auto-fit,
-   então larguras médias não deixam o vão que uma coluna única deixaria. O head
-   fica FORA deste grid (senão o span 1/-1 impediria o auto-fit de colapsar). */
-.dock-group.is-active { display: block; }
-.dock-group-body {
+/* Modelo de blocos: cada card é cidadão do mosaico (categoria + span + reordenação).
+   No estreito as abas filtram por categoria (.is-off esconde); no largo o CSS mostra
+   tudo e os spans montam o mosaico. Span 2 só a partir de 900px — abaixo disso o grid
+   tem 1 trilha e um span 2 criaria trilha implícita (estouro horizontal). */
+.dock-bloco { position: relative; }
+.dock-bloco.is-off { display: none; }
+.dock-bloco[data-span="2"] { grid-column: span 1; }
+.dock-mosaico {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: 1fr;
     gap: 8px;
     align-items: start;
 }
-.dock-group-body .card { margin-bottom: 0; }
+.dock-mosaico .card { margin-bottom: 0; }
 /* Aviso de modo (WebRTC/legado): bloco de leitura, não de operação. */
 .dock-notice { font-size: 11px; color: var(--text-muted); line-height: 1.55; }
 .dock-notice p { margin: 0; }
 
 @media (min-width: 900px) {
     .dock-tabs { display: none; }
-    /* Mosaico 2x2: 4 trilhos, cada grupo reordenável ocupa 2 (spans uniformes
-       preservam a previsibilidade das setas de reordenação). */
-    .dock-groups {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        align-items: start;
-    }
-    .dock-group,
-    .dock-group.is-active {
-        display: block;
-        grid-column: span 2;
-    }
+    /* Mosaico: 4 trilhos; blocos largos ocupam 2. Spans mistos podem deixar vãos —
+       é o preço de tamanhos variados com reordenação livre (a ordem salva manda). */
+    .dock-mosaico { grid-template-columns: repeat(4, 1fr); }
+    .dock-bloco.is-off { display: block; }
+    .dock-bloco[data-span="2"] { grid-column: span 2; }
 }
-
-/* Ultra-largo: mais trilhos para os blocos não esticarem nem haver deserto.
-   1800-2399: 6 trilhos (3 grupos/linha). >=2400 (ex.: 3840x1440): 10 trilhos,
-   os 5 grupos span 2 cabem em UMA linha — sem buraco e sem rolagem vertical,
-   que é o que importa numa tela de 1440 de altura. */
+/* Tela de produção 3840x1440: com 10 trilhos, os 5 blocos span 2 fecham a primeira
+   linha e os 5 de span 1 a segunda — sem rolagem vertical numa tela de 1440. */
 @media (min-width: 1800px) {
-    .dock-groups { grid-template-columns: repeat(6, 1fr); }
+    .dock-mosaico { grid-template-columns: repeat(6, 1fr); }
 }
 @media (min-width: 2400px) {
-    .dock-groups { grid-template-columns: repeat(10, 1fr); }
+    .dock-mosaico { grid-template-columns: repeat(10, 1fr); }
 }
 
 /* Preview desativado: o src foi zerado (para de decodificar); o contêiner explica. */
@@ -773,22 +764,15 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 .pill-state { font-size: 10px; color: var(--text); }
 
-/* Cabeçalho de grupo: nome + setas de reordenação (ordem persiste no servidor). */
-.dock-group-head {
+/* Cabeçalho de bloco: só as setas de reordenação, no canto (o card já tem título). */
+.dock-bloco-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 6px;
-    margin-bottom: 6px;
+    margin-bottom: 2px;
 }
-.dock-group-name {
-    font-size: var(--label-size);
-    font-weight: var(--label-weight);
-    letter-spacing: var(--label-tracking);
-    text-transform: uppercase;
-    color: var(--text-muted);
-}
-.dock-group-move { display: flex; gap: 2px; }
+.dock-bloco-move { display: flex; gap: 2px; }
 .dock-move {
     width: 22px;
     height: 22px;
@@ -842,10 +826,10 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     }
     .dock-monitor-fixed .pill-dot { width: 9px; height: 9px; flex-shrink: 0; }
     .dock-monitor-fixed .card { padding: 8px 10px; }
-    .dock-group[data-group="audio"] .mixer-info { display: none; }
-    .dock-group[data-group="audio"] .meter-scale-vertical { display: none; }
-    .dock-group[data-group="audio"] .vu-track-vertical { height: 48px; }
-    .dock-group[data-group="audio"] .audio-mixer-rack { max-height: 190px; overflow-x: auto; overflow-y: hidden; }
-    .dock-group[data-group="audio"] #noIndividualChannelsPlaceholder { height: 150px; min-height: 0; }
-    .dock-group[data-group="audio"] em { display: none; }
+    .dock-bloco[data-bloco="mixer"] .mixer-info { display: none; }
+    .dock-bloco[data-bloco="mixer"] .meter-scale-vertical { display: none; }
+    .dock-bloco[data-bloco="mixer"] .vu-track-vertical { height: 48px; }
+    .dock-bloco[data-bloco="mixer"] .audio-mixer-rack { max-height: 190px; overflow-x: auto; overflow-y: hidden; }
+    .dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { height: 150px; min-height: 0; }
+    .dock-bloco[data-bloco="mixer"] em { display: none; }
 }

@@ -164,46 +164,47 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertIn('id="connectPanelCard"', html)
         self.assertIn('id="connectPopover"', html)
 
-    def test_ordem_dos_grupos_e_configuravel_e_validada(self):
-        # A ordem dos painéis é preferência persistida no config do servidor (todos os
+    def test_ordem_dos_blocos_e_configuravel_e_validada(self):
+        # A ordem dos blocos é preferência persistida no config do servidor (todos os
         # clientes iguais), então /api/grid/config precisa validar como permutação.
-        ordem = ['palco', 'conexao', 'audio', 'chat', 'cameras']
-        r = self.client.post('/api/grid/config', json={'dock_group_order': ordem})
+        ordem = ['fontes', 'mixer', 'chat', 'cameras', 'palco-preview',
+                 'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso']
+        r = self.client.post('/api/grid/config', json={'dock_block_order': ordem})
         self.assertEqual(r.status_code, 200)
-        self.assertIn('data-dock-order="palco,conexao,audio,chat,cameras"',
+        self.assertIn('data-block-order="' + ','.join(ordem) + '"',
                       self.client.get('/control').text,
-                      'O dock deve renderizar os grupos na ordem salva.')
-        for invalida in (['conexao', 'conexao', 'palco', 'cameras', 'audio'],
-                         ['conexao', 'palco', 'cameras', 'audio'],
-                         ['conexao', 'palco', 'cameras', 'audio', 'chat', 'extra'],
-                         'conexao,palco'):
-            r = self.client.post('/api/grid/config', json={'dock_group_order': invalida})
+                      'O dock deve renderizar a ordem salva no contêiner do mosaico.')
+        for invalida in (['mixer', 'mixer'] + ordem[2:],
+                         ordem[:-1],
+                         ordem + ['extra'],
+                         'mixer,fontes'):
+            r = self.client.post('/api/grid/config', json={'dock_block_order': invalida})
             self.assertEqual(r.status_code, 400, f'Ordem inválida {invalida} deve ser rejeitada.')
-        self.assertEqual(self.state.dock_group_order, ordem,
+        self.assertEqual(self.state.dock_block_order, ordem,
                          'Uma ordem rejeitada não pode mutar o estado.')
 
     def test_monitor_de_fontes_fica_na_zona_fixa(self):
         # Decisão C híbrida: o monitor é informação de live, então sobe para a zona
-        # fixa (comprimido no estreito, completo no largo) e sai do grupo Conexão.
+        # fixa (comprimido no estreito, completo no largo) e sai do mosaico.
         html = self.client.get('/control').text
         self.assertIn('dock-monitor-fixed', html)
         self.assertLess(html.index('dock-monitor-fixed'), html.index('dock-tabs'),
                         'O monitor deve vir antes das abas, na zona fixa.')
         mon = html[html.index('dock-monitor-fixed'):html.index('dock-tabs')]
         self.assertIn('healthPillRnp', mon, 'O monitor completo mora na zona fixa.')
-        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
-        self.assertNotIn('healthPillRnp', conexao, 'O monitor sai do grupo Conexão.')
+        mosaico = html[html.index('id="dockMosaico"'):html.index('<script', html.index('id="dockMosaico"'))]
+        self.assertNotIn('healthPillRnp', mosaico, 'O monitor sai do mosaico.')
 
     def test_youtube_mora_no_popover_de_conexoes(self):
         # Integrar o chat do YouTube é uma conexão de fonte, como a RNP: mora no
-        # popover de Conexões da barra, não como bloco do Palco.
+        # popover de Conexões da barra, não como bloco do mosaico.
         html = self.client.get('/control').text
         self.assertLess(html.index('id="connectPopover"'), html.index('btnYtConnect'),
                         'O controle do YouTube deve estar dentro do popover.')
         self.assertLess(html.index('btnYtConnect'), html.index('dock-monitor-fixed'),
                         'O popover termina antes do monitor.')
-        palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
-        self.assertNotIn('btnYtConnect', palco, 'O YouTube sai do grupo Palco.')
+        mosaico = html[html.index('id="dockMosaico"'):html.index('<script', html.index('id="dockMosaico"'))]
+        self.assertNotIn('btnYtConnect', mosaico, 'O YouTube sai do mosaico.')
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('Conexões', barra, 'O botão do popover passa a se chamar Conexões.')
 
@@ -227,13 +228,13 @@ class MediaRoutesTests(unittest.TestCase):
 
     def test_aviso_webrtc_e_bloco_com_card_na_conexao(self):
         # O aviso de modo WebRTC ficou órfão (parágrafo solto no corpo do Palco,
-        # renderizando como coluna sem card no mosaico). Virou bloco com card.
+        # renderizando como coluna sem card no mosaico). Virou bloco da categoria Conexão.
         html = self.client.get('/control').text
-        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
-        self.assertIn('dock-notice', conexao, 'O aviso deve ser um card na Conexão.')
-        self.assertIn('Modo WebRTC', conexao)
-        palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
-        self.assertNotIn('Modo WebRTC', palco, 'O aviso não pode ficar órfão no Palco.')
+        aviso = html[html.index('data-bloco="aviso"'):]
+        self.assertIn('dock-notice', aviso, 'O aviso deve ser um card no bloco aviso.')
+        self.assertIn('Modo WebRTC', aviso)
+        self.assertIn('data-bloco="aviso" data-cat="conexao"', html,
+                      'O bloco do aviso pertence à categoria Conexão.')
 
     def test_conexao_vira_menu_dropdown_na_barra(self):
         # Decisão do usuário: o painel de conexão deixa de ser bloco e vira popover
@@ -247,9 +248,9 @@ class MediaRoutesTests(unittest.TestCase):
                       'O painel de conexão deve morar dentro do popover.')
         self.assertNotIn('dockConnectFixed', html,
                          'O contêiner de reparenting por largura foi abolido.')
-        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
-        self.assertNotIn('connectPanelCard', conexao,
-                         'O painel sai do grupo Conexão (virou popover).')
+        mosaico = html[html.index('id="dockMosaico"'):html.index('<script', html.index('id="dockMosaico"'))]
+        self.assertNotIn('connectPanelCard', mosaico,
+                         'O painel sai do mosaico (virou popover).')
 
     def test_cada_fonte_tem_um_unico_botao_de_link(self):
         # Os links de fonte existiam 2-3x (tile na Conexão + botão solto em outra
@@ -280,40 +281,42 @@ class MediaRoutesTests(unittest.TestCase):
 
     def test_escudo_anti_inatividade_fica_na_barra_de_status(self):
         # Pedido do usuário: o aviso de anti-inatividade é estado global da sessão,
-        # então mora ao lado do indicador de conexão, não enterrado no grupo Conexão.
+        # então mora ao lado do indicador de conexão, não enterrado no mosaico.
         html = self.client.get('/control').text
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertIn('shieldBadge', barra,
                       'O escudo anti-inatividade deve ficar na barra de status.')
-        conexao = html[html.index('id="group-conexao"'):html.index('id="group-palco"')]
-        self.assertNotIn('shieldBadge', conexao,
-                         'O escudo não pode ficar duplicado no grupo Conexão.')
+        self.assertEqual(html.count('shieldBadge'), 1,
+                         'O escudo não pode ficar duplicado em outro lugar do dock.')
 
-    def test_shell_tem_zona_fixa_e_cinco_grupos_com_mixer_como_bloco(self):
-        # O mixer deixou de ser fixo: virou bloco do grupo Áudio (5ª aba). A zona
-        # fixa fica só com barra de status + monitor de fontes.
+    def test_shell_tem_zona_fixa_e_mosaico_de_blocos(self):
+        # Modelo de blocos: a unidade do mosaico é o card (categoria + span + ordem),
+        # não o grupo. A zona fixa fica só com barra de status + monitor de fontes.
         html = self.client.get('/control').text
-        for marcador in ('dock-statusbar', 'dock-monitor-fixed', 'dock-tabs', 'dock-groups'):
+        for marcador in ('dock-statusbar', 'dock-monitor-fixed', 'dock-tabs', 'dock-mosaico'):
             self.assertIn(marcador, html, f'Shell do dock precisa de {marcador}.')
-        for grupo in ('conexao', 'palco', 'cameras', 'audio', 'chat'):
-            self.assertIn(f'data-group="{grupo}"', html, f'Grupo {grupo} ausente.')
+        for bloco in ('mixer', 'fontes', 'palco-preview', 'cameras', 'chat',
+                      'palco-presets', 'palco-libras', 'enquete', 'slides', 'aviso'):
+            self.assertIn(f'data-bloco="{bloco}"', html, f'Bloco {bloco} ausente.')
+        self.assertNotIn('dock-group', html, 'Os grupos foram abolidos em favor dos blocos.')
         self.assertNotIn('dock-audio-fixed', html,
                          'O mixer não é mais zona fixa: virou bloco reordenável.')
-        audio = html[html.index('id="group-audio"'):html.index('id="group-chat"')]
-        self.assertIn('audioDockCard', audio, 'O mixer mora no grupo Áudio.')
+        mixer = html[html.index('data-bloco="mixer"'):html.index('data-bloco="fontes"')]
+        self.assertIn('audioDockCard', mixer, 'O mixer mora no bloco mixer.')
         self.assertLess(html.index('dock-monitor-fixed'), html.index('dock-tabs'),
                         'O monitor continua na zona fixa, antes das abas.')
-        palco = html[html.index('id="group-palco"'):html.index('id="group-cameras"')]
-        self.assertIn('Apresentação', palco, 'Slides/Apresentação deve estar no grupo Palco.')
-        self.assertIn('pollDockCard', palco, 'A enquete é bloco do Palco.')
+        self.assertIn('data-bloco="slides" data-cat="palco"', html,
+                      'Apresentação é bloco da categoria Palco.')
+        self.assertIn('data-bloco="enquete" data-cat="palco"', html,
+                      'Enquete é bloco da categoria Palco.')
 
     def test_barra_de_status_nao_duplica_medidor_master(self):
         html = self.client.get('/control').text
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
         self.assertNotIn('vuMasterBar', barra,
                          'Barra de status não pode repetir o medidor master do mixer.')
-        audio = html[html.index('id="group-audio"'):html.index('id="group-chat"')]
-        self.assertIn('vuMasterBar', audio, 'O medidor master vive no bloco de Áudio.')
+        audio = html[html.index('data-bloco="mixer"'):html.index('data-bloco="fontes"')]
+        self.assertIn('vuMasterBar', audio, 'O medidor master vive no bloco mixer.')
 
     def test_dock_sem_link_de_teste_webrtc(self):
         # WebRTC hoje é o transporte padrão, não um experimento: o link "Abrir teste
