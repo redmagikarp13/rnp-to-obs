@@ -84,6 +84,7 @@
     function connectPeaks() {
         const pws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/peaks_out');
         pws.onmessage = (event) => {
+            if (document.hidden) return;   // janela oculta não repinta medidores
             let picos;
             try { picos = JSON.parse(event.data); } catch (_) { return; }
             for (const [id, peak] of Object.entries(picos)) {
@@ -99,6 +100,6 @@
         pws.onclose = () => setTimeout(connectPeaks, 2000);
     }
     connectPeaks();
-    setInterval(refresh, 500);
+    setInterval(() => { if (!document.hidden) refresh(); }, 500);
     refresh();
 })();

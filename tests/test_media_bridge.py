@@ -231,11 +231,27 @@ class MediaRoutesTests(unittest.TestCase):
         badge = comp[comp.index('.badge {'):comp.index('}', comp.index('.badge {'))]
         self.assertIn('border-radius:', badge, '.badge precisa do pill na camada de componentes.')
 
+    def test_captura_pcm_usa_audioworklet_e_paginas_pausam_ocultas(self):
+        # ScriptProcessorNode fazia callback de captura na main thread a ~23 Hz (CPU
+        # no piso da ponte); AudioWorklet move isso para a thread de áudio. E página
+        # oculta (dock minimizado/aba de fundo) não precisa pollar nem repintar.
+        js = (Path(__file__).resolve().parent.parent / 'web' / 'media-source.js').read_text(encoding='utf-8')
+        self.assertIn('audioWorklet.addModule', js, 'Captura PCM deve usar AudioWorklet.')
+        self.assertIn('createScriptProcessor', js, 'ScriptProcessor resta só como fallback.')
+        self.assertLess(js.index('audioWorklet.addModule'), js.index('createScriptProcessor'),
+                        'O fallback não pode vir antes do caminho de worklet.')
+        html = self.client.get('/control').text
+        self.assertIn('document.hidden', html, 'Polls do dock devem pausar com a janela oculta.')
+        mixer = self.client.get('/assets/audio-mixer.js').text
+        self.assertIn('document.hidden', mixer, 'A mesa deve pausar repaint com janela oculta.')
+        dock = self.client.get('/assets/dock.js').text
+        self.assertIn('document.hidden', dock, 'O fps da barra deve pausar com janela oculta.')
+
     def test_sampler_de_picos_nao_pode_ser_gateado_por_ouvintes(self):
         # Gatear o sampler por assinantes de /ws/peaks_out quebrou a detecção de
         # fala: o servidor lê audioInfo().peak no sync_loop mesmo com a mesa do
         # dock fechada. O pico precisa continuar sendo amostrado sempre.
-        js = self.client.get('/assets/media-source.js').text
+        js = (Path(__file__).resolve().parent.parent / 'web' / 'media-source.js').read_text(encoding='utf-8')
         self.assertNotIn('peaksWanted', js,
                          'O sampler de picos não pode pausar por falta de ouvintes da mesa.')
 

@@ -135,7 +135,6 @@
         const ctx = new AudioContext({sampleRate: 48000});
         ctx.resume().catch(() => {});
         const master = ctx.createGain();
-        const proc = ctx.createScriptProcessor(2048, 1, 1);
         const nodes = new Map();
         window._rnpAudioNodes = nodes;
         const ws = new WebSocket(url);
@@ -145,13 +144,62 @@
         // real. Sem isto o medidor individual ficaria refém de um poll de 500ms.
         const pws = new WebSocket(url.replace('/ws/pcm_in', '/ws/peaks_in'));
         pws.onerror = () => pws.close();
-        proc.onaudioprocess = event => {
-            if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000 * 4 / 4) {
-                ws.send(event.inputBuffer.getChannelData(0).buffer);
+        // Captura em AudioWorklet: o processador roda na thread de áudio e só cruza
+        // para a main thread a cada 2048 amostras (buffer transferido, sem cópia).
+        // O ScriptProcessorNode anterior fazia callback na main thread a ~23 Hz —
+        // CPU queimada no piso da ponte mesmo sem ninguém ouvindo.
+        const WORKLET_SRC = `class PcmCapture extends AudioWorkletProcessor {
+            constructor() { super(); this.buf = new Float32Array(2048); this.n = 0; }
+            process(inputs) {
+                const ch = inputs[0] && inputs[0][0];
+                if (ch) {
+                    let off = 0;
+                    while (off < ch.length) {
+                        const take = Math.min(ch.length - off, this.buf.length - this.n);
+                        this.buf.set(ch.subarray(off, off + take), this.n);
+                        this.n += take; off += take;
+                        if (this.n === this.buf.length) {
+                            this.port.postMessage(this.buf, [this.buf.buffer]);
+                            this.buf = new Float32Array(2048); this.n = 0;
+                        }
+                    }
+                }
+                return true;
             }
+        }
+        registerProcessor('pcm-capture', PcmCapture);`;
+        let capNode = null;
+        const ligarFallback = () => {
+            // Navegador sem AudioWorklet OU página fora de contexto seguro
+            // (about:blank tem audioWorklet undefined): volta ao ScriptProcessor.
+            const proc = ctx.createScriptProcessor(2048, 1, 1);
+            proc.onaudioprocess = ev => {
+                if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000) {
+                    ws.send(ev.inputBuffer.getChannelData(0).buffer);
+                }
+            };
+            master.connect(proc);
+            proc.connect(ctx.destination);
+            window._pcmProc = proc;
         };
-        master.connect(proc);
-        proc.connect(ctx.destination);
+        if (!ctx.audioWorklet) {
+            ligarFallback();
+        } else {
+            const blobUrl = URL.createObjectURL(new Blob([WORKLET_SRC], {type: 'application/javascript'}));
+            ctx.audioWorklet.addModule(blobUrl).then(() => {
+                URL.revokeObjectURL(blobUrl);
+                capNode = new AudioWorkletNode(ctx, 'pcm-capture', {
+                    numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+                });
+                capNode.port.onmessage = e => {
+                    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000) {
+                        ws.send(e.data.buffer);
+                    }
+                };
+                master.connect(capNode);
+                capNode.connect(ctx.destination);
+            }).catch(ligarFallback);
+        }
         const scan = () => {
             let entries = audioEntries(true);
             // Salas sem trilhas identificadas continuam com master, nunca canais falsos.
@@ -216,7 +264,10 @@
             for (const node of nodes.values()) {
                 node.input.disconnect(); node.gain.disconnect(); node.analyser.disconnect();
             }
-            nodes.clear(); master.disconnect(); proc.disconnect(); ctx.close();
+            nodes.clear(); master.disconnect();
+            if (capNode) capNode.disconnect();
+            if (window._pcmProc) { window._pcmProc.disconnect(); window._pcmProc = null; }
+            ctx.close();
             window._pcmCaptureActive = false;
             window._rnpApplyAudioControls = null;
             setTimeout(() => startPcm(url), 2000);

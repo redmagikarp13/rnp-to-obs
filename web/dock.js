@@ -147,6 +147,7 @@
     const fpsEl = document.getElementById('dockFps');
     if (fpsEl) {
         setInterval(async () => {
+            if (document.hidden) return;   // janela oculta não amostra fps
             try {
                 const st = await (await fetch('/api/status?t=' + Date.now(), { cache: 'no-store' })).json();
                 const valores = (st.cameras || []).map(c => c.fps).filter(v => typeof v === 'number');

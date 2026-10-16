@@ -2068,6 +2068,14 @@ PCM_AUDIO_SCRIPT = """
         let nextStartTime = 0;
         let monitorGain = null;
 
+        // Janela oculta não reproduz monitor local: suspende o grafo de áudio em vez
+        // de deixar o WebAudio consumindo CPU em segundo plano.
+        document.addEventListener('visibilitychange', () => {
+            if (!audioCtx) return;
+            if (document.hidden) audioCtx.suspend();
+            else audioCtx.resume();
+        });
+
         function getAudioContext() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
@@ -3816,6 +3824,7 @@ async def get_control_panel():
         }}
 
         async function fetchStatus() {{
+            if (document.hidden) return;   // aba/janela oculta não precisa de status
             try {{
                 const res = await fetch('/api/status?t=' + Date.now());
                 if (!res.ok) {{
