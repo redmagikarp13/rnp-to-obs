@@ -67,8 +67,8 @@ if len(sys.argv) > 1 and sys.argv[1] == "--server":
 
 
 PROJECT_DIR = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-SERVER_URL = "http://127.0.0.1:3333/control"
-PROFILE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", PROJECT_DIR), "RNP_to_OBS_Profile")
+
+import dock_window
 
 def is_server_running() -> bool:
     try:
@@ -120,20 +120,6 @@ def start_server():
     show_error("O servidor RNP to OBS não respondeu na porta 3333 após 15 segundos.\nVerifique se o Firewall permite conexões locais.")
     return False
 
-def find_browser_app() -> str:
-    candidates = [
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
-        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-    ]
-    for c in candidates:
-        if c and os.path.exists(c):
-            return c
-    return ""
-
 def stop_server_api():
     try:
         req = urllib.request.Request(
@@ -167,31 +153,11 @@ def prompt_on_window_close():
     if res == IDYES:
         stop_server_api()
 
-def launch_app_window():
-    browser = find_browser_app()
-    os.makedirs(PROFILE_DIR, exist_ok=True)
-
-    if browser:
-        cmd = [
-            browser,
-            f"--app={SERVER_URL}",
-            "--window-size=1360,860",
-            f"--user-data-dir={PROFILE_DIR}",
-            "--disable-features=Translate",
-            "--app-id=rnp_to_obs_control",
-            "--no-first-run",
-            "--disable-default-apps"
-        ]
-        proc = subprocess.Popen(cmd)
-        proc.wait()
-        prompt_on_window_close()
-    else:
-        import webbrowser
-        webbrowser.open(SERVER_URL)
-
 def main():
     if start_server():
-        launch_app_window()
+        # Janela nativa (pywebview) com fallback automático para navegador em
+        # modo app; o prompt de encerrar o servidor roda ao fechar a janela.
+        dock_window.launch_app_window(prompt_on_window_close)
 
 if __name__ == "__main__":
     main()

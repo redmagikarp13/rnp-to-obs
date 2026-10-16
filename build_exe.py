@@ -38,6 +38,15 @@ def build_executable():
         "--collect-all=fastapi",
         "--collect-all=pytchat",
         "--collect-all=emoji",
+        # Janela nativa do painel: pywebview usa pythonnet/clr_loader no backend
+        # EdgeChromium (Windows) e traz assets js/dll — sem collect-all o .exe abre
+        # e cai no fallback de navegador silenciosamente.
+        "--collect-all=webview",
+        "--collect-all=pythonnet",
+        "--collect-all=clr_loader",
+        "--collect-all=bottle",
+        "--collect-all=proxy_tools",
+        "--hidden-import=dock_window",
         "--hidden-import=uvicorn.logging",
         "--hidden-import=uvicorn.loops",
         "--hidden-import=uvicorn.loops.auto",
