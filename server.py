@@ -2954,6 +2954,7 @@ async def get_control_panel():
                 <span>🎭 Palco Composto (Slides + Câmeras)</span>
             </span>
             <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <button id="btnToggleStagePreview" class="btn-ctrl" onclick="RnpDock.togglePreview('stage')">Ocultar preview</button>
             </div>
         </div>
 
@@ -4443,7 +4444,7 @@ async def get_control_panel():
             }}
         }}
 
-        setInterval(fetchStatus, 250);
+        setInterval(fetchStatus, 1000);
         fetchStatus();
     </script>
     {PCM_AUDIO_SCRIPT}

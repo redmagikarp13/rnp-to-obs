@@ -107,10 +107,12 @@
     const PREVIEW_ALVO = {
         cameras: 'gridPreviewIframe',
         presentation: 'thumbScreen',
+        stage: 'stagePreviewIframe',
     };
     const PREVIEW_BOTAO = {
         cameras: 'btnToggleCamPreview',
         presentation: 'btnToggleScreenPreview',
+        stage: 'btnToggleStagePreview',
     };
     let previewOff = { cameras: false, presentation: false };
     try { previewOff = Object.assign(previewOff, JSON.parse(localStorage.getItem(PREVIEW_KEY) || '{}')); } catch (_) {}

@@ -24,34 +24,50 @@ REPETICOES = 2
 
 RECURSOS = [
     ('/stage (palco composto, sem áudio local)', '/stage?audio=0', None),
+    ('/stage (com áudio PCM, como no OBS)', '/stage', None),
     ('/presentation (slides puros)', '/presentation', None),
     ('/cameras/grid (grid de webcams)', '/cameras/grid?audio=0', None),
     ('/control (dock, previews ON)', '/control', None),
     ('/control (dock, previews OFF)', '/control',
      'localStorage.setItem("rnpDockPreviewsOff", JSON.stringify({cameras:true,presentation:true}))'),
+    ('/control (dock, TUDO off: previews + stage)', '/control',
+     'localStorage.setItem("rnpDockPreviewsOff", JSON.stringify({cameras:true,presentation:true,stage:true}))'),
     ('/chat (feed unificado)', '/chat', None),
 ]
 
 
 async def videos_vivos(pg):
-    """True se algum <video> está de fato decodificando (frames crescem em 1s)."""
+    """True se algum <video> está de fato decodificando (frames crescem em 1s).
+    Desce em iframes same-origin: os previews do dock (/cameras/grid, /stage)
+    vivem dentro de iframes, e olhar só o documento topo daria 'sem mídia'."""
+    js = """async () => {
+        const vivos = vs => vs.some((v, i) => {
+            const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : -1;
+            return q >= 0 && q > (vs._q0 ? vs._q0[i] : -1);
+        });
+        const docs = [document];
+        for (const f of document.querySelectorAll('iframe')) {
+            try { if (f.contentDocument) docs.push(f.contentDocument); } catch (e) {}
+        }
+        const vs = docs.flatMap(d => [...d.querySelectorAll('video')]);
+        if (!vs.length) return false;
+        vs._q0 = vs.map(v => v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : -1);
+        await new Promise(r => setTimeout(r, 1000));
+        return vivos(vs);
+    }"""
     try:
-        return await pg.evaluate("""async () => {
-            const vs = [...document.querySelectorAll('video')];
-            if (!vs.length) return false;
-            const q0 = vs.map(v => v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : -1);
-            await new Promise(r => setTimeout(r, 1000));
-            return vs.some((v, i) => {
-                const q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : -1;
-                return q > q0[i] && q0[i] >= 0;
-            });
-        }""")
+        return await pg.evaluate(js)
     except Exception:
         return False
 
 
 def eh_ponte(cmd):
     c = ' '.join(cmd).lower()
+    # O navegador dos consumidores TAMBÉM é msedge headless: sem excluir o perfil
+    # de medição, a CPU do cliente entrava na conta da "ponte" (bug que inflou os
+    # deltas de /control em ~70 pontos).
+    if 'measure_profile' in c:
+        return False
     if 'server.py' in c and ('rnptoobs' in c or 'c:\\python314' in c):
         return True
     return 'msedge' in c and ('--headless' in c or 'remote-debugging-pipe' in c)
@@ -96,6 +112,10 @@ def amostrar(segundos):
 
 
 async def main():
+    filtro = sys.argv[1:] or None
+    recursos = [r for r in RECURSOS if not filtro or any(f in r[0] for f in filtro)]
+    if not recursos:
+        print('Nenhum recurso casa com o filtro.', RECURSOS and RECURSOS[0][0]); sys.exit(2)
     if not pids_de(eh_ponte):
         print('ERRO: ponte nao detectada.'); sys.exit(1)
 
@@ -131,7 +151,7 @@ async def main():
         aquecer()
 
         print(f'{"recurso":42s} {"ponte d/consum":>16s} {"cliente/consum":>16s}  amostras')
-        for rotulo, caminho, init in RECURSOS:
+        for rotulo, caminho, init in recursos:
             dps, dcs = [], []
             for _ in range(REPETICOES):
                 base_p, _ = amostrar(JANELA_BASE)
@@ -141,7 +161,7 @@ async def main():
                     await pg.goto(BASE + caminho, wait_until='domcontentloaded')
                 await paginas[0].wait_for_timeout(5000)
                 vivos = sum([1 for pg in paginas if await videos_vivos(pg)])
-                if caminho in ('/chat',) or vivos:
+                if caminho in ('/chat', '/control') or vivos:
                     aquecer()
                     rec_p, rec_c = amostrar(JANELA_REC)
                     dps.append((rec_p - base_p) / N_CONS)

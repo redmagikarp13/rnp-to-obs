@@ -326,7 +326,7 @@ class MediaRoutesTests(unittest.TestCase):
         # Previews ao vivo (grid de câmeras, apresentação) pesam CPU; o operador
         # precisa poder desligá-los sem perder os links de fonte.
         html = self.client.get('/control').text
-        for idb in ('btnToggleCamPreview', 'btnToggleScreenPreview'):
+        for idb in ('btnToggleCamPreview', 'btnToggleScreenPreview', 'btnToggleStagePreview'):
             self.assertIn(idb, html, f'Botão {idb} de controle de preview ausente.')
 
     def test_escudo_anti_inatividade_fica_na_barra_de_status(self):
