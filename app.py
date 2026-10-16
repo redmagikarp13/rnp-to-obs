@@ -70,6 +70,10 @@ PROJECT_DIR = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)
 
 import dock_window
 
+# O app só encerra o serviço que ELE iniciou: um servidor que já rodava antes
+# (dev, ou operação só pelo OBS sem painel) não é dele para matar.
+SERVIDOR_INICIADO_PELO_APP = False
+
 def is_server_running() -> bool:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -131,33 +135,18 @@ def stop_server_api():
     except Exception:
         pass
 
-def prompt_on_window_close():
-    if not is_server_running():
-        return
-
-    MB_YESNO = 0x04
-    MB_ICONQUESTION = 0x20
-    IDYES = 6
-
-    # Pergunta se o usuário quer encerrar tudo ou manter o servidor para o OBS Studio
-    res = ctypes.windll.user32.MessageBoxW(
-        0,
-        "A janela do Painel de Controle foi fechada.\n\n"
-        "Deseja desconectar da sala RNP e encerrar o servidor agora?\n\n"
-        "• Clique em 'Sim' para sair da sala e fechar o aplicativo completamente.\n"
-        "• Clique em 'Não' caso o OBS Studio ainda esteja transmitindo em segundo plano.",
-        "RNP to OBS - Encerrar Sessão?",
-        MB_YESNO | MB_ICONQUESTION
-    )
-
-    if res == IDYES:
+def parar_servidor_ao_fechar():
+    # Fechar a janela encerra o serviço, sem prompt: quem abriu o app decidiu
+    # encerrar a sessão. Servidor de terceiros (já rodando antes) permanece.
+    if SERVIDOR_INICIADO_PELO_APP:
         stop_server_api()
 
 def main():
+    global SERVIDOR_INICIADO_PELO_APP
+    ja_rodava = is_server_running()
     if start_server():
-        # Janela nativa (pywebview) com fallback automático para navegador em
-        # modo app; o prompt de encerrar o servidor roda ao fechar a janela.
-        dock_window.launch_app_window(prompt_on_window_close)
+        SERVIDOR_INICIADO_PELO_APP = not ja_rodava
+        dock_window.launch_app_window(parar_servidor_ao_fechar)
 
 if __name__ == "__main__":
     main()

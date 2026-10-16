@@ -87,5 +87,24 @@ class DockWindowTests(unittest.TestCase):
         nav.assert_called_once()
 
 
+class FecharJanelaEncerraServicoTests(unittest.TestCase):
+    def test_fechar_janela_encerra_servico_iniciado_pelo_app(self):
+        # Pedido do usuário: encerrar a janela encerra o serviço — sem prompt.
+        import app
+        app.SERVIDOR_INICIADO_PELO_APP = True
+        with mock.patch.object(app, 'stop_server_api') as stop:
+            app.parar_servidor_ao_fechar()
+        stop.assert_called_once()
+
+    def test_fechar_janela_nao_mata_servico_de_terceiros(self):
+        # Um servidor que já rodava antes do app (dev, ou operação só pelo OBS)
+        # não é do app para matar: fechar a janela não pode derrubá-lo.
+        import app
+        app.SERVIDOR_INICIADO_PELO_APP = False
+        with mock.patch.object(app, 'stop_server_api') as stop:
+            app.parar_servidor_ao_fechar()
+        stop.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
