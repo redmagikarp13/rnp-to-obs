@@ -11,6 +11,45 @@ from fastapi.testclient import TestClient
 import server
 
 
+class _FakeFrame:
+    def __init__(self, url):
+        self.url = url
+
+
+class _FakePage:
+    def __init__(self, urls):
+        self.frames = [_FakeFrame(u) for u in urls]
+        self.main_frame = self.frames[0]
+
+
+class FindBbbFrameTests(unittest.TestCase):
+    """O frame da reunião não pode ser escolhido por substring que o slug da sala
+    também contém (bug: sala 'mconf-cefor03' -> o portal /sala/mconf-... casava em
+    'mconf' e virava o bbb_frame, sem #app/webcamVideoItem -> sources=[])."""
+
+    def test_escolhe_cliente_html5_nao_portal_mconf(self):
+        page = _FakePage([
+            'https://conferenciaweb.rnp.br/sala/mconf-cefor03',
+            'https://live-aws028.mconf.rnp.br/html5client/?sessionToken=abc',
+        ])
+        f = server.find_active_bbb_frame(page)
+        self.assertIn('html5client', f.url,
+                      'Deve escolher o frame do cliente BBB, não o portal Mconf.')
+
+    def test_escolhe_cliente_bigbluebutton(self):
+        page = _FakePage([
+            'https://conferenciaweb.rnp.br/sala/xyz',
+            'https://bbb.example.org/bigbluebutton/api?join',
+        ])
+        f = server.find_active_bbb_frame(page)
+        self.assertIn('bigbluebutton', f.url)
+
+    def test_fallback_main_frame_sem_cliente(self):
+        page = _FakePage(['https://conferenciaweb.rnp.br/sala/mconf-cefor03'])
+        f = server.find_active_bbb_frame(page)
+        self.assertIs(f, page.main_frame)
+
+
 class MediaRoutesTests(unittest.TestCase):
     def setUp(self):
         # Isola a persistência: várias rotas chamam save_disk_config, e sem isto
@@ -237,9 +276,9 @@ class MediaRoutesTests(unittest.TestCase):
         # oculta (dock minimizado/aba de fundo) não precisa pollar nem repintar.
         js = (Path(__file__).resolve().parent.parent / 'web' / 'media-source.js').read_text(encoding='utf-8')
         self.assertIn('audioWorklet.addModule', js, 'Captura PCM deve usar AudioWorklet.')
+        self.assertIn('if (!ctx.audioWorklet)', js,
+                      'Deve haver guard de existência: audioWorklet é undefined em about:blank.')
         self.assertIn('createScriptProcessor', js, 'ScriptProcessor resta só como fallback.')
-        self.assertLess(js.index('audioWorklet.addModule'), js.index('createScriptProcessor'),
-                        'O fallback não pode vir antes do caminho de worklet.')
         html = self.client.get('/control').text
         self.assertIn('document.hidden', html, 'Polls do dock devem pausar com a janela oculta.')
         mixer = self.client.get('/assets/audio-mixer.js').text

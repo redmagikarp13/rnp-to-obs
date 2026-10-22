@@ -417,8 +417,17 @@ def log(msg: str):
     print(f"[Bridge] {msg}", flush=True)
 
 def find_active_bbb_frame(page: Page) -> Frame:
-    for f in page.frames:
-        if "html5client" in f.url or "mconf" in f.url:
+    # O cliente real da reunião é o BBB html5 client (ou o endpoint bigbluebutton).
+    frames = page.frames
+    for f in frames:
+        if "html5client" in f.url or "/bigbluebutton/" in f.url:
+            return f
+    # Hosts de reunião Mconf (ex.: live-awsNNN.mconf.rnp.br/...), mas NUNCA o portal
+    # conferenciaweb.rnp.br/sala/<slug>: o slug da sala pode conter "mconf" (ex.:
+    # 'mconf-cefor03') e o predicado amplo escolhia o portal externo, que não tem
+    # #app/webcamVideoItem -> o adaptador via zero mídia e o dock travava em 'conectando'.
+    for f in frames:
+        if "mconf" in f.url and "conferenciaweb" not in f.url and "/sala/" not in f.url:
             return f
     return page.main_frame
 
