@@ -3214,6 +3214,15 @@ async def get_control_panel():
             <button id="btnPreset_slide-only" class="btn-ctrl" onclick="setStagePreset('slide-only')">
                 📊 Somente Slides
             </button>
+            <button id="btnPreset_cameras-only" class="btn-ctrl" onclick="setStagePreset('cameras-only')">
+                👥 Somente Câmeras
+            </button>
+            <button id="btnPreset_camera-libras" class="btn-ctrl" onclick="setStagePreset('camera-libras')">
+                🤟 Câmera + Libras
+            </button>
+            <button id="btnPreset_grid-libras" class="btn-ctrl" onclick="setStagePreset('grid-libras')">
+                🔳 Grid + Libras
+            </button>
         </div>
 
         <!-- CONFIGURAÇÃO DE TAMANHO DA JANELA DE LIBRAS & AUTO-RECONHECIMENTO -->
@@ -3735,7 +3744,7 @@ async def get_control_panel():
         }}
 
         function updatePresetButtonsUI(presetName) {{
-            const presets = ['side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right', 'split-50-50', 'slide-only'];
+            const presets = ['side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right', 'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras'];
             presets.forEach(p => {{
                 const btn = document.getElementById('btnPreset_' + p);
                 if (btn) {{
@@ -4759,6 +4768,18 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             display: none !important;
         }}
 
+        /* 7. PRESETS SEM SLIDE (cameras-only / camera-libras / grid-libras): sem
+           apresentação, a linha de câmeras preenche todo o quadro; cada palco é
+           flex:1 (herdado de .stage-cam-wrap), então N câmeras dividem a largura em
+           partes iguais. É o inverso do slide-only. */
+        .preset-cameras-only .cameras-row,
+        .preset-camera-libras .cameras-row,
+        .preset-grid-libras .cameras-row {{
+            flex: 1 !important;
+            width: 100% !important;
+            height: 100% !important;
+        }}
+
         {NAME_TAG_CSS}
         {CAM_FORMAT_CSS}
         {SPEAKING_CSS}
@@ -4872,6 +4893,44 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 
                     if (pinnedIds.length > 0) {{
                         speakerCams = speakerCams.filter(c => pinnedIds.includes(String(c.id)));
+                    }}
+
+                    // PRESETS SEM SLIDE: sem apresentação, as câmeras preenchem o
+                    // quadro inteiro. camera-libras = principal + Libras (50/50); grid-libras
+                    // = todas as câmeras + Libras; cameras-only = todas as câmeras com a
+                    // Libras como janela flutuante. Cada palco é flex:1, dividindo a largura.
+                    if ((activePreset === 'cameras-only' || activePreset === 'camera-libras' || activePreset === 'grid-libras')
+                            && (speakerCams.length > 0 || librasCams.length > 0)) {{
+                        container.className = 'preset-' + activePreset;
+                        const camsCont = document.createElement('div');
+                        camsCont.className = 'cameras-row';
+                        const box = (c, isLibras) => {{
+                            const w = document.createElement('div');
+                            w.className = 'stage-cam-wrap' + (isLibras ? ' is-libras-box' : '');
+                            w.innerHTML = cameraMarkup(c.id)
+                                + (isLibras ? '<div class="libras-badge-overlay">🤟 Libras</div>' : '')
+                                + (showNames ? `<div class="name-tag style-${{nameStyle}}">${{c.name}}</div>` : '');
+                            return w;
+                        }};
+                        if (activePreset === 'camera-libras') {{
+                            const main = (focusedId ? speakerCams.find(c => String(c.id) === focusedId) : null) || speakerCams[0];
+                            const lb = librasCams[0];
+                            if (main) camsCont.appendChild(box(main, false));
+                            if (lb) camsCont.appendChild(box(lb, true));
+                        }} else {{
+                            speakerCams.forEach(c => camsCont.appendChild(box(c, false)));
+                            if (activePreset === 'grid-libras' && librasCams[0]) camsCont.appendChild(box(librasCams[0], true));
+                        }}
+                        container.appendChild(camsCont);
+                        if (activePreset === 'cameras-only' && librasCams[0]) {{
+                            const lb = librasCams[0];
+                            const fl = document.createElement('div');
+                            fl.className = 'libras-floating-box';
+                            fl.style.cssText = 'width:380px;height:214px;bottom:24px;right:24px;';
+                            fl.innerHTML = cameraMarkup(lb.id) + '<div class="libras-badge-overlay">🤟 Libras</div>';
+                            container.appendChild(fl);
+                        }}
+                        return;
                     }}
 
                     // CASO 1: SEM NENHUMA CÂMERA CONECTADA OU MODO SOMENTE SLIDES

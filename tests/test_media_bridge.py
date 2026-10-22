@@ -351,6 +351,21 @@ class MediaRoutesTests(unittest.TestCase):
                         'Os presets devem terminar antes do bloco de Libras.')
         self.assertLess(i_lib, html.index('selLibrasSize'))
 
+    def test_presets_sem_slide_existem_no_dock_e_no_stage(self):
+        # Pedidos: presets que escondem o slide e deixam as câmeras preencherem tudo.
+        # Cada preset precisa do botão no dock, do nome na lista de UI, do CSS
+        # '.preset-<nome>' e do ramo de layout no /stage.
+        nomes = ('cameras-only', 'camera-libras', 'grid-libras')
+        html = self.client.get('/control').text
+        for p in nomes:
+            self.assertIn(f'btnPreset_{p}', html, f'botão do preset {p} ausente no dock.')
+            self.assertIn(f"'{p}'", html, f'nome {p} ausente da lista de presets do dock.')
+        stage = self.client.get('/stage').text
+        for p in nomes:
+            self.assertIn('.preset-' + p, stage, f'CSS do preset {p} ausente no /stage.')
+        for p in nomes:
+            self.assertIn(p, stage, f'ramo de layout do preset {p} ausente no /stage.')
+
     def test_aviso_webrtc_mora_dentro_do_bloco_de_fontes(self):
         # O aviso de modo WebRTC era um bloco 1x1 próprio que sobrava como tile vazio
         # no mosaico. É informação de setup das fontes, então mora DENTRO do card de
