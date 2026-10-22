@@ -50,6 +50,27 @@ class FindBbbFrameTests(unittest.TestCase):
         self.assertIs(f, page.main_frame)
 
 
+class YouTubeChatTests(unittest.TestCase):
+    def test_pytchat_criado_sem_handler_de_signal(self):
+        # pytchat.create default interruptable=True chama signal.signal(SIGINT), que
+        # estoura dentro de asyncio.to_thread (worker thread) com "signal only works
+        # in main thread" — travando o chat do YouTube. A ponte cria com interruptable=False.
+        chamado = {}
+
+        class _FakeChat:
+            def is_alive(self):
+                return False
+
+        def _fake_create(video_id, **kw):
+            chamado.update(kw)
+            return _FakeChat()
+
+        with patch.object(server.pytchat, 'create', _fake_create):
+            asyncio.run(server.youtube_chat_loop('abc123DEF'))
+        self.assertEqual(chamado.get('interruptable'), False,
+                         'pytchat.create deve rodar com interruptable=False fora da main thread.')
+
+
 class MediaRoutesTests(unittest.TestCase):
     def setUp(self):
         # Isola a persistência: várias rotas chamam save_disk_config, e sem isto

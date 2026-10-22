@@ -461,7 +461,11 @@ async def youtube_chat_loop(video_id: str):
     state.youtube_status = f"Conectando ao YouTube ({video_id})..."
     print(f"[YouTube] Iniciando captura do chat para o vídeo {video_id}...")
     try:
-        chat = await asyncio.to_thread(pytchat.create, video_id=video_id)
+        # interruptable=False: o default do pytchat registra signal.signal(SIGINT),
+        # que estoura ("signal only works in main thread") porque criamos o chat via
+        # asyncio.to_thread (worker). O ciclo de vida já é gerenciado pelo cancelamento
+        # da task asyncio, então não precisamos do handler de SIGINT do pytchat.
+        chat = await asyncio.to_thread(pytchat.create, video_id=video_id, interruptable=False)
         state.youtube_status = f"Ao Vivo no YouTube ({video_id})"
         print(f"[YouTube] Conectado com sucesso ao chat da Live {video_id}!")
 
