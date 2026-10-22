@@ -1705,6 +1705,50 @@ async def get_app_icon_png():
         return FileResponse(p, media_type="image/png")
     return Response(status_code=204)
 
+@app.post("/api/restart")
+async def api_restart():
+    # Reinício forçado da ponte: derruba o estado, cancela as tarefas SEM esperar
+    # preso por uma task travada, fecha o navegador no melhor esforço e reconecta
+    # com a config salva. Recupera uma ponte engasgada onde o 'Conectar' comum
+    # (que só chama start_connection) não consegue subir de novo.
+    log("Reiniciando a ponte (reset completo)...")
+    # Derruba os wait-loops (ex.: 'sala ainda não começou') que testam state.connecting.
+    state.connecting = False
+    state.connected = False
+    alvos = [state.connection_task, state.sync_task, state.content_sync_task,
+             state.keep_alive_task, state.youtube_task]
+    for t in alvos:
+        if t and not t.done():
+            t.cancel()
+    vivos = [t for t in alvos if t and not t.done()]
+    if vivos:
+        await asyncio.wait(vivos, timeout=3)
+    # Fecha navegador/playwright com timeout para não vazar um Edge nem travar aqui.
+    for recurso in (state.context, state.browser):
+        try:
+            if recurso:
+                await asyncio.wait_for(recurso.close(), timeout=5)
+        except Exception:
+            pass
+    try:
+        if state.playwright:
+            await asyncio.wait_for(state.playwright.stop(), timeout=5)
+    except Exception:
+        pass
+    state.browser = None
+    state.context = None
+    state.page = None
+    state.bbb_frame = None
+    state.playwright = None
+    state.cameras_list = []
+    state.audio_channels = []
+    state.voice_speakers = []
+    # Reconecta do zero, em background, com a config salva.
+    state.connection_task = asyncio.create_task(
+        run_connection(state.room_url, state.user_name, state.user_email))
+    return JSONResponse({"status": "restarting"})
+
+
 @app.post("/api/server/stop")
 async def api_server_stop():
     async def _delayed_stop():
@@ -2622,6 +2666,7 @@ async def get_control_panel():
             <button id="btnBarDefaults" class="btn btn-ctrl" onclick="resetAllConfigurations()" title="Restaurar configurações padrão">Padrões</button>
         </span>
         <span id="saveToast" class="badge" style="display:none">Salvo!</span>
+        <button id="btnBarRestart" onclick="restartBridge()" class="btn btn-ctrl" title="Reiniciar a ponte: reset completo e reconectar (recupera quando 'Conectar' não sobe)">↻ Reiniciar</button>
         <button onclick="handleExitApplication()" class="btn btn-danger" title="Desconectar da sala e encerrar o servidor e aplicativo">Parar</button>
         <span class="dock-connect-wrap">
             <button id="btnConnectMenu" class="btn btn-ctrl" aria-expanded="false" aria-controls="connectPopover" title="Configuração de conexão com a sala RNP">Conexões ▾</button>
@@ -4289,6 +4334,19 @@ async def get_control_panel():
             try {{
                 await fetch('/api/disconnect', {{ method: 'POST' }});
             }} catch (e) {{}}
+        }}
+
+        async function restartBridge() {{
+            if (!confirm('Reiniciar a ponte? Isso derruba a conexão atual e reconecta à sala.')) {{
+                return;
+            }}
+            const btn = document.getElementById('btnBarRestart');
+            if (btn) {{ btn.disabled = true; btn.textContent = '↻ Reiniciando...'; }}
+            try {{
+                await fetch('/api/restart', {{ method: 'POST' }});
+            }} catch (e) {{}}
+            // Recarrega após o reset agendar o reconector, para refletir o novo estado.
+            setTimeout(() => location.reload(), 2000);
         }}
 
         async function handleExitApplication() {{

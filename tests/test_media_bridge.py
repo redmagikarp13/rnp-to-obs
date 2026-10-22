@@ -5,7 +5,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from fastapi.testclient import TestClient
 import server
@@ -217,7 +217,7 @@ class MediaRoutesTests(unittest.TestCase):
         # tema; o painel de conexão fica marcado para o dock.js reposicionar por largura.
         html = self.client.get('/control').text
         barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
-        for idb in ('btnBarSave', 'btnBarReload', 'btnBarDefaults'):
+        for idb in ('btnBarSave', 'btnBarReload', 'btnBarDefaults', 'btnBarRestart'):
             self.assertIn(idb, barra, f'{idb} deve estar na barra de status.')
         self.assertNotIn('Memória & Persistência', html,
                          'O card de memória some: virou os botões da barra.')
@@ -404,6 +404,19 @@ class MediaRoutesTests(unittest.TestCase):
         html = self.client.get('/control').text
         for idb in ('btnToggleCamPreview', 'btnToggleScreenPreview', 'btnToggleStagePreview'):
             self.assertIn(idb, html, f'Botão {idb} de controle de preview ausente.')
+
+    def test_api_reiniciar_reseta_e_reconecta(self):
+        # Botão 'Reiniciar': força reset (flags caem, navegador limpo) e agenda um
+        # run_connection novo com a config salva — recupera uma ponte travada onde o
+        # 'Conectar' comum não consegue subir de novo.
+        with patch.object(server, 'run_connection', new=AsyncMock()) as recon:
+            self.state.connected = True
+            self.state.connecting = True
+            r = self.client.post('/api/restart')
+        self.assertEqual(r.status_code, 200, 'Deve responder ao reinício.')
+        self.assertFalse(self.state.connected, 'O reinício derruba connected.')
+        self.assertFalse(self.state.connecting, 'O reinício derruba connecting.')
+        recon.assert_called_once()
 
     def test_escudo_anti_inatividade_fica_na_barra_de_status(self):
         # Pedido do usuário: o aviso de anti-inatividade é estado global da sessão,
