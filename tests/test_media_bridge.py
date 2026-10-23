@@ -622,6 +622,18 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(sorted(valores), sorted(server.CONTROL_THEMES),
                          'O seletor de tema deve oferecer exatamente os temas válidos.')
 
+    def test_handlers_do_dock_moram_em_dock_js_e_nao_inline(self):
+        # Task 6b: o corpo dos handlers saiu do f-string do /control e vive em
+        # web/dock.js. Se alguém re-inlineizar JS, o cache-buster ?v= deixa de valer
+        # e o contrato de seletor globais (onclick -> window.*) pode quebrar silenciosamente.
+        html = self.client.get('/control').text
+        js = self.client.get('/assets/dock.js').text
+        for fn in ('function fetchStatus', 'function setStagePreset', 'function autoSaveField'):
+            self.assertNotIn(fn, html, f'{fn} não deve mais estar no HTML inline do /control.')
+            self.assertIn(fn, js, f'{fn} deve estar servido por /assets/dock.js.')
+        # O PCM master continua inline (é script injetado, não handler do dock).
+        self.assertIn('PCM_AUDIO_SCRIPT', open('server.py', encoding='utf-8').read())
+
     def test_vitrine_de_temas_removida(self):
         for rota in ('/catalog', '/themes'):
             self.assertEqual(self.client.get(rota).status_code, 404,
