@@ -2,7 +2,7 @@
 ; Desenvolvido para Cefor / Ifes
 
 #define MyAppName "RNP to OBS"
-#define MyAppVersion "1.1.2"
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "Cefor / Ifes"
 #define MyAppExeName "RNP to OBS.exe"
 #define MyAppIcon "app_icon.ico"
