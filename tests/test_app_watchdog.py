@@ -32,6 +32,28 @@ class WatchdogTests(unittest.TestCase):
     def test_nao_reanima_sem_processo_rastreado(self):
         self.assertFalse(app._precisa_reanimar(None, encerrando=False, iniciado_pelo_app=True))
 
+    def test_backoff_cresce_exponencialmente_e_satura_no_teto(self):
+        # Sem backoff, um servidor que falha no boot causa respawn infinito a cada 3s.
+        # A espera deve dobrar por queda rapida consecutiva e parar no teto.
+        self.assertEqual(app._proximo_backoff(0), 3)
+        self.assertEqual(app._proximo_backoff(1), 3)
+        self.assertEqual(app._proximo_backoff(2), 6)
+        self.assertEqual(app._proximo_backoff(3), 12)
+        self.assertEqual(app._proximo_backoff(4), 24)
+        self.assertEqual(app._proximo_backoff(5), 48)
+        self.assertEqual(app._proximo_backoff(6), 60)   # 96 -> teto 60
+        self.assertEqual(app._proximo_backoff(20), 60)  # satura
+
+    def test_decidir_espera_reseta_ao_ficar_de_pe(self):
+        # Servidor reanimado que fica de pe zera a contagem (crash unico apos horas
+        # de uptime deve religar logo, nao com backoff acumulado).
+        self.assertEqual(app._decidir_espera(ficou_de_pe=True, falhas_consecutivas=4), (0, 3))
+
+    def test_decidir_espera_acumula_ao_cair_de_novo(self):
+        self.assertEqual(app._decidir_espera(ficou_de_pe=False, falhas_consecutivas=0), (1, 3))
+        self.assertEqual(app._decidir_espera(ficou_de_pe=False, falhas_consecutivas=2), (3, 12))
+        self.assertEqual(app._decidir_espera(ficou_de_pe=False, falhas_consecutivas=6), (7, 60))
+
 
 if __name__ == '__main__':
     unittest.main()

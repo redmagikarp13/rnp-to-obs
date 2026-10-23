@@ -78,6 +78,12 @@ SERVIDOR_INICIADO_PELO_APP = False
 # encerramento intencional (fechar a janela => não reanimar).
 SERVER_PROC = None
 ENCERRANDO = False
+# Backoff do watchdog: espera base entre checagens, dobra por queda rápida
+# consecutiva e satura no teto, para não virar respawn infinito se o boot
+# passar a falhar. Uma queda isolada depois de horas de uptime religa em ~base s.
+_WATCHDOG_BASE = 3
+_WATCHDOG_TETO = 60
+_GRACA_STAB = 8  # s para considerar que o servidor reanimado ficou de pé
 
 def is_server_running() -> bool:
     try:
@@ -142,21 +148,65 @@ def _reanimar_servidor():
         return None
 
 
+def _proximo_backoff(falhas_consecutivas, base=_WATCHDOG_BASE, teto=_WATCHDOG_TETO):
+    """Segundos a esperar dado o número de quedas rápidas consecutivas.
+    Cresce exponencialmente (base, base, 2·base, 4·base, ...) e satura no teto."""
+    if falhas_consecutivas <= 1:
+        return base
+    return min(teto, base * (2 ** (falhas_consecutivas - 1)))
+
+
+def _decidir_espera(ficou_de_pe, falhas_consecutivas, base=_WATCHDOG_BASE, teto=_WATCHDOG_TETO):
+    """Retorna (novas_falhas, nova_espera). Servidor estável zera a contagem; caiu
+    de novo incrementa e cresce o backoff."""
+    if ficou_de_pe:
+        return 0, base
+    novas = falhas_consecutivas + 1
+    return novas, _proximo_backoff(novas, base, teto)
+
+
+def _dorme(segundos):
+    """Dorme em pedaços, acordando cedo se o app estiver encerrando (não segura o
+    fechamento da janela por causa de um backoff longo)."""
+    fim = time.time() + segundos
+    while time.time() < fim and not ENCERRANDO:
+        time.sleep(max(0.0, min(0.5, fim - time.time())))
+
+
 def _zelo_do_servidor():
     """Vigia o processo do servidor enquanto a janela do painel está aberta; se ele
     morre (crash, queda), religa automaticamente. Não religa quando o usuário fecha o
-    app de propósito (ENCERRANDO) nem mexe num servidor que já rodava (não é nosso)."""
+    app de propósito (ENCERRANDO) nem mexe num servidor que já rodava (não é nosso).
+    Usa backoff exponencial com teto: se o servidor cai em loop no boot, as tentativas
+    espaçam cada vez mais (até 60s) em vez de queimar CPU re-spawnando a cada 3s."""
     global SERVER_PROC
+    falhas = 0
+    espera = _WATCHDOG_BASE
     while not ENCERRANDO:
-        time.sleep(3)
+        _dorme(espera)
         if ENCERRANDO:
             break
-        if _precisa_reanimar(SERVER_PROC, ENCERRANDO, SERVIDOR_INICIADO_PELO_APP):
-            print(f"[Watchdog] Servidor caiu (código {SERVER_PROC.poll()}); reanimando...", flush=True)
-            novo = _reanimar_servidor()
-            if novo is not None:
-                SERVER_PROC = novo
-                print("[Watchdog] Servidor reanimado.", flush=True)
+        if not _precisa_reanimar(SERVER_PROC, ENCERRANDO, SERVIDOR_INICIADO_PELO_APP):
+            # Servidor vivo: descarta histórico de quedas rápidas.
+            falhas, espera = 0, _WATCHDOG_BASE
+            continue
+        print(f"[Watchdog] Servidor caiu (código {SERVER_PROC.poll()}); reanimando...", flush=True)
+        novo = _reanimar_servidor()
+        if novo is None:
+            falhas, espera = _decidir_espera(False, falhas)
+            print(f"[Watchdog] Spawn falhou; nova tentativa em {espera}s.", flush=True)
+            continue
+        SERVER_PROC = novo
+        _dorme(_GRACA_STAB)
+        if ENCERRANDO:
+            break
+        ficou_de_pe = is_server_running() and novo.poll() is None
+        falhas, espera = _decidir_espera(ficou_de_pe, falhas)
+        if ficou_de_pe:
+            print("[Watchdog] Servidor reanimado e estável.", flush=True)
+        else:
+            print(f"[Watchdog] Servidor não se manteve ({falhas} queda(s) rápida(s)); "
+                  f"tentativa em {espera}s.", flush=True)
 
 def stop_server_api():
     try:
