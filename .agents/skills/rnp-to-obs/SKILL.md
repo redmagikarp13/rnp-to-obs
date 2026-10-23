@@ -37,6 +37,9 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 - `pip-bottom-right` / `pip-top-right`: Slides em tela cheia com palestrante flutuante em PIP (380x215).
 - `split-50-50`: Divisão paritária meio a meio.
 - `slide-only`: Apenas apresentação.
+- `cameras-only`: **Sem slide** — todas as câmeras preenchendo o quadro; Libras como janela flutuante.
+- `camera-libras`: **Sem slide** — câmera principal (focada/primeira) + Libras em paridade 50/50.
+- `grid-libras`: **Sem slide** — todas as câmeras + Libras na linha, sem apresentação.
 
 ---
 
@@ -53,6 +56,16 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 - **Modo Somente Resultados Finais:** Permanece oculto durante a votação e surge apenas quando o apresentador publica os resultados.
 - **Temporizador na Tela:** 10s, 15s (padrão), 30s, 60s ou permanente.
 - **Auto-Exit:** Faz transição suave de saída após a expiração do tempo.
+
+---
+
+## 📡 Medidor de Qualidade da Conexão (barra do `/control`)
+
+- **Pill na barra fixa**: farol + barras (Boa / Atenção / Ruim / Sem dados) + RTT em ms; detalhe no hover/foco com RTT, jitter e perda de pacotes.
+- **O que mede**: a telemetria WebRTC da mídia **recebida da sala RNP** (`getStats` dos peers de entrada), não um ping. Pingar `127.0.0.1` daria ~0 ms e ICMP é filtrado pelos nós da RNP; o relay local que entrega mídia ao OBS é ignorado (`RnpConnection.ignore`).
+- **Coleta**: `web/connection-quality.js` instala um Proxy sobre `RTCPeerConnection` antes do cliente BBB nascer; `sync_loop` puxa o snapshot a cada ~2 s. Perda é calculada por **delta na janela**, nunca o acumulado da sessão.
+- **Faixas**: Atenção em RTT ≥ 300 ms / jitter ≥ 30 ms / perda ≥ 2%; Ruim em RTT ≥ 600 ms / jitter ≥ 60 ms / perda ≥ 5% ou transporte interrompido. É o **pior valor** entre as trilhas recebidas.
+- **API**: `/api/status` expõe `connection_quality: {level, rtt_ms, jitter_ms, loss_pct, age_ms}`. Amostra vencida (> 6 s) vira `unknown` (não reutiliza valor velho).
 
 ---
 
