@@ -379,41 +379,7 @@
         async function updateLibrasSizeConfig() {
             const libras_size = document.getElementById('selLibrasSize').value;
             activeLibrasSize = libras_size;
-            await fetch('/api/grid/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ libras_size: libras_size })
-            });
-            showSaveNotice();
-        }
-
-        async function updatePollConfig() {
-            const poll_display_mode = document.getElementById('selPollDisplayMode').value;
-            const poll_display_duration = parseInt(document.getElementById('selPollDuration').value);
-            await fetch('/api/poll/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ poll_display_mode, poll_display_duration })
-            });
-            showSaveNotice();
-        }
-
-        async function toggleForcePoll(forceVisible) {
-            await fetch('/api/poll/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ poll_force_visible: forceVisible })
-            });
-            const btnShow = document.getElementById('btnForcePollShow');
-            const btnHide = document.getElementById('btnForcePollHide');
-            if (forceVisible) {
-                btnShow.className = 'btn-ctrl active-pin';
-                btnHide.className = 'btn-ctrl';
-            } else {
-                btnShow.className = 'btn-ctrl';
-                btnHide.className = 'btn-ctrl active-focus';
-            }
-            showSaveNotice();
+            await postSave('/api/grid/config', { libras_size: libras_size });
         }
 
         function updatePresetButtonsUI(presetName) {
@@ -438,14 +404,14 @@
             }
             const badge = document.getElementById('ytStatusBadge');
             badge.className = 'badge connecting';
-            badge.innerHTML = '● Conectando...';
+            badge.textContent = '● Conectando...';
 
-            await fetch('/api/youtube/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ youtube_url })
-            });
-            showSaveNotice();
+            // Sucesso: o fetchStatus (poll) assume o badge. Falha: reverte e o
+            // postSave já mostrou 'Falha' — não deixar o badge preso em Conectando.
+            if (!await postSave('/api/youtube/connect', { youtube_url })) {
+                badge.className = 'badge disconnected';
+                badge.textContent = '● Não conectado';
+            }
         }
 
         async function handleYtDisconnect() {
@@ -1122,21 +1088,12 @@
             const poll_display_mode = document.getElementById('selPollDisplayMode').value;
             const poll_display_duration = parseInt(document.getElementById('selPollDuration').value);
             const poll_style = document.getElementById('selPollStyle').value;
-            await fetch('/api/poll/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ poll_display_mode, poll_display_duration, poll_style })
-            });
-            showSaveNotice();
+            await postSave('/api/poll/config', { poll_display_mode, poll_display_duration, poll_style });
         }
 
         async function toggleForcePoll(show) {
-            if (show) {
-                await fetch('/api/poll/show', { method: 'POST' });
-            } else {
-                await fetch('/api/poll/hide', { method: 'POST' });
-            }
-            showSaveNotice();
+            // /api/poll/show|hide não recebem payload; postSave envia {}.
+            await postSave(show ? '/api/poll/show' : '/api/poll/hide', {});
         }
 
         async function clearPoll() {

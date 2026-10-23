@@ -1295,6 +1295,10 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
             ('autoSaveField', "autoSaveField('user_name', 'X')", '**/api/config/save'),
             ('saveAllConfigurations', "saveAllConfigurations()", '**/api/config/save'),
             ('setStagePreset', "setStagePreset('bottom-bar')", '**/api/grid/config'),
+            ('updateLibrasSizeConfig', "updateLibrasSizeConfig()", '**/api/grid/config'),
+            ('updatePollConfig', "updatePollConfig()", '**/api/poll/config'),
+            ('toggleForcePoll', "toggleForcePoll(true)", '**/api/poll/show'),
+            ('handleYtConnect', "document.getElementById('ytUrl').value='abc123'; handleYtConnect()", '**/api/youtube/connect'),
         ]
         async def responder_500(route):
             await route.fulfill(status=500, body='{"message":"disco cheio"}')
