@@ -1285,6 +1285,33 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.receiver.locator('#saveToast').is_visible())
         self.assertIn('salvar Libras', await self.receiver.locator('#logBox').inner_text())
 
+    async def test_dock_nao_diz_salvo_quando_gravacao_falha(self):
+        # Bug: autoSaveField, saveAllConfigurations e setStagePreset mostravam o toast
+        # 'Salvo!' mesmo com o backend devolvendo erro (não conferiam response.ok),
+        # ao contrário de saveSpeakThreshold. spec §6: falha de gravação não pode fingir sucesso.
+        await self.receiver.goto(self.url + '/control')
+        toast = self.receiver.locator('#saveToast')
+        casos = [
+            ('autoSaveField', "autoSaveField('user_name', 'X')", '**/api/config/save'),
+            ('saveAllConfigurations', "saveAllConfigurations()", '**/api/config/save'),
+            ('setStagePreset', "setStagePreset('bottom-bar')", '**/api/grid/config'),
+        ]
+        async def responder_500(route):
+            await route.fulfill(status=500, body='{"message":"disco cheio"}')
+        for nome, chamada, rota in casos:
+            with self.subTest(handler=nome):
+                await self.receiver.route(rota, responder_500)
+                await self.receiver.evaluate(chamada)
+                await asyncio.sleep(0.4)
+                texto = await toast.text_content()
+                self.assertNotIn('Salvo', texto, f'{nome} anunciou sucesso com a gravação falhando.')
+                self.assertIn('Falha', texto, f'{nome} deve sinalizar a falha, não silenciar.')
+                await self.receiver.unroute(rota)
+        # Caminho de sucesso continua anunciando 'Salvo!'.
+        await self.receiver.evaluate("autoSaveField('user_name', 'Y')")
+        await asyncio.sleep(0.4)
+        self.assertIn('Salvo', await toast.text_content(), 'Gravação válida deve confirmar Salvo!.')
+
     async def test_dock_lista_audio_sem_camera_e_aplica_mute(self):
         await self.producer.evaluate("() => document.querySelectorAll('video').forEach(v => v.remove())")
         await self.receiver.goto(self.url + '/control')

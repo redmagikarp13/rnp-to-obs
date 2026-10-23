@@ -3593,10 +3593,37 @@ async def get_control_panel():
         }};
 
 
-        function showSaveNotice() {{
+        let _saveToastTimer = null;
+        function showSaveNotice(ok, msg) {{
             const toast = document.getElementById('saveToast');
+            const sucesso = ok !== false;
+            toast.textContent = sucesso ? 'Salvo!' : ('Falha: ' + (msg || 'erro ao salvar'));
+            toast.className = 'badge ' + (sucesso ? 'connected' : 'disconnected');
             toast.style.display = 'inline-flex';
-            setTimeout(() => {{ toast.style.display = 'none'; }}, 2000);
+            clearTimeout(_saveToastTimer);
+            _saveToastTimer = setTimeout(() => {{ toast.style.display = 'none'; }}, 2600);
+        }}
+
+        // Grava config e SÓ anuncia sucesso se o servidor aceitar (response.ok).
+        // Modelo do saveSpeakThreshold; usado por autoSaveField, saveAllConfigurations
+        // e setStagePreset, que antes mostravam 'Salvo!' mesmo com o POST falhando.
+        async function postSave(endpoint, payload) {{
+            try {{
+                const res = await fetch(endpoint, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(payload)
+                }});
+                if (!res.ok) {{
+                    const corpo = await res.json().catch(() => ({{}}));
+                    throw new Error(corpo.message || ('HTTP ' + res.status));
+                }}
+                showSaveNotice(true);
+                return true;
+            }} catch (erro) {{
+                showSaveNotice(false, erro.message);
+                return false;
+            }}
         }}
 
         function toggleMonitorMute() {{
@@ -3645,12 +3672,7 @@ async def get_control_panel():
         async function autoSaveField(field, val) {{
             const payload = {{}};
             payload[field] = val;
-            await fetch('/api/config/save', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify(payload)
-            }});
-            showSaveNotice();
+            await postSave('/api/config/save', payload);
         }}
 
         // Handler dedicado: posta na rota que VALIDA o limiar (/api/grid/config) e, ao
@@ -3705,12 +3727,7 @@ async def get_control_panel():
                 libras_camera_ids: librasCamIds
             }};
 
-            await fetch('/api/config/save', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify(config)
-            }});
-            showSaveNotice();
+            await postSave('/api/config/save', config);
         }}
 
         async function loadAllConfigurations() {{
@@ -3750,12 +3767,7 @@ async def get_control_panel():
         async function setStagePreset(presetName) {{
             activeStagePreset = presetName;
             updatePresetButtonsUI(presetName);
-            await fetch('/api/grid/config', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ stage_preset: presetName, libras_size: activeLibrasSize }})
-            }});
-            showSaveNotice();
+            await postSave('/api/grid/config', {{ stage_preset: presetName, libras_size: activeLibrasSize }});
         }}
 
         async function updateLibrasSizeConfig() {{
