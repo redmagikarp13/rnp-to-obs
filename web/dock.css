@@ -600,6 +600,51 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 }
 .dock-statusbar h1 { margin: 0; font-size: 14px; }
 .dock-statusbar-fps { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+
+/* Qualidade da entrada RNP: texto + barras, nunca somente cor. */
+.connection-meter-wrap { display: inline-flex; }
+.connection-meter {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 26px;
+    padding: 3px 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-inset);
+    color: var(--text);
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: help;
+}
+.connection-meter:hover { background: var(--surface-2); }
+.connection-meter:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.connection-rtt { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.connection-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.connection-bars i { width: 3px; height: 4px; background: var(--text-disabled); }
+.connection-bars i:nth-child(2) { height: 7px; }
+.connection-bars i:nth-child(3) { height: 10px; }
+.connection-bars i:nth-child(4) { height: 14px; }
+.connection-meter[data-level="good"] .is-lit { background: var(--ok); }
+.connection-meter[data-level="fair"] .is-lit { background: var(--warn); }
+.connection-meter[data-level="poor"] .is-lit { background: var(--danger); }
+.connection-details {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    width: min(360px, calc(100vw - 24px));
+    padding: var(--space-5);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+.connection-meter[aria-expanded="true"] + .connection-details { display: block; }
+
 .dock-statusbar-theme {
     display: flex;
     align-items: center;

@@ -97,6 +97,173 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.cfg_patch.stop()
         self._cfg_dir.cleanup()
 
+    async def test_medidor_conexao_calcula_deltas_e_ignora_relay(self):
+        # Apenas getStats é simulado: a coleta, seleção ICE e cálculo são reais.
+        await self.receiver.evaluate("""() => {
+            window.RTCPeerConnection = class extends EventTarget {
+                constructor() { super(); this.connectionState = 'connected'; this.rows = []; }
+                async getStats() { return new Map(this.rows.map(r => [r.id, {...r}])); }
+            };
+        }""")
+        await self.receiver.evaluate(MEDIA_SOURCE_JS)
+        result = await self.receiver.evaluate("""async () => {
+            if (!window.RnpConnection) return null;
+            window.remotePeer = new RTCPeerConnection();
+            window.rtp = {id:'in', type:'inbound-rtp', kind:'video', transportId:'t',
+                timestamp:1000, packetsReceived:900, packetsLost:100, jitter:0.012};
+            remotePeer.rows = [rtp,
+                {id:'t', type:'transport', selectedCandidatePairId:'chosen'},
+                {id:'chosen', type:'candidate-pair', state:'succeeded', currentRoundTripTime:0.08},
+                {id:'unused', type:'candidate-pair', state:'succeeded', currentRoundTripTime:9}];
+            window.relay = new RTCPeerConnection();
+            relay.rows = [{...rtp, jitter:4}];
+            RnpConnection.ignore(relay);
+            return await RnpConnection.sample();
+        }""")
+        self.assertIsNotNone(result, 'O adaptador deve medir os peers de entrada da RNP.')
+        self.assertEqual(result['rtt_ms'], 80)
+        self.assertEqual(result['jitter_ms'], 12)
+        self.assertIsNone(result['loss_pct'], 'Uma amostra não mede perda recente.')
+        result = await self.receiver.evaluate("""async () => {
+            rtp.timestamp += 2000; rtp.packetsReceived += 98; rtp.packetsLost += 2;
+            return await RnpConnection.sample();
+        }""")
+        self.assertAlmostEqual(result['loss_pct'], 2, places=3)
+        # A perda acumulada antiga (100) não pode contaminar a janela atual (2%).
+        result = await self.receiver.evaluate("""async () => {
+            rtp.timestamp += 2000; rtp.packetsReceived += 100;
+            return await RnpConnection.sample();
+        }""")
+        self.assertEqual(result['loss_pct'], 0)
+        result = await self.receiver.evaluate("""async () => {
+            rtp.timestamp += 2000; rtp.packetsReceived = 5; rtp.packetsLost = 0;
+            return await RnpConnection.sample();
+        }""")
+        self.assertIsNone(result['loss_pct'], 'Reset de contador exige nova base.')
+        result = await self.receiver.evaluate('() => RnpConnection.sample()')
+        self.assertIsNone(result['jitter_ms'], 'Relatório parado não é uma medição nova.')
+        self.assertIsNone(result['rtt_ms'])
+        result = await self.receiver.evaluate("""async () => {
+            remotePeer.connectionState = 'disconnected';
+            return await RnpConnection.sample();
+        }""")
+        self.assertTrue(result['degraded'])
+        result = await self.receiver.evaluate("""async () => {
+            remotePeer.connectionState = 'closed';
+            return await RnpConnection.sample();
+        }""")
+        self.assertFalse(result['degraded'])
+        self.assertIsNone(result['rtt_ms'])
+
+    async def test_medidor_conexao_timeout_nao_bloqueia_nem_sobrepoe_coleta(self):
+        self.assertTrue(await self.producer.evaluate('!!window.RnpConnection'))
+        result = await self.producer.evaluate("""async () => {
+            const pc = new RTCPeerConnection();
+            let calls = 0;
+            pc.getStats = () => { calls++; return new Promise(() => {}); };
+            const first = RnpConnection.sample();
+            const second = RnpConnection.sample();
+            const same = first === second;
+            const sample = await first;
+            pc.close();
+            const recovered = await RnpConnection.sample();
+            return {same, calls, sample, recovered};
+        }""")
+        self.assertTrue(result['same'])
+        self.assertEqual(result['calls'], 1)
+        self.assertTrue(result['sample']['unavailable'])
+        self.assertIsNone(result['sample']['rtt_ms'])
+        self.assertFalse(result['recovered'].get('unavailable', False))
+
+    async def test_medidor_conexao_responsivo_e_teclado(self):
+        await self.receiver.goto(self.url + '/control')
+        meter = self.receiver.locator('#connectionMeter')
+        details = self.receiver.locator('#connectionDetails')
+        self.assertEqual(await meter.count(), 1)
+        for theme in ('broadcast', 'ifes'):
+            await self.receiver.evaluate('(theme) => document.body.className = "theme-" + theme', theme)
+            for width in (1280, 360):
+                await self.receiver.set_viewport_size({'width': width, 'height': 800})
+                self.state.connection_stats = {'rtt_ms': 80, 'jitter_ms': 5, 'loss_pct': 0, 'age_ms': 0}
+                self.state.connection_stats_received_at = time.monotonic()
+                await self.receiver.wait_for_function('document.querySelector("#connectionMeter").dataset.level === "good"')
+                await meter.click()
+                self.assertTrue(await details.is_visible())
+                for element in (meter, details):
+                    box = await element.bounding_box()
+                    self.assertGreaterEqual(box['x'], 0)
+                    self.assertLessEqual(box['x'] + box['width'], width)
+                    self.assertLessEqual(box['y'] + box['height'], 800)
+                self.assertEqual(await meter.locator('.is-lit').count(), 4)
+                # Capturas opcionais de dados sintéticos, fora do código distribuído.
+                capture_dir = os.environ.get('RNP_TEST_SCREENSHOTS')
+                if capture_dir:
+                    await self.receiver.screenshot(path=os.path.join(capture_dir, f'connection-{theme}-{width}.png'))
+                    self.assertTrue(await details.is_visible())
+                await self.receiver.keyboard.press('Escape')
+                self.assertFalse(await details.is_visible())
+                await self.receiver.keyboard.press('Tab')
+                await self.receiver.keyboard.press('Shift+Tab')
+                self.assertTrue(await details.is_visible(), 'O detalhe também deve abrir pelo teclado.')
+                await self.receiver.keyboard.press('Escape')
+
+    async def test_medidor_conexao_webrtc_real_chega_a_api(self):
+        self.assertTrue(await self.producer.evaluate('!!window.RnpConnection'),
+                        'Coletor deve ser instalado junto do adaptador de mídia.')
+        await self.producer.evaluate("""async () => {
+            window.sender = new RTCPeerConnection({iceServers: []});
+            window.incoming = new RTCPeerConnection({iceServers: []});
+            sender.onicecandidate = e => { if(e.candidate) incoming.addIceCandidate(e.candidate); };
+            incoming.onicecandidate = e => { if(e.candidate) sender.addIceCandidate(e.candidate); };
+            sender.addTrack(fixtureTracks[0], new MediaStream([fixtureTracks[0]]));
+            await sender.setLocalDescription(await sender.createOffer());
+            await incoming.setRemoteDescription(sender.localDescription);
+            await incoming.setLocalDescription(await incoming.createAnswer());
+            await sender.setRemoteDescription(incoming.localDescription);
+        }""")
+        task = asyncio.create_task(server.sync_loop())
+        try:
+            async with httpx.AsyncClient() as client:
+                result = None
+                for _ in range(80):
+                    result = (await client.get(self.url + '/api/status')).json().get('connection_quality')
+                    if result and result['jitter_ms'] is not None:
+                        break
+                    await asyncio.sleep(.1)
+                self.assertIsNotNone(result)
+                self.assertIsNotNone(result['jitter_ms'], 'Métrica real deve chegar pelo sync_loop.')
+                self.assertIn(result['level'], ('good', 'fair', 'poor'))
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_medidor_conexao_dock_estados_e_api_indisponivel(self):
+        await self.receiver.goto(self.url + '/control')
+        meter = self.receiver.locator('#connectionMeter')
+        self.assertEqual(await meter.count(), 1, 'O medidor deve estar na barra do dock.')
+        for level, metrics, label in (
+            ('good', {'rtt_ms':80, 'jitter_ms':5, 'loss_pct':0}, 'Boa'),
+            ('fair', {'rtt_ms':350, 'jitter_ms':5, 'loss_pct':0}, 'Atenção'),
+            ('poor', {'rtt_ms':80, 'jitter_ms':70, 'loss_pct':0}, 'Ruim'),
+            ('unknown', {}, 'Sem dados'),
+        ):
+            self.state.connection_stats = dict(metrics, age_ms=0)
+            self.state.connection_stats_received_at = time.monotonic()
+            await self.receiver.wait_for_function(
+                'level => document.querySelector("#connectionMeter").dataset.level === level', arg=level)
+            self.assertIn(label, await meter.inner_text())
+            if level == 'good':
+                self.assertIn('80 ms', await meter.inner_text())
+                await meter.focus()
+                self.assertTrue(await self.receiver.locator('#connectionDetails').is_visible())
+                self.assertIn('Perda', await self.receiver.locator('#connectionDetails').inner_text())
+        self.state.connected = False
+        await self.receiver.wait_for_function('document.querySelector("#connectionMeter").dataset.level === "disconnected"')
+        self.assertIn('Desconectado', await meter.inner_text())
+        await self.receiver.route('**/api/status*', lambda route: route.abort())
+        await self.receiver.wait_for_function('document.querySelector("#connectionMeter").dataset.level === "unavailable"')
+        self.assertIn('Ponte indisponível', await meter.inner_text())
+
     async def test_sinalizacao_registra_causa_sem_expor_sdp(self):
         async with httpx.AsyncClient() as client:
             with self.assertLogs('media_bridge', level='WARNING') as logs:

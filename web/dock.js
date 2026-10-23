@@ -143,18 +143,96 @@
 
     Object.keys(PREVIEW_ALVO).forEach(applyPreview);
 
-    // FPS médio das câmeras na barra de status (a origem amostra por câmera).
+    // FPS e conexão compartilham a consulta já existente; não há ping ao localhost.
     const fpsEl = document.getElementById('dockFps');
-    if (fpsEl) {
-        setInterval(async () => {
-            if (document.hidden) return;   // janela oculta não amostra fps
-            try {
-                const st = await (await fetch('/api/status?t=' + Date.now(), { cache: 'no-store' })).json();
+    const connectionMeter = document.getElementById('connectionMeter');
+    const connectionDetails = document.getElementById('connectionDetails');
+    const qualityLabels = {good: 'Boa', fair: 'Atenção', poor: 'Ruim',
+        unknown: 'Sem dados', disconnected: 'Desconectado', connecting: 'Conectando',
+        unavailable: 'Ponte indisponível'};
+    const metric = (n, suffix) => typeof n === 'number' && Number.isFinite(n)
+        ? n.toLocaleString('pt-BR', {maximumFractionDigits: 1}) + suffix : '—';
+
+    function showConnectionDetails(show) {
+        if (!connectionMeter || !connectionDetails) return;
+        connectionMeter.setAttribute('aria-expanded', String(show));
+        if (show) {
+            const rect = connectionMeter.getBoundingClientRect();
+            connectionDetails.style.top = (rect.bottom + 6) + 'px';
+            connectionDetails.style.left = Math.max(12,
+                Math.min(rect.left, window.innerWidth - connectionDetails.offsetWidth - 12)) + 'px';
+        }
+    }
+    if (connectionMeter) {
+        const wrap = connectionMeter.parentElement;
+        connectionMeter.addEventListener('focus', () => showConnectionDetails(true));
+        connectionMeter.addEventListener('click', () => showConnectionDetails(true));
+        connectionMeter.addEventListener('blur', () => showConnectionDetails(false));
+        wrap.addEventListener('mouseenter', () => showConnectionDetails(true));
+        wrap.addEventListener('mouseleave', () => {
+            if (document.activeElement !== connectionMeter) showConnectionDetails(false);
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') showConnectionDetails(false);
+        });
+        window.addEventListener('resize', () => showConnectionDetails(false));
+    }
+
+    function renderConnection(quality) {
+        if (!connectionMeter) return;
+        const q = quality || {};
+        const level = Object.hasOwn(qualityLabels, q.level) ? q.level : 'unknown';
+        const label = qualityLabels[level];
+        connectionMeter.dataset.level = level;
+        document.getElementById('connectionLabel').textContent = label;
+        document.getElementById('connectionRtt').textContent = q.rtt_ms == null ? '' : metric(q.rtt_ms, ' ms');
+        connectionMeter.setAttribute('aria-label', 'Qualidade da conexão RNP: ' + label);
+        const lit = {good: 4, fair: 2, poor: 1}[level] || 0;
+        connectionMeter.querySelectorAll('.connection-bars i').forEach((bar, i) => bar.classList.toggle('is-lit', i < lit));
+        const reason = {
+            unknown: 'Sem estatísticas recentes. Aguardando mídia WebRTC da sala.',
+            disconnected: 'Conecte a sala para medir a mídia recebida.',
+            connecting: 'Aguardando a conexão com a sala RNP.',
+            unavailable: 'O painel não conseguiu consultar a ponte local. A conexão RNP não pôde ser verificada.'
+        }[level] || ('Latência (RTT): ' + metric(q.rtt_ms, ' ms') + '\nJitter: ' + metric(q.jitter_ms, ' ms') +
+            '\nPerda de pacotes: ' + metric(q.loss_pct, '%'));
+        connectionDetails.textContent = 'Entrada RNP · ' + label + '\n' + reason +
+            '\nPior valor entre as trilhas recebidas; atualização a cada 2 s.' +
+            '\nAtenção: RTT ≥ 300 ms, jitter ≥ 30 ms ou perda ≥ 2%.' +
+            '\nRuim: RTT ≥ 600 ms, jitter ≥ 60 ms ou perda ≥ 5%, ou transporte interrompido.' +
+            '\nNão mede velocidade da internet nem a saída do OBS.';
+    }
+
+    let statusPending = false;
+    async function pollDockStatus() {
+        if (document.hidden || statusPending) return;
+        statusPending = true;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        try {
+            const response = await fetch('/api/status?t=' + Date.now(), {cache: 'no-store', signal: controller.signal});
+            if (!response.ok) throw new Error('Status indisponível');
+            const st = await response.json();
+            if (fpsEl) {
                 const valores = (st.cameras || []).map(c => c.fps).filter(v => typeof v === 'number');
                 fpsEl.textContent = valores.length
                     ? Math.round(valores.reduce((a, b) => a + b, 0) / valores.length) : '--';
-            } catch (_) { /* status indisponível: mantém o último valor */ }
-        }, 2000);
+            }
+            renderConnection(st.connection_quality || {level: st.connecting ? 'connecting' : st.connected ? 'unknown' : 'disconnected'});
+        } catch (_) {
+            if (fpsEl) fpsEl.textContent = '--';
+            renderConnection({level: 'unavailable'});
+        } finally {
+            clearTimeout(timeout);
+            statusPending = false;
+        }
+    }
+    if (fpsEl || connectionMeter) {
+        pollDockStatus();
+        setInterval(pollDockStatus, 2000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) { renderConnection({level: 'unknown'}); pollDockStatus(); }
+        });
     }
 
     window.RnpDock = {

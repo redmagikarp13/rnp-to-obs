@@ -90,6 +90,51 @@ class MediaRoutesTests(unittest.TestCase):
         self.cfg_patch.stop()
         self._cfg_dir.cleanup()
 
+    def test_medidor_conexao_estados_e_limites(self):
+        self.state.connected = True
+        casos = [
+            ({'rtt_ms': 80, 'jitter_ms': 5, 'loss_pct': 0}, 'good'),
+            ({'rtt_ms': 300, 'jitter_ms': 5, 'loss_pct': 0}, 'fair'),
+            ({'rtt_ms': 600, 'jitter_ms': 5, 'loss_pct': 0}, 'poor'),
+            ({'rtt_ms': 20, 'jitter_ms': 30, 'loss_pct': 0}, 'fair'),
+            ({'rtt_ms': 20, 'jitter_ms': 60, 'loss_pct': 0}, 'poor'),
+            ({'rtt_ms': 20, 'jitter_ms': 5, 'loss_pct': 2}, 'fair'),
+            ({'rtt_ms': 20, 'jitter_ms': 5, 'loss_pct': 5}, 'poor'),
+            ({'rtt_ms': None, 'jitter_ms': 0, 'loss_pct': None}, 'good'),
+            ({'rtt_ms': None, 'jitter_ms': None, 'loss_pct': None}, 'unknown'),
+            ({'rtt_ms': float('nan'), 'jitter_ms': -1, 'loss_pct': '0'}, 'unknown'),
+            ({'degraded': True}, 'poor'),
+        ]
+        for metrics, expected in casos:
+            with self.subTest(metrics=metrics):
+                self.state.connection_stats = dict(metrics, age_ms=0)
+                self.state.connection_stats_received_at = time.monotonic()
+                result = self.client.get('/api/status').json().get('connection_quality')
+                self.assertIsNotNone(result, 'A API deve fornecer a qualidade da conexão RNP.')
+                self.assertEqual(result['level'], expected)
+        self.state.connecting = True
+        self.assertEqual(self.client.get('/api/status').json()['connection_quality']['level'], 'connecting')
+        self.state.connecting = False
+        self.state.connected = False
+        result = self.client.get('/api/status').json()['connection_quality']
+        self.assertEqual(result['level'], 'disconnected')
+        self.assertIsNone(result['rtt_ms'])
+
+    def test_medidor_conexao_nao_reutiliza_dados_vencidos(self):
+        self.state.connected = True
+        for browser_age, server_age in ((6001, 0), (0, 7), (4000, 3)):
+            self.state.connection_stats = {'rtt_ms': 10, 'age_ms': browser_age}
+            self.state.connection_stats_received_at = time.monotonic() - server_age
+            result = self.client.get('/api/status').json().get('connection_quality')
+            self.assertIsNotNone(result)
+            self.assertEqual(result['level'], 'unknown')
+            self.assertIsNone(result['rtt_ms'], 'Não exibir valores antigos como atuais.')
+
+    def test_medidor_conexao_limpa_amostras_ao_desconectar(self):
+        self.state.connection_stats = {'rtt_ms': 50, 'age_ms': 0}
+        asyncio.run(server.stop_connection())
+        self.assertIsNone(self.state.connection_stats)
+
     def test_receptor_experimental_disponivel_sem_sala(self):
         response = self.client.get('/webrtc')
         self.assertEqual(response.status_code, 200)

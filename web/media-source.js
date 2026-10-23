@@ -324,6 +324,7 @@
         const maxPeers = Number(window.RNP_MAX_PEERS) || 0;
         if (maxPeers > 0 && peers.size >= maxPeers) throw new Error(`Limite de ${maxPeers} receptores experimentais atingido.`);
         const pc = new RTCPeerConnection({iceServers: [], bundlePolicy: 'max-bundle'});
+        window.RnpConnection?.ignore(pc); // Relay local para o OBS, não é a entrada RNP.
         const clone = original.clone();
         const entry = {pc, clone};
         peers.set(session_id, entry);

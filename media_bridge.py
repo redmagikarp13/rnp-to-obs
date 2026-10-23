@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 WEB_DIR = Path(__file__).resolve().parent / 'web'
-MEDIA_SOURCE_JS = (WEB_DIR / 'media-source.js').read_text(encoding='utf-8')
+MEDIA_SOURCE_JS = '\n'.join((WEB_DIR / name).read_text(encoding='utf-8')
+                            for name in ('connection-quality.js', 'media-source.js'))
 
 
 class Offer(BaseModel):

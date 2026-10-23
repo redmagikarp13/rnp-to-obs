@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import math
 import os
 import re
 import sys
@@ -125,7 +126,7 @@ def _dock_asset_version() -> int:
     """
     total = 0
     base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
-    for nome in ('dock.css', 'dock.js', 'audio-mixer.js', 'media-source.js'):
+    for nome in ('dock.css', 'dock.js', 'audio-mixer.js', 'media-source.js', 'connection-quality.js'):
         try:
             total += int(os.path.getmtime(os.path.join(base, nome)))
         except OSError:
@@ -229,6 +230,8 @@ class BridgeState:
         cfg = load_disk_config()
         self.connected = False
         self.connecting = False
+        self.connection_stats: Optional[dict] = None
+        self.connection_stats_received_at: float = 0
         # WebRTC é o modo de produção (validado ao vivo em vídeo, YouTube nativo e
         # compartilhamento com áudio): liga por padrão em qualquer caminho de boot
         # (start.bat, app.pyw, .exe). Só o opt-out explícito mantém o legado JPEG.
@@ -379,6 +382,38 @@ class BridgeState:
         self.latest_camera_frames = frames
         self.cameras_list = cameras
         self.libras_camera_ids = [c['id'] for c in cameras if c['id'] in selected]
+
+    def connection_quality(self) -> dict:
+        """Qualidade de entrada, usando a pior métrica disponível na janela de 2 s."""
+        result = {'level': 'unknown', 'rtt_ms': None, 'jitter_ms': None,
+                  'loss_pct': None, 'age_ms': None}
+        if self.connecting:
+            return dict(result, level='connecting')
+        if not self.connected:
+            return dict(result, level='disconnected')
+        sample = self.connection_stats or {}
+        age = sample.get('age_ms')
+        if type(age) not in (int, float) or not math.isfinite(age) or age < 0:
+            return result
+        age += max(0, time.monotonic() - self.connection_stats_received_at) * 1000
+        if age > 6000:
+            return result
+        result['age_ms'] = round(age)
+        if sample.get('unavailable') and not sample.get('degraded'):
+            return result
+        severity = 2 if sample.get('degraded') else -1
+        # Faixas operacionais, não um teste de velocidade nem diagnóstico da causa.
+        for key, warning, poor in (('rtt_ms', 300, 600), ('jitter_ms', 30, 60), ('loss_pct', 2, 5)):
+            value = sample.get(key)
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                continue
+            if key == 'loss_pct' and value > 100:
+                continue
+            result[key] = round(value, 2)
+            severity = max(severity, 2 if value >= poor else 1 if value >= warning else 0)
+        if severity >= 0:
+            result['level'] = ('good', 'fair', 'poor')[severity]
+        return result
 
     def export_config(self) -> dict:
         return {
@@ -566,6 +601,8 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
 
     state.connecting = True
     state.connected = False
+    state.connection_stats = None
+    state.connection_stats_received_at = 0
     state.room_url = room_url.strip()
     state.user_name = user_name.strip() if user_name.strip() else "OBS Studio"
     state.user_email = user_email.strip() if user_email.strip() else "obs@obs.com"
@@ -770,6 +807,8 @@ async def stop_connection():
     log("Desconectando da sala...")
     state.connected = False
     state.connecting = False
+    state.connection_stats = None
+    state.connection_stats_received_at = 0
     if state.sync_task and not state.sync_task.done():
         state.sync_task.cancel()
     if state.content_sync_task and not state.content_sync_task.done():
@@ -1086,11 +1125,14 @@ async def sync_loop():
                         if (!liveIds.has(id)) window._fpsSamples.delete(id);
                     }
                 }
-                return {cameras: list, audio: window.RnpMedia.audioInfo(), youtube: window.RnpMedia.youtubeState()};
+                return {cameras: list, audio: window.RnpMedia.audioInfo(), youtube: window.RnpMedia.youtubeState(),
+                    connection_stats: window.RnpConnection?.snapshot() || null};
             }''', not state.webrtc_only)
 
             state.audio_channels = cam_data['audio']
             state.youtube = cam_data.get('youtube')
+            state.connection_stats = cam_data.get('connection_stats')
+            state.connection_stats_received_at = time.monotonic()
 
             # Fala por pico real do microfone (independe dos indicadores de DOM do BBB).
             # O limiar vem do estado, não de constante: cada sala/operador tem um ganho
@@ -2050,6 +2092,7 @@ async def api_status():
             "connected": state.connected,
             "connecting": state.connecting,
             "status_message": state.status_message,
+            "connection_quality": state.connection_quality(),
             "room_url": state.room_url,
             "user_name": state.user_name,
             "user_email": state.user_email,
@@ -2653,6 +2696,18 @@ async def get_control_panel():
         <span id="statusBadge" class="badge disconnected">● Desconectado</span>
         <span id="shieldBadge" class="badge" title="Blindagem anti-inatividade: confirma sozinho o modal de verificação da RNP">🛡️ Anti-Inatividade</span>
         <span class="dock-statusbar-fps"><span id="dockFps">--</span> fps</span>
+        <span class="connection-meter-wrap">
+            <button type="button" class="connection-meter" id="connectionMeter" data-level="unknown"
+                    aria-label="Qualidade da conexão RNP: sem dados" aria-describedby="connectionDetails"
+                    aria-expanded="false" aria-controls="connectionDetails">
+                <span class="connection-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <span>RNP <span id="connectionLabel">Sem dados</span></span>
+                <span id="connectionRtt" class="connection-rtt"></span>
+            </button>
+            <span id="connectionDetails" class="connection-details" role="tooltip">
+                Qualidade da mídia recebida da RNP. Aguardando estatísticas WebRTC.
+            </span>
+        </span>
         <label class="dock-statusbar-theme" for="selControlTheme">Estilo
             <select id="selControlTheme" onchange="changeControlTheme(this.value)">
                 <option value="broadcast" {sel_th_broadcast}>Broadcast</option>
