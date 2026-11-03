@@ -187,6 +187,49 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertFalse(second_done, 'A segunda tentativa deve seguir ativa.')
 
 
+    def test_grid_config_rejeita_enums_invalidos_sem_mutar_parcial(self):
+        # Os campos de enumeração são refletidos no HTML dos Browser Sources; um valor
+        # inventado não pode ser gravado. E a validação é ANTES de mutar: nada parcial.
+        self.state.libras_size = 'equal'
+        self.state.stage_preset = 'bottom-bar'
+        for payload in (
+            {'libras_size': 'gigante'},
+            {'camera_name_style': 'holograma'},
+            {'grid_layout_mode': 'diagonal'},
+            {'stage_preset': 'apocalipse-zumbi'},
+            {'stage_preset': 'side-by-side', 'libras_size': 'nope'},  # válido+inválido
+        ):
+            r = self.client.post('/api/grid/config', json=payload)
+            self.assertEqual(r.status_code, 400, f'{payload} deveria ser rejeitado')
+        self.assertEqual(self.state.libras_size, 'equal', 'inválido não pode mutar')
+        self.assertEqual(self.state.stage_preset, 'bottom-bar',
+                         'nada pode ser aplicado quando outro campo do payload é inválido')
+
+    def test_grid_config_aceita_enums_validos(self):
+        r = self.client.post('/api/grid/config', json={
+            'libras_size': 'huge', 'camera_name_style': 'pill',
+            'grid_layout_mode': 'row', 'stage_preset': 'cameras-only'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.state.libras_size, 'huge')
+        self.assertEqual(self.state.camera_name_style, 'pill')
+        self.assertEqual(self.state.grid_layout_mode, 'row')
+        self.assertEqual(self.state.stage_preset, 'cameras-only')
+
+    def test_config_save_rejeita_enum_invalido(self):
+        self.state.grid_layout_mode = 'auto'
+        r = self.client.post('/api/config/save', json={'grid_layout_mode': 'tetraédrico'})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.state.grid_layout_mode, 'auto', 'não pode gravar valor inválido')
+
+    def test_grid_config_limita_custom_name(self):
+        # texto livre mas precisa ser str e ter limite (é refletido no HTML da câmera).
+        self.assertEqual(self.client.post('/api/grid/config',
+            json={'custom_name': 12345, 'cam_id': 'cam-w_a'}).status_code, 400)
+        self.assertEqual(self.client.post('/api/grid/config',
+            json={'custom_name': 'x' * 200, 'cam_id': 'cam-w_a'}).status_code, 400)
+        self.assertEqual(self.client.post('/api/grid/config',
+            json={'custom_name': 'Prof Ana', 'cam_id': 'cam-w_a'}).status_code, 200)
+
     def test_salvar_config_nao_escreve_no_arquivo_de_producao(self):
         # Várias rotas persistem config. Se CONFIG_FILE não for isolado nos testes,
         # cada rodada da suíte sobrescreve o config.json real da produção

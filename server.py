@@ -89,6 +89,31 @@ app.add_middleware(
 
 CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'esticado')
 
+# Campos de enumeração aceitos pelo painel. O valor é refletido no HTML dos Browser
+# Sources (presets de palco, tamanho de Libras, estilo de nome, layout do grid), então
+# um valor fora da lista não pode ser gravado nem devolvido ao navegador.
+LIBRAS_SIZES = ('equal', 'huge', 'large', 'medium')
+CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow')
+GRID_LAYOUT_MODES = ('auto', 'row', 'column', 'grid')
+STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right',
+                 'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras')
+_ENUM_CAMPOS = {
+    'libras_size': LIBRAS_SIZES,
+    'camera_name_style': CAMERA_NAME_STYLES,
+    'grid_layout_mode': GRID_LAYOUT_MODES,
+    'stage_preset': STAGE_PRESETS,
+}
+
+
+def erro_enum(data: dict):
+    """Mensagem de erro se algum campo de enumeração presente em `data` tiver valor
+    fora da lista; None se todos ausentes ou válidos. Chamar ANTES de mutar qualquer
+    campo, para um payload inválido não aplicar metade das mudanças."""
+    for campo, permitidos in _ENUM_CAMPOS.items():
+        if campo in data and data[campo] not in permitidos:
+            return f"{campo} deve ser um de {list(permitidos)}"
+    return None
+
 # Pico de áudio (0..1) acima do qual consideramos que o participante está falando.
 # É configurável por sala/operador (campo `speak_peak_threshold` em config.json, ajustável
 # no dock) porque o ganho do microfone varia muito: medição ao vivo com um participante
@@ -1943,6 +1968,15 @@ async def api_grid_config(req: Request):
                  "message": f"dock_block_order deve ser uma permutação de {list(DOCK_BLOCKS)}"},
                 status_code=400)
         data["dock_block_order"] = ordem
+    erro = erro_enum(data)
+    if erro:
+        return JSONResponse({"status": "error", "message": erro}, status_code=400)
+    if "custom_name" in data:
+        nome = data["custom_name"]
+        if not isinstance(nome, str) or len(nome) > 80:
+            return JSONResponse(
+                {"status": "error", "message": "custom_name deve ser texto de até 80 caracteres"},
+                status_code=400)
     if "focused_camera_id" in data:
         state.focused_camera_id = str(data["focused_camera_id"]) if data["focused_camera_id"] is not None else None
     if "pinned_camera_ids" in data:
@@ -2028,6 +2062,9 @@ async def api_theme_set(req: Request):
 @app.post("/api/config/save")
 async def api_config_save(req: Request):
     data = await req.json()
+    erro = erro_enum(data)
+    if erro:
+        return JSONResponse({"status": "error", "message": erro}, status_code=400)
     if "room_url" in data: state.room_url = data["room_url"].strip()
     if "user_name" in data: state.user_name = data["user_name"].strip()
     if "user_email" in data: state.user_email = data["user_email"].strip()
