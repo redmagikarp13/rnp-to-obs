@@ -21,12 +21,32 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 | `http://localhost:3333/control` | **Navegador Personalizado (Dock)** | Painel de controle completo para encaixar na interface do OBS. |
 | `http://localhost:3333/stage` | **Navegador (Browser Source)** | Palco composto (Slides + Câmeras + Libras paritário) **e master de áudio** (PCM Float32 / 48 kHz). |
 | `http://localhost:3333/cameras/grid`| **Navegador (Browser Source)** | Grid dinâmico e responsivo de todas as webcams abertas. |
+| `http://localhost:3333/tv` | **Navegador (TV/monitor)** | Tela de participantes: spotlight em quem está focado, fila com os demais, Libras fora. `?chat=0` oculta a mensagem destacada. |
 | `http://localhost:3333/libras` | **Navegador (Browser Source)** | Janela dedicada e isolada para Intérprete de Libras. |
 | `http://localhost:3333/presentation`| **Navegador (Browser Source)** | Slides ou compartilhamento de tela puro (1080p/2.5K). |
 | `http://localhost:3333/chat` | **Navegador (Browser Source)** | Feed de chat ao vivo unificado (RNP + YouTube). |
 | `http://localhost:3333/chat/featured`| **Navegador (Browser Source)**| Lower-third animado para destaque de mensagens. |
 | `http://localhost:3333/poll` | **Navegador (Browser Source)** | Card moderno de resultados de enquete com temporizador. |
 | `http://localhost:3333/audio?source=<canal>` | **Navegador (Browser Source)** | Áudio **individual** de um participante. O master não sai mais por `/audio` (sem `source` devolve 404) — ele vem do `/stage`. |
+
+---
+
+## 📺 Tela de Participantes (`/tv`)
+
+- **Só participantes**: câmeras marcadas como Libras ficam de fora (elas têm `/libras`).
+- **Spotlight**: câmeras em **foco** ocupam a área grande; as demais vão para uma fila
+  inferior (24vh). **Sem foco**: grade igualitária com todos.
+- **Foco é um CONJUNTO** (`focused_camera_ids` no `/api/status` e no `/api/grid/config`):
+  o dock permite várias câmeras focadas ao mesmo tempo (botão 🌟 alterna pertença).
+  O campo legado `focused_camera_id` continua aceito (single vira lista de 1; `null`
+  limpa) e é o que o `/stage` usa como "palestrante" dos presets PIP/split = primeiro focado.
+- **Pin** (`pinned_camera_ids`) dá borda azul; foco dá borda verde; quem fala fica com
+  nome/borda verdes. Nomes respeitam `show_camera_names`.
+- **Chat destacado**: overlay inferior com a `featured_message` (mesma do `/chat/featured`);
+  `?chat=0` desliga. Padrão: ligado.
+- Transporte: reusa `RnpStageMedia` (stage-media.js) — as conexões WebRTC sobrevivem às
+  trocas de foco/layout (reconciliação por identidade, sem renegociar).
+- Fundo escuro opaco (não transparente): é tela de exibição, não overlay de OBS.
 
 ---
 
