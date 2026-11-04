@@ -665,6 +665,48 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(sorted(valores), sorted(server.CONTROL_THEMES),
                          'O seletor de tema deve oferecer exatamente os temas válidos.')
 
+    def _cams_fixture(self):
+        self.state.reconcile_cameras([
+            {'id': 'cam-a', 'participant_id': 'p_a', 'name': 'Ana'},
+            {'id': 'cam-b', 'participant_id': 'p_b', 'name': 'Beto'},
+        ])
+
+    def test_foco_aceita_multiplas_cameras_e_mantem_legado(self):
+        # Tela de TV pede destaque para MAIS de uma pessoa: foco vira conjunto.
+        # O campo legado focused_camera_id continua funcionando (=> primeiro focado).
+        self._cams_fixture()
+        r = self.client.post('/api/grid/config', json={'focused_camera_ids': ['cam-a', 'cam-b']})
+        self.assertEqual(r.status_code, 200)
+        st = self.client.get('/api/status').json()
+        self.assertEqual(st['focused_camera_ids'], ['cam-a', 'cam-b'])
+        self.assertEqual(st['focused_camera_id'], 'cam-a', 'Legado deve expor o primeiro focado.')
+        self.assertEqual([c['is_focused'] for c in st['cameras']], [True, True])
+        self.client.post('/api/grid/config', json={'focused_camera_id': 'cam-b'})
+        self.assertEqual(self.client.get('/api/status').json()['focused_camera_ids'], ['cam-b'])
+        self.client.post('/api/grid/config', json={'focused_camera_id': None})
+        self.assertEqual(self.client.get('/api/status').json()['focused_camera_ids'], [])
+        # Inválido: 400 e o conjunto vigente não muta (valida antes de aplicar).
+        self.client.post('/api/grid/config', json={'focused_camera_ids': ['cam-a']})
+        r = self.client.post('/api/grid/config', json={'focused_camera_ids': 'cam-a'})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get('/api/status').json()['focused_camera_ids'], ['cam-a'])
+
+    def test_foco_perde_cameras_que_saem_da_sala(self):
+        self._cams_fixture()
+        self.client.post('/api/grid/config', json={'focused_camera_ids': ['cam-a', 'cam-b']})
+        self.state.reconcile_cameras([{'id': 'cam-b', 'participant_id': 'p_b', 'name': 'Beto'}])
+        self.assertEqual(self.client.get('/api/status').json()['focused_camera_ids'], ['cam-b'])
+
+    def test_tv_existe_com_opcao_de_chat_destacado(self):
+        html = self.client.get('/tv').text
+        for marcador in ('tvMain', 'tvStrip', 'tvFeatured', 'stage-media.js'):
+            self.assertIn(marcador, html, f'/tv precisa de {marcador}.')
+        self.assertIn('data-chat="1"', html, 'Chat destacado ligado por padrão.')
+        self.assertIn('data-chat="0"', self.client.get('/tv?chat=0').text)
+        fontes = self.client.get('/control').text
+        self.assertEqual(fontes.count("copyUrl('/tv'"), 1,
+                         'Link da TV deve existir uma única vez no bloco de fontes.')
+
     def test_handlers_do_dock_moram_em_dock_js_e_nao_inline(self):
         # Task 6b: o corpo dos handlers saiu do f-string do /control e vive em
         # web/dock.js. Se alguém re-inlineizar JS, o cache-buster ?v= deixa de valer

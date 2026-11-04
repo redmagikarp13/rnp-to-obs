@@ -10,7 +10,7 @@
         let configSaveError = '';
         let currentMessages = [];
         let activeFeaturedMsg = null;
-        let focusedCamId = null;
+        let focusedCamIds = [];
         let pinnedCamIds = [];
         let librasCamIds = [];
         let activeLibrasSize = "equal";
@@ -566,7 +566,7 @@
                     document.getElementById('logBox').innerText = configSaveError || ('> ' + data.status_message);
                 }
 
-                focusedCamId = (data.focused_camera_id !== null && data.focused_camera_id !== undefined) ? String(data.focused_camera_id) : null;
+                focusedCamIds = (data.focused_camera_ids || (data.focused_camera_id != null ? [data.focused_camera_id] : [])).map(String);
                 pinnedCamIds = (data.pinned_camera_ids || []).map(String);
                 librasCamIds = (data.libras_camera_ids || []).map(String);
 
@@ -781,7 +781,7 @@
                 } else {
                     cams.forEach(c => {
                         const cid = String(c.id);
-                        const isFocus = (focusedCamId === cid);
+                        const isFocus = focusedCamIds.includes(cid);
                         const isPin = pinnedCamIds.includes(cid);
                         const isLibras = (c.is_libras || librasCamIds.includes(cid));
 
@@ -856,12 +856,18 @@
         }
 
         async function toggleFocus(camId) {
+            // Foco é um CONJUNTO: a tela /tv destaca todos os focados em spotlight.
             const targetId = String(camId);
-            const newFocus = (focusedCamId === targetId) ? null : targetId;
+            let newFocus = [...focusedCamIds];
+            if (newFocus.includes(targetId)) {
+                newFocus = newFocus.filter(id => id !== targetId);
+            } else {
+                newFocus.push(targetId);
+            }
             await fetch('/api/grid/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ focused_camera_id: newFocus })
+                body: JSON.stringify({ focused_camera_ids: newFocus })
             });
             fetchStatus();
         }
@@ -936,7 +942,7 @@
             await fetch('/api/grid/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ focused_camera_id: null, pinned_camera_ids: [], libras_camera_ids: [] })
+                body: JSON.stringify({ focused_camera_ids: [], pinned_camera_ids: [], libras_camera_ids: [] })
             });
             librasCamIds = [];
             fetchStatus();

@@ -305,7 +305,7 @@ class BridgeState:
         self.connection_task: Optional[asyncio.Task] = None
         
         # Opções de Grid, Câmeras e Libras
-        self.focused_camera_id: Optional[str] = None
+        self.focused_camera_ids: List[str] = []
         self.pinned_camera_ids: List[str] = []
         # IDs da reunião não são persistentes; versões antigas usavam posições.
         self.libras_camera_ids: List[str] = []
@@ -377,8 +377,7 @@ class BridgeState:
         selected_participants = {c['participant_id'] for c in captured if str(c['id']) in selected and c.get('participant_id')}
         self.libras_disabled_camera_ids.intersection_update(live_ids)
         self.pinned_camera_ids = [cid for cid in self.pinned_camera_ids if cid in live_ids]
-        if self.focused_camera_id not in live_ids:
-            self.focused_camera_id = None
+        self.focused_camera_ids = [cid for cid in self.focused_camera_ids if cid in live_ids]
         saved = {normalized_name(n) for n in self.libras_saved_names if normalized_name(n)}
         disabled = {normalized_name(n) for n in self.libras_disabled_names if normalized_name(n)}
         frames, cameras = {}, []
@@ -402,7 +401,7 @@ class BridgeState:
             cameras.append({k: v for k, v in cam.items() if k != 'frame'} | {
                 'id': cid, 'original_name': original,
                 'name': self.custom_camera_names.get(cid, original),
-                'is_libras': is_libras, 'is_focused': cid == self.focused_camera_id,
+                'is_libras': is_libras, 'is_focused': cid in self.focused_camera_ids,
                 'is_pinned': cid in self.pinned_camera_ids})
         self.latest_camera_frames = frames
         self.cameras_list = cameras
@@ -1971,14 +1970,30 @@ async def api_grid_config(req: Request):
     erro = erro_enum(data)
     if erro:
         return JSONResponse({"status": "error", "message": erro}, status_code=400)
+    # Foco é um CONJUNTO (a tela /tv destaca todos em spotlight). O campo legado
+    # focused_camera_id continua aceito: single vira lista de 1, null limpa.
+    if "focused_camera_ids" in data:
+        ids = data["focused_camera_ids"]
+        if not isinstance(ids, list) or any(not isinstance(x, str) for x in ids):
+            return JSONResponse(
+                {"status": "error", "message": "focused_camera_ids deve ser uma lista de IDs de câmera"},
+                status_code=400)
+        data["focused_camera_ids"] = [str(x) for x in ids]
+    if "focused_camera_id" in data:
+        leg = data["focused_camera_id"]
+        if leg is not None and not isinstance(leg, str):
+            return JSONResponse(
+                {"status": "error", "message": "focused_camera_id deve ser um ID de câmera ou null"},
+                status_code=400)
+        data["focused_camera_ids"] = [str(leg)] if leg is not None else []
     if "custom_name" in data:
         nome = data["custom_name"]
         if not isinstance(nome, str) or len(nome) > 80:
             return JSONResponse(
                 {"status": "error", "message": "custom_name deve ser texto de até 80 caracteres"},
                 status_code=400)
-    if "focused_camera_id" in data:
-        state.focused_camera_id = str(data["focused_camera_id"]) if data["focused_camera_id"] is not None else None
+    if "focused_camera_ids" in data:
+        state.focused_camera_ids = data["focused_camera_ids"]
     if "pinned_camera_ids" in data:
         state.pinned_camera_ids = [str(x) for x in data["pinned_camera_ids"]]
     if "libras_camera_ids" in data:
@@ -2124,6 +2139,10 @@ async def api_config_get():
 
 @app.get("/api/status")
 async def api_status():
+    # is_focused é recalculado aqui (não só no reconcile) para o dock e a /tv
+    # refletirem o conjunto de foco imediatamente, sem esperar o próximo sync_loop.
+    focados = set(state.focused_camera_ids)
+    cameras_atual = [{**c, 'is_focused': c['id'] in focados} for c in state.cameras_list]
     return JSONResponse(
         {
             "connected": state.connected,
@@ -2138,13 +2157,14 @@ async def api_status():
             "youtube_status": state.youtube_status,
             "youtube_auto_connect": state.youtube_auto_connect,
             "control_theme": state.control_theme,
-            "cameras": state.cameras_list,
+            "cameras": cameras_atual,
             "cameras_count": len(state.cameras_list),
             "webrtc_only": state.webrtc_only,
             "youtube": state.youtube,
             "voice_speakers": state.voice_speakers,
             "speak_peak_threshold": state.speak_peak_threshold,
-            "focused_camera_id": state.focused_camera_id,
+            "focused_camera_ids": list(state.focused_camera_ids),
+            "focused_camera_id": state.focused_camera_ids[0] if state.focused_camera_ids else None,
             "pinned_camera_ids": state.pinned_camera_ids,
             "libras_camera_ids": state.libras_camera_ids,
             "libras_saved_names": state.libras_saved_names,
@@ -3079,6 +3099,15 @@ async def get_control_panel():
                 <div style="line-height: 1.2">
                     <div style="font-weight: 800; font-size: 11.5px">Grid de Câmeras</div>
                     <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/cameras/grid (1920x1080)</div>
+                </div>
+            </button>
+
+            <!-- Tela de Participantes (TV) -->
+            <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 8px 10px" onclick="copyUrl('/tv', this)" title="Copiar URL da Tela de Participantes (TV): spotlight em quem está focado, Libras fora; ?chat=0 oculta a mensagem destacada">
+                <span style="font-size: 18px; margin-right: 6px">📺</span>
+                <div style="line-height: 1.2">
+                    <div style="font-weight: 800; font-size: 11.5px">Tela de Participantes (TV)</div>
+                    <div style="font-size: 10px; opacity: 0.8; font-family: monospace">/tv (spotlight + chat ?chat=0)</div>
                 </div>
             </button>
 
@@ -4572,6 +4601,122 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
 # --------------------------------------------------------------------------
 # OBS OVERLAY: GRID DE CÂMERAS (/cameras/grid & /grid)
 # --------------------------------------------------------------------------
+@app.get("/tv")
+async def get_tv_page(chat: Optional[str] = None):
+    """Tela de participantes para TV: spotlight em quem está em FOCO (conjunto,
+    múltiplos permitidos), fila menor para os demais, Libras fora (já tem /libras)
+    e mensagem de chat destacada opcional (?chat=0 desliga). Reusa o motor WebRTC
+    RnpStageMedia do palco/grid, então as conexões sobrevivem às trocas de foco."""
+    chat_flag = "0" if chat == "0" else "1"
+    html = f"""
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>RNP to OBS - Tela de Participantes (TV)</title>
+    <link rel="icon" type="image/png" href="/app_icon.png">
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        html, body {{ width: 100vw; height: 100vh; background: #0b1120; overflow: hidden;
+            font-family: 'Segoe UI', system-ui, sans-serif; }}
+        #tv {{ display: flex; flex-direction: column; gap: 8px; height: 100vh; padding: 8px; }}
+        #tvMain {{ flex: 1; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); min-height: 0; }}
+        #tvStrip {{ height: 24vh; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); min-height: 0; }}
+        .tv-tile {{ position: relative; background: #000; border-radius: 8px; overflow: hidden; min-height: 0; }}
+        .tv-tile video {{ width: 100%; height: 100%; object-fit: contain; }}
+        .tv-tile.is-focused {{ outline: 4px solid #22c55e; outline-offset: -4px; }}
+        .tv-tile.is-pinned {{ outline: 3px solid #38bdf8; outline-offset: -4px; }}
+        .tv-tile.is-speaking {{ outline-color: #4ade80; }}
+        .tv-name {{ position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 10px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.85)); color: #f8fafc;
+            font-size: clamp(12px, 1.4vw, 22px); font-weight: 700; }}
+        .tv-tile.is-speaking .tv-name {{ color: #4ade80; }}
+        #tvFeatured {{ position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+            max-width: 70vw; padding: 12px 22px; border-radius: 12px; display: none;
+            background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(56, 189, 248, 0.5);
+            color: #f8fafc; font-size: clamp(14px, 1.6vw, 26px); text-align: center; }}
+        #tvEmpty {{ position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: #64748b; font-size: clamp(14px, 2vw, 30px); }}
+    </style>
+</head>
+<body>
+    <div id="tv">
+        <div id="tvMain"></div>
+        <div id="tvStrip" style="display: none"></div>
+    </div>
+    <div id="tvFeatured" data-chat="{chat_flag}"></div>
+    <div id="tvEmpty">Aguardando câmeras da sala…</div>
+    <script src="/assets/stage-media.js"></script>
+    <script>
+        const chatOn = document.getElementById('tvFeatured').dataset.chat === '1';
+        const tvMedia = new RnpStageMedia(document.getElementById('tv'));
+        let tvSig = '';
+        async function tvPoll() {{
+            try {{
+                const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
+                const data = await res.json();
+                // Só participantes: intérprete de Libras fica de fora (já tem /libras).
+                const cams = (data.cameras || []).filter(c => !c.is_libras);
+                const focused = (data.focused_camera_ids || (data.focused_camera_id != null ? [data.focused_camera_id] : [])).map(String);
+                const pinned = (data.pinned_camera_ids || []).map(String);
+                const showNames = data.show_camera_names !== false;
+                document.getElementById('tvEmpty').style.display = cams.length ? 'none' : 'flex';
+                const sig = cams.map(c => c.id + '_' + c.name).join(',') + '::' + focused.join('|')
+                    + '::' + pinned.join('|') + '::' + showNames;
+                if (sig !== tvSig) {{
+                    tvSig = sig;
+                    const main = document.getElementById('tvMain');
+                    const strip = document.getElementById('tvStrip');
+                    main.replaceChildren();
+                    strip.replaceChildren();
+                    const tile = (c) => {{
+                        const d = document.createElement('div');
+                        d.className = 'tv-tile' + (focused.includes(String(c.id)) ? ' is-focused' : '')
+                            + (pinned.includes(String(c.id)) ? ' is-pinned' : '');
+                        const v = document.createElement('video');
+                        v.dataset.sourceId = c.id;
+                        v.autoplay = true; v.muted = true; v.setAttribute('playsinline', '');
+                        d.appendChild(v);
+                        if (showNames) {{
+                            const n = document.createElement('div');
+                            n.className = 'tv-name';
+                            n.textContent = c.name;
+                            d.appendChild(n);
+                        }}
+                        return d;
+                    }};
+                    // Spotlight: focados na área grande; demais na fila. Sem foco: grade igual.
+                    const mainCams = focused.length ? cams.filter(c => focused.includes(String(c.id))) : cams;
+                    const stripCams = focused.length ? cams.filter(c => !focused.includes(String(c.id))) : [];
+                    mainCams.forEach(c => main.appendChild(tile(c)));
+                    stripCams.forEach(c => strip.appendChild(tile(c)));
+                    strip.style.display = stripCams.length ? '' : 'none';
+                }}
+                document.querySelectorAll('#tv video[data-source-id]').forEach(v => {{
+                    const cam = cams.find(c => String(c.id) === v.dataset.sourceId);
+                    const t = v.closest('.tv-tile');
+                    if (t) t.classList.toggle('is-speaking', !!(cam && cam.is_speaking));
+                }});
+                const f = document.getElementById('tvFeatured');
+                const msg = data.featured_message;
+                if (chatOn && msg && msg.text) {{
+                    f.textContent = (msg.user ? msg.user + ': ' : '') + msg.text;
+                    f.style.display = 'block';
+                }} else {{
+                    f.style.display = 'none';
+                }}
+                tvMedia.refresh();
+            }} catch (_) {{}}
+        }}
+        setInterval(tvPoll, 2000);
+        tvPoll();
+    </script>
+</body>
+</html>
+    """
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
 @app.get("/cameras/grid")
 @app.get("/grid")
 async def get_cameras_grid_overlay(
@@ -4755,7 +4900,7 @@ async def get_cameras_grid_overlay(
                 const nameStyle = overrideStyle || data.camera_name_style || 'glass';
                 const layoutMode = overrideLayout || data.grid_layout_mode || 'auto';
                 const camFmt = overrideCamFmt || data.camera_format || 'original';
-                const focusedId = data.focused_camera_id;
+                const focusedIds = (data.focused_camera_ids || (data.focused_camera_id != null ? [data.focused_camera_id] : [])).map(String);
                 const librasIds = (data.libras_camera_ids || []).map(String);
 
                 if (cams.length === 0) {{
@@ -4766,7 +4911,7 @@ async def get_cameras_grid_overlay(
                     return;
                 }}
 
-                const sig = cams.map(c => c.id + '_' + (c.name || '') + '_' + (librasIds.includes(String(c.id)) ? '1' : '0')).join(',') + '::' + showNames + '::' + nameStyle + '::' + layoutMode + '::' + focusedId + '::' + camFmt;
+                const sig = cams.map(c => c.id + '_' + (c.name || '') + '_' + (librasIds.includes(String(c.id)) ? '1' : '0')).join(',') + '::' + showNames + '::' + nameStyle + '::' + layoutMode + '::' + focusedIds.join('|') + '::' + camFmt;
 
                 if (sig !== currentSig) {{
                     currentSig = sig;
@@ -4777,7 +4922,7 @@ async def get_cameras_grid_overlay(
 
                     cams.forEach(cam => {{
                         const isLibras = librasIds.includes(String(cam.id));
-                        const isFocused = (focusedId && String(cam.id) === String(focusedId));
+                        const isFocused = focusedIds.includes(String(cam.id));
 
                         const card = document.createElement('div');
                         card.className = 'cam-card' + (isLibras ? ' is-libras' : '') + (isFocused ? ' is-focused' : '');

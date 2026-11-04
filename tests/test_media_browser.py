@@ -1183,6 +1183,80 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(abs(prop['ratio'] - 16 / 9), 0.2,
                         'A caixa do preview deve manter o aspecto 16:9.')
 
+    async def _tv_cams(self):
+        sources = await self.producer.evaluate(
+            "() => RnpMedia.describe().sources.filter(s => s.kind === 'video')")
+        self.state.reconcile_cameras([
+            {'id': s['id'], 'participant_id': s['participant_id'], 'name': s['name']} for s in sources])
+        return sources
+
+    async def _post_focus(self, ids):
+        async with httpx.AsyncClient() as client:
+            return await client.post(self.url + '/api/grid/config', json={'focused_camera_ids': ids})
+
+    async def test_tv_spotlight_exclui_libras_e_preserva_conexoes(self):
+        # w_a='Intérprete Teste' vira Libras por auto-detect => fica fora da TV.
+        await self._tv_cams()
+        await self.receiver.goto(self.url + '/tv')
+        await self.receiver.wait_for_function(
+            "document.querySelectorAll('#tv video[data-source-id]').length === 1", timeout=25000)
+        ids = await self.receiver.evaluate(
+            "[...document.querySelectorAll('#tv video[data-source-id]')].map(v => v.dataset.sourceId)")
+        self.assertEqual(ids, ['cam-w_b'], 'Intérprete de Libras não entra na tela de participantes.')
+        # Foco único: tile em destaque na área grande, fila vazia.
+        await self._post_focus(['cam-w_b'])
+        await self.receiver.wait_for_function(
+            "document.querySelector('#tvMain video[data-source-id=\"cam-w_b\"]')"
+            "?.closest('.tv-tile')?.classList.contains('is-focused') === true", timeout=15000)
+        # Segundo participante (sem Libras) entra na fila quando há foco.
+        self.state.libras_auto_detect = False
+        self.state.libras_saved_names = []
+        self.state.libras_camera_ids = []  # o auto-detect da 1ª reconcile marcou w_a
+        await self._tv_cams()
+        await self.receiver.wait_for_function(
+            "!!document.querySelector('#tvStrip video[data-source-id=\"cam-w_a\"]')", timeout=15000)
+        await self.receiver.wait_for_function(
+            "[...document.querySelectorAll('#tv video[data-source-id]')].every(v => v.getVideoPlaybackQuality().totalVideoFrames > 5)",
+            timeout=25000)
+        ofertas_antes = len(self.offers)
+        # Foco duplo: os dois na área grande, fila vazia.
+        await self._post_focus(['cam-w_b', 'cam-w_a'])
+        await self.receiver.wait_for_function(
+            "document.querySelectorAll('#tvMain video[data-source-id]').length === 2 && "
+            "document.querySelectorAll('#tvStrip video[data-source-id]').length === 0", timeout=15000)
+        # Trocar o foco não pode renegociar WebRTC (peers preservados por identidade).
+        await self._post_focus([])
+        await self._post_focus(['cam-w_a', 'cam-w_b'])
+        await self.receiver.wait_for_function(
+            "document.querySelectorAll('#tvMain video[data-source-id]').length === 2", timeout=15000)
+        self.assertEqual(len(self.offers), ofertas_antes,
+                         'Mudar o foco não pode derrubar/re_negociar as conexões de vídeo.')
+
+    async def test_tv_chat_destacado_respeita_parametro(self):
+        await self._tv_cams()
+        self.state.featured_message = {'user': 'Ana', 'text': 'Olá da TV'}
+        await self.receiver.goto(self.url + '/tv')
+        await self.receiver.wait_for_function(
+            "(document.getElementById('tvFeatured').textContent || '').includes('Olá da TV')",
+            timeout=15000)
+        await self.receiver.goto(self.url + '/tv?chat=0')
+        await self.receiver.wait_for_function(
+            "getComputedStyle(document.getElementById('tvFeatured')).display === 'none'",
+            timeout=15000)
+
+    async def test_dock_marca_foco_em_multiplas_cameras(self):
+        await self._tv_cams()
+        await self.receiver.goto(self.url + '/control')
+        for cid in ('cam-w_a', 'cam-w_b'):
+            await self.receiver.locator(f"button[onclick=\"toggleFocus('{cid}')\"]").click(timeout=6000)
+        focused = await self.receiver.evaluate(
+            "(async () => (await (await fetch('/api/status?t=' + Date.now())).json()).focused_camera_ids)()")
+        self.assertEqual(sorted(focused), ['cam-w_a', 'cam-w_b'],
+                          'O dock deve permitir foco em mais de uma câmera ao mesmo tempo.')
+        for cid in ('cam-w_a', 'cam-w_b'):
+            classe = await self.receiver.locator(f"button[onclick=\"toggleFocus('{cid}')\"]").get_attribute('class')
+            self.assertIn('active-focus', classe)
+
     async def test_menu_de_conexao_abre_e_fecha(self):
         # Popover: fechado por padrão, abre no clique do botão da barra, fecha ao
         # clicar fora. Por ser overlay, não ocupa fluxo em nenhuma largura.
