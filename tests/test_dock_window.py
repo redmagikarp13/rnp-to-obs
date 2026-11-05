@@ -53,7 +53,7 @@ class DockWindowTests(unittest.TestCase):
         kw = stub.janelas[0].kwargs
         self.assertEqual(kw['width'], 1360)
         self.assertEqual(kw['height'], 860)
-        self.assertEqual(kw['min_size'], (900, 600))
+        self.assertEqual(kw['min_size'], (320, 420))
         self.assertIn('RNP to OBS', kw['title'])
         self.assertEqual(stub.start_kwargs.get('private_mode'), False,
                          'localStorage precisa persistir entre aberturas.')

@@ -886,6 +886,15 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-audio-fixed .channel-meter-box { min-height: 0; }
 }
 
+@media (max-width: 540px) {
+    body.theme-broadcast, body.theme-ifes { padding: 6px !important; }
+    .dock-statusbar { padding: 6px 8px; gap: 5px; }
+    .dock-statusbar h1 { font-size: 13px; }
+    #shieldBadge, .dock-statusbar-fps { display: none !important; }
+    .dock-bloco[data-bloco="mixer"] .audio-channel-strip { flex: 1 1 130px; width: auto; min-width: 120px; }
+    .dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { flex: 1 1 160px; min-width: 140px; }
+}
+
 /* Pills do monitor de fontes: as regras legadas vivem em outra constante de CSS que
    o /control não recebe, então o monitor fica sem ponto de estado. Tokenizado aqui. */
 .source-health-pill { display: flex; align-items: center; gap: 6px; }

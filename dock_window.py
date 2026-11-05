@@ -20,7 +20,7 @@ def _resolve_port() -> int:
 SERVER_URL = f'http://127.0.0.1:{_resolve_port()}/control'
 JANELA_TITULO = 'RNP to OBS — Painel'
 JANELA_SIZE = (1360, 860)
-JANELA_MIN = (900, 600)
+JANELA_MIN = (320, 420)
 
 # Mantém o painel 100% ativo mesmo com a janela minimizada/inativa. Sem isto o
 # WebView2 (Chromium) coloca o renderer em segundo plano e suspende timers quando a

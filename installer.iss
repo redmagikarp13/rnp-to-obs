@@ -40,3 +40,14 @@ Name: "{autodesktop}\{#MyAppName} - Painel de Controle"; Filename: "{app}\{#MyAp
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Abrir o {#MyAppName} agora"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // Encerra qualquer instância anterior (janela ou subprocesso --server em segundo plano)
+  // para garantir que a nova versão instalada assuma a porta 3333.
+  Exec('taskkill.exe', '/F /IM "RNP to OBS.exe"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := True;
+end;
