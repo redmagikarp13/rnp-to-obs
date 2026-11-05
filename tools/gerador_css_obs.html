@@ -17,7 +17,7 @@
     display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 17px; letter-spacing: .02em; }
   header p { margin: 0; color: var(--fraco); font-size: 12.5px; }
-  main { display: grid; grid-template-columns: 336px 1fr; gap: 18px;
+  main { display: grid; grid-template-columns: 360px 1fr; gap: 18px;
     padding: 18px 22px 34px; align-items: start; }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
   .coluna { display: flex; flex-direction: column; gap: 14px; }
@@ -40,11 +40,12 @@
   .chk input { width: auto; accent-color: var(--accento); }
   .valor { font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--accento); }
   .temas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .temas button, .acoes button { padding: 7px 9px; border-radius: 8px;
+  .modos-cena { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .temas button, .modos-cena button, .acoes button { padding: 7px 9px; border-radius: 8px;
     border: 1px solid var(--borda); background: #0d1524; color: var(--texto);
-    font: inherit; font-size: 12px; cursor: pointer; }
-  .temas button.ativo { border-color: var(--accento); background: rgba(56,189,248,.14);
-    font-weight: 800; }
+    font: inherit; font-size: 12px; cursor: pointer; text-align: center; }
+  .temas button.ativo, .modos-cena button.ativo { border-color: var(--accento);
+    background: rgba(56,189,248,.14); font-weight: 800; }
   .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
   .acoes button.principal { background: var(--accento); color: #04121e;
     border-color: var(--accento); font-weight: 800; }
@@ -65,27 +66,47 @@
   /* ---- Pré-visualização: DOM falso do BBB, vestido pelo CSS gerado ---- */
   .pv-scope { padding: 14px; border-radius: 12px; border: 1px solid var(--borda);
     background: repeating-conic-gradient(#16223a 0 25%, #101a2c 0 50%) 0 0/22px 22px;
-    position: relative; min-height: 300px; }
+    position: relative; min-height: 340px; overflow: hidden; }
+  .pv-stage-grid { display: flex; gap: 12px; align-items: stretch; min-height: 270px; margin-top: 34px; }
   .pv-scope video { display: block; width: 100%; height: 100%; min-height: 74px;
     background: linear-gradient(160deg, #2b3f61, #1a2740 60%, #243350); }
+  .pv-slide-mock { flex: 1; min-height: 220px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, #1e293b, #0f172a); color: #cbd5e1;
+    padding: 18px; text-align: center; position: relative; }
+  .pv-slide-mock strong { font-size: 15px; color: #38bdf8; }
+  .pv-slide-mock small { color: #94a3b8; font-size: 12px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Gerador de CSS para OBS</h1>
-  <p>Alvo único: cliente BBB (<code>conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>) numa Browser Source, sem a ponte · temas Ponte / Discord / StreamYard</p>
+  <p>Alvo: cliente BBB (<code>conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>) numa Browser Source do OBS · temas Ponte / Discord / StreamYard</p>
 </header>
 
 <main>
   <div class="coluna">
     <fieldset>
-      <legend>Tema</legend>
-      <div class="temas" id="temas">
-        <button data-tema="ponte">Ponte</button>
-        <button data-tema="discord">Discord</button>
-        <button data-tema="streamyard">StreamYard</button>
+      <legend>1. Modo de Cena (O que exibir no OBS)</legend>
+      <div class="modos-cena" id="modosCena">
+        <button type="button" data-cena="cameras-slides">🎥+📊 Câmeras e Slides</button>
+        <button type="button" data-cena="completo">💬+🎥+📊 Tudo (com Chat)</button>
+        <button type="button" data-cena="so-cameras">🎥 Só as Câmeras</button>
+        <button type="button" data-cena="so-slides">📊 Só Slides / Projeção</button>
+        <button type="button" data-cena="so-chat" style="grid-column: span 2;">💬 Só o Chat Público</button>
       </div>
-      <label class="primeiro" for="rotulo">Rótulo de nome</label>
+      <label class="chk"><input type="checkbox" id="mostrar-chat"> Mostrar Chat Público na cena</label>
+      <label class="chk"><input type="checkbox" id="estilizar-chat"> Estilizar cards de Chat e Enquetes (Discord/StreamYard)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. Tema &amp; Indicador de Fala</legend>
+      <div class="temas" id="temas">
+        <button type="button" data-tema="ponte">Ponte</button>
+        <button type="button" data-tema="discord">Discord</button>
+        <button type="button" data-tema="streamyard">StreamYard</button>
+      </div>
+      <label class="primeiro" for="rotulo">Estilo do rótulo / badge</label>
       <select id="rotulo">
         <option value="glass">glass — vidro fosco + ponto</option>
         <option value="pill">pill — pílula com selo LIVE</option>
@@ -94,15 +115,15 @@
         <option value="discord">discord — verde #23a55a, borda branca</option>
         <option value="streamyard">streamyard — gradiente esmeralda</option>
       </select>
-      <label for="rotuloPos">Onde o rótulo mora</label>
+      <label for="rotuloPos">Posição do indicador de quem fala</label>
       <select id="rotuloPos">
-        <option value="card">dentro de cada câmera</option>
-        <option value="topo">fixo no topo (assinatura Discord/StreamYard)</option>
+        <option value="topo">Selo fixo no topo central + nome discreto na câmera</option>
+        <option value="card">Apenas dentro de cada câmera (oculta selo do topo)</option>
       </select>
     </fieldset>
 
     <fieldset>
-      <legend>Formato de câmera</legend>
+      <legend>3. Formato e Layout de Câmeras</legend>
       <label class="primeiro" for="formato">Proporção e ajuste</label>
       <select id="formato">
         <option value="original">original — contém, sem cortar a cabeça</option>
@@ -116,12 +137,12 @@
       <input type="range" id="colunas" min="1" max="6" step="1">
       <label for="gap"><span>Espaço entre câmeras</span> <span class="valor" id="v-gap"></span></label>
       <input type="range" id="gap" min="0" max="32" step="1">
-      <label for="dock"><span>Largura do dock de câmeras</span> <span class="valor" id="v-dock"></span></label>
+      <label for="dock"><span>Largura da coluna de câmeras</span> <span class="valor" id="v-dock"></span></label>
       <input type="range" id="dock" min="0" max="480" step="10">
     </fieldset>
 
     <fieldset>
-      <legend>Tipografia do rótulo</legend>
+      <legend>4. Tipografia do Rótulo</legend>
       <div class="linha trio">
         <div><label class="primeiro" for="fonte">Fonte</label><input type="text" id="fonte"></div>
         <div><label class="primeiro" for="fsize"><span>Tam.</span></label><input type="number" id="fsize" min="9" max="34"></div>
@@ -132,13 +153,13 @@
       <label class="chk"><input type="checkbox" id="uppercase"> Nomes em CAIXA ALTA</label>
       <label for="opacidade"><span>Fundo do rótulo (opacidade)</span> <span class="valor" id="v-opacidade"></span></label>
       <input type="range" id="opacidade" min="0" max="100" step="1">
-      <label class="chk"><input type="checkbox" id="mostrarnomes"> Mostrar nomes</label>
+      <label class="chk"><input type="checkbox" id="mostrarnomes"> Mostrar nomes nas câmeras</label>
     </fieldset>
 
     <fieldset>
-      <legend>Cor &amp; material</legend>
+      <legend>5. Cor &amp; Material</legend>
       <div class="linha">
-        <div><label class="primeiro" for="accento">Destaque</label><input type="color" id="accento"></div>
+        <div><label class="primeiro" for="accento">Destaque / Autor</label><input type="color" id="accento"></div>
         <div><label class="primeiro" for="fala">Quem fala</label><input type="color" id="fala"></div>
       </div>
       <div class="linha">
@@ -152,69 +173,108 @@
       <label for="sombra"><span>Sombra</span> <span class="valor" id="v-sombra"></span></label>
       <input type="range" id="sombra" min="0" max="40" step="2">
       <label class="chk"><input type="checkbox" id="pulso"> Ponto pulsante em quem fala</label>
-      <label class="chk"><input type="checkbox" id="anel"> Anel de destaque no card de quem fala</label>
-      <label class="chk"><input type="checkbox" id="transparente"> Transparência real (var do BBB)</label>
+      <label class="chk"><input type="checkbox" id="anel"> Anel verde/destaque no card de quem fala</label>
+      <label class="chk"><input type="checkbox" id="transparente"> Fundo 100% transparente (Canal Alpha OBS)</label>
     </fieldset>
 
     <fieldset>
-      <legend>Esconder interface do BBB</legend>
-      <label class="chk"><input type="checkbox" id="oculta-navbar"> Navbar, título da sala, avatares, gravação</label>
-      <label class="chk"><input type="checkbox" id="oculta-sidebar"> Painel lateral / lista de participantes</label>
-      <label class="chk"><input type="checkbox" id="oculta-controles"> Controles e "somente ouvir"</label>
-      <label class="chk"><input type="checkbox" id="oculta-chat"> Chat da sala</label>
-      <label class="chk"><input type="checkbox" id="gridbbb"> Forçar câmeras em grade</label>
+      <legend>6. Limpeza de Interface do BBB</legend>
+      <label class="chk"><input type="checkbox" id="oculta-navbar"> Ocultar barra superior (título, gravação, avatares)</label>
+      <label class="chk"><input type="checkbox" id="oculta-sidebar"> Ocultar lista de usuários e menu lateral</label>
+      <label class="chk"><input type="checkbox" id="oculta-controles"> Ocultar barra inferior (#ActionsBar), botões de slide/zoom e toasts</label>
+      <label class="chk"><input type="checkbox" id="gridbbb"> Forçar câmeras em grade (Grid CSS)</label>
     </fieldset>
   </div>
 
   <div class="coluna">
     <div>
-      <div class="titulo"><h2>Pré-visualização</h2>
-        <label class="chk" style="margin:0"><input type="checkbox" id="simulafala" checked> Alguém falando</label>
+      <div class="titulo"><h2>Pré-visualização Interativa</h2>
+        <label class="chk" style="margin:0"><input type="checkbox" id="simulafala" checked> Simular participante falando</label>
       </div>
       <div class="pv-scope" id="pv">
-        <header id="Navbar">título da sala · avatares · gravação</header>
-        <div id="layout"><div id="app"><div class="camera-area">
-          <div data-test="webcamVideoItem" class="VideoListItem">
-            <div data-test="videoPlayer"><video></video></div>
-            <div class="TalkingIndicatorWrapper"><div class="TalkingIndicatorButton">Profª Marina</div></div>
-            <div data-test="webcamItemName">Profª Marina</div>
-            <span data-test="isTalking"></span>
+        <header id="Navbar">
+          <div>título da sala · gravação · conexões</div>
+          <div data-test="talkingIndicator">
+            <div class="TalkingIndicatorWrapper">
+              <button class="TalkingIndicatorButton" data-test="isTalking"><span>Profª Marina</span></button>
+              <button class="TalkingIndicatorButton" data-test="wasTalking"><span>Leonardo</span></button>
+            </div>
           </div>
-          <div data-test="webcamVideoItem" class="VideoListItem">
-            <div data-test="videoPlayer"><video></video></div>
-            <div data-test="webcamItemName">Leonardo</div>
-            <span data-test="wasTalking"></span>
+        </header>
+        <div id="layout">
+          <div id="app">
+            <div class="pv-stage-grid">
+              <!-- Chat Público Simulado -->
+              <div class="ChatWrapper" style="width: 220px; flex-shrink: 0;">
+                <div data-test="chatMessages">
+                  <div data-test="chatMessageItem">
+                    <div>
+                      <div>
+                        <div data-test="viewerAvatar"><span>PM</span></div>
+                        <div role="listitem">
+                          <div><span class="ChatUserName">Profª Marina</span><time>14:02</time></div>
+                        </div>
+                      </div>
+                      <div class="chat-message-content"><p>Sejam bem-vindos à transmissão!</p></div>
+                    </div>
+                  </div>
+                  <div data-test="chatMessageItem">
+                    <div>
+                      <div>
+                        <div data-test="viewerAvatar"><span>LE</span></div>
+                        <div role="listitem">
+                          <div><span class="ChatUserName">Leonardo</span><time>14:03</time></div>
+                        </div>
+                      </div>
+                      <div class="chat-message-content"><p>Áudio e slides perfeitos no OBS.</p></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Área de Slides / Projeção / Vídeo Simulado -->
+              <div data-test="presentationContainer" class="pv-slide-mock">
+                <strong>📊 APRESENTAÇÃO / SLIDES / VÍDEO</strong>
+                <small>Projeção limpa (sem barra de 4 bolinhas/whiteboard)</small>
+                <div id="presentationToolbarWrapper" style="position:absolute;bottom:8px;right:8px;background:#334155;padding:3px 7px;border-radius:4px;font-size:10px;">Toolbar Zoom/4-bolinhas</div>
+              </div>
+
+              <!-- Dock de Câmeras Simulado -->
+              <div id="cameraDock" style="flex: 1;">
+                <div class="camera-area">
+                  <div data-test="webcamVideoItem" class="VideoListItem">
+                    <div data-test="videoPlayer"><video></video></div>
+                    <div data-test="webcamItemName">Profª Marina</div>
+                    <span data-test="isTalking" style="display:none"></span>
+                  </div>
+                  <div data-test="webcamVideoItem" class="VideoListItem">
+                    <div data-test="videoPlayer"><video></video></div>
+                    <div data-test="webcamItemName">Leonardo</div>
+                  </div>
+                  <div data-test="webcamItem" class="VideoListItem">
+                    <div data-test="videoPlayer"><video></video></div>
+                    <div data-test="webcamItemName">Intérprete de Libras</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div data-test="webcamItem" class="VideoListItem">
-            <div data-test="videoPlayer"><video></video></div>
-            <div data-test="webcamItemName">Intérprete de Libras</div>
-          </div>
-        </div></div></div>
-        <div class="resizeSidebarContentWrapper">painel lateral</div>
-        <div class="ChatWrapper">chat</div>
-        <div id="cameraDock">dock de câmeras</div>
+        </div>
       </div>
     </div>
 
     <div>
       <div class="titulo"><h2>CSS gerado</h2>
         <div class="acoes">
-          <button class="principal" id="copiar">Copiar para o OBS</button>
-          <button id="baixar">Baixar .css</button>
+          <button type="button" class="principal" id="copiar">Copiar para o OBS</button>
+          <button type="button" id="baixar">Baixar .css</button>
         </div>
       </div>
       <div class="aviso">
         Cole em <strong>Propriedades da fonte → CSS personalizado</strong> de uma Browser Source
-        apontando para <code>https://conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>. Dê "Ativar
-        interação" uma vez para entrar como convidado. Os temas Discord e StreamYard vêm dos seus
-        próprios <code>css_custom_discord.css</code> / <code>css_custom_v0.1.css</code>, então a
-        transparência funciona de verdade aqui: sobrescreve as <code>--color-*</code> do cliente.
-      </div>
-      <div class="aviso revisar">
-        <strong>Proveniência dos seletores.</strong> ✔ = aparece no seu <code>css_custom*.css</code>
-        ou no código da ponte, logo já provado no DOM real da RNP. ✎ = derivado por mim dos padrões
-        deles (ex.: <code>webcamItemName</code>) — se o nome não estilizar, inspecione e troque o
-        seletor. Classes com <code>[class*="…"]</code> dependem do hash de versão do BBB.
+        apontando para <code>https://conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>. Use os botões de
+        <strong>Modo de Cena</strong> no topo para gerar CSS específico para <em>Câmeras + Slides</em>,
+        <em>Só as Câmeras</em>, <em>Só os Slides/Projeção</em> ou <em>Tudo com Chat</em>.
       </div>
       <textarea id="saida" spellcheck="false" readonly></textarea>
     </div>
@@ -224,48 +284,42 @@
 <script>
 /* =========================================================================
    Gerador de CSS para o cliente BBB aberto direto numa Browser Source do OBS.
-
-   De onde vem cada valor:
-   - Tema Ponte ...... CAM_FORMAT_CSS / NAME_TAG_CSS / SPEAKING_CSS (server.py)
-   - Tema Discord .... css_custom_discord.css  (verde #23a55a, ocioso #2b2d31/#949ba4,
-                       raio 20, borda 2px rgba(255,255,255,.85), selo fixo em top:26px)
-   - Tema StreamYard . css_custom_v0.1.css     (gradiente #10b981->#059669, raio 25,
-                       ocioso rgba(30,41,59,.85)/#e2e8f0, card 2px rgba(255,255,255,.25))
-   - Transparência ... :root com --color-background/surface/white/content-background
-                       transparentes + contêineres zerados (a receita dos dois arquivos)
-
-   Seletores: ✔ = comprovados (seus css_custom*.css ou a ponte).  ✎ = derivado.
+   Combina os seletores validados em:
+   - css_custom_discord.css (Discord Broadcast v0.2)
+   - css_custom_v0.1.css    (StreamYard Broadcast v0.1)
+   - server.py              (Estilos Ponte / Broadcast / Ifes)
    ========================================================================= */
 const TEMAS = {
   ponte: {
     rotulo: 'glass', rotuloPos: 'card', accento: '#38bdf8', fala: '#22c55e',
     textonome: '#ffffff', bordacam: '#38bdf8', rborda: 2, raio: 12, sombra: 18,
     fonte: "'Outfit', sans-serif", fsize: 13, fweight: 700, espac: 0, uppercase: false,
-    opacidade: 85, pulso: true, anel: true, transparente: false, oculos: {},
+    opacidade: 85, pulso: true, anel: true, transparente: true,
+    oculos: { navbar: true, sidebar: true, controles: true },
   },
   discord: {
     rotulo: 'discord', rotuloPos: 'topo', accento: '#5865f2', fala: '#23a55a',
-    textonome: '#ffffff', bordacam: '#949ba4', rborda: 2, raio: 12,
-    sombra: 16, fonte: "'Outfit', 'Helvetica Neue', sans-serif", fsize: 13.5, fweight: 700,
-    espac: .3, uppercase: false, opacidade: 100, pulso: true, anel: true, transparente: true,
-    oculos: { navbar: true, sidebar: true, controles: true, chat: true },
+    textonome: '#ffffff', bordacam: '#2b2d31', rborda: 2, raio: 12,
+    sombra: 18, fonte: "'Outfit', 'Helvetica Neue', sans-serif", fsize: 13.5, fweight: 700,
+    espac: .2, uppercase: false, opacidade: 92, pulso: true, anel: true, transparente: true,
+    oculos: { navbar: true, sidebar: true, controles: true },
   },
   streamyard: {
-    rotulo: 'streamyard', rotuloPos: 'topo', accento: '#10b981', fala: '#10b981',
-    textonome: '#ffffff', bordacam: '#ffffff', rborda: 2, raio: 12, sombra: 14,
-    fonte: "'Outfit', sans-serif", fsize: 14, fweight: 700, espac: .4, uppercase: true,
-    opacidade: 100, pulso: true, anel: true, transparente: true,
-    oculos: { navbar: true, sidebar: true, controles: false, chat: true },
+    rotulo: 'streamyard', rotuloPos: 'topo', accento: '#38bdf8', fala: '#10b981',
+    textonome: '#ffffff', bordacam: '#ffffff', rborda: 2, raio: 12, sombra: 18,
+    fonte: "'Outfit', sans-serif", fsize: 14, fweight: 700, espac: .3, uppercase: false,
+    opacidade: 88, pulso: true, anel: true, transparente: true,
+    oculos: { navbar: true, sidebar: true, controles: true },
   },
 };
 
 const BASE = Object.assign({
-  tema: 'ponte', formato: 'original', colunas: 3, gap: 10, dock: 330,
-  mostrarnomes: true, gridbbb: true, simulafala: true,
-  ocultaNavbar: true, ocultaSidebar: true, ocultaControles: false, ocultaChat: false,
-}, TEMAS.ponte);
+  tema: 'discord', cena: 'cameras-slides', mostrarChat: false, estilizarChat: true,
+  formato: 'original', colunas: 1, gap: 10, dock: 330,
+  mostrarnomes: true, gridbbb: false, simulafala: true,
+  ocultaNavbar: true, ocultaSidebar: true, ocultaControles: true,
+}, TEMAS.discord);
 
-/* Receitas do rótulo. Os quatro primeiros são da ponte; os dois últimos, seus. */
 const RECEITAS = {
   glass:      { fundo: 'rgba(15, 23, 42, {A})', raio: '8px',  borda: '1px solid rgba(255,255,255,.2)', padding: '5px 12px',  sombra: 'rgba(0,0,0,.6)',      marca: 'ponto', blur: 10 },
   pill:       { fundo: '#0f172a',                raio: '24px', borda: '2px solid {AC}',               padding: '4px 14px',  sombra: 'rgba(56,189,248,.4)', marca: 'LIVE', blur: 0 },
@@ -279,118 +333,380 @@ const FIT = { original: 'contain', esticado: 'fill', auto: 'cover',
               retrato: 'cover', paisagem: 'cover', quadrada: 'cover' };
 const PROP = { retrato: '9 / 16', paisagem: '16 / 9', quadrada: '1 / 1' };
 
-/* ✔ comprovado nos seus css_custom*.css / na ponte · ✎ derivado por mim */
 const S = {
   cards:     ['[data-test="webcamVideoItem"]', '[data-test="webcamItem"]', 'div[class*="VideoListItem"]'],
   videos:    ['[data-test="videoPlayer"]'],
-  falaWrap:  ['div[class*="TalkingIndicatorWrapper"]', 'div[class*="IsTalkingWrapper"]', 'div[class*="Speaking"]'],
-  falaBtn:   ['div[class*="TalkingIndicatorButton"]', '[data-test="talkingIndicator"]', '[data-test="isTalking"]'],
-  ocioso:    ['[data-test="wasTalking"]', 'div[class*="VideoListItem"] [data-test="wasTalking"]',
-              'div[class*="TalkingIndicator"] [data-test="wasTalking"]'],
-  nome:      ['[data-test="webcamItemName"]',
-              /* O span generico do VideoListItem tambem casa com os spans do indicador
-                 de fala/ocioso, e por especificidade VENCE a regra do badge: sem estes
-                 :not() o "quem nao esta falando" sai pintado como selo ativo. */
+  falaCont:  ['#Navbar [data-test="talkingIndicator"]', '[data-test="talkingIndicator"]', 'div[class*="IsTalkingWrapper"]', 'div[class*="Speaking"]'],
+  falaWrap:  ['div[class*="TalkingIndicatorWrapper"]'],
+  falaBtn:   ['div[class*="TalkingIndicatorWrapper"] button', '[data-test="talkingIndicator"] button', '[data-test="isTalking"]', 'div[class*="TalkingIndicatorButton"]'],
+  ocioso:    ['[data-test="wasTalking"]', 'div[class*="VideoListItem"] [data-test="wasTalking"]', 'div[class*="TalkingIndicator"] [data-test="wasTalking"]'],
+  nomeCard:  ['[data-test="webcamItemName"]', '[data-test="webcamVideoItem"] [class*="userName"]',
               'div[class*="VideoListItem"] > span:not([class*="Talking"]):not([data-test="wasTalking"]):not([data-test="isTalking"])'],
-  tela:      ['#screenshareContainer', '#screenshareVideo', '[data-test="screenshareVideo"]'],
+  apresentacao: ['[data-test="presentationContainer"]', '#presentationInnerWrapper', '#screenshareContainer', '[data-test="screenshareVideo"]', '[data-test="externalVideoPlayer"]', 'div[class*="ExternalVideo"]'],
   lista:     ['div[class*="VideoList"]', 'div[class*="camera-area"]'],
-  /* NAO vao para a regra de grade: #layout/#app/#cameraDock/VideoCanvas sao
-     ancestrais da lista. Aplicar grid em nivel de fora E no de dentro multiplica
-     as colunas (3x3) e cada camera encolhe -- a previa pegou isso acontecendo. */
-  ancestrais: ['#layout', '#app', '#cameraDock', 'div[class*="VideoCanvas"]', 'div[class*="Draggable"]'],
   dock:      ['#cameraDock', 'div[id="cameraDock"]'],
   navbar:    ['#Navbar', 'header#Navbar', 'header[id="Navbar"]'],
-  navbarFilho: ['header[id="Navbar"] > div:first-child', 'header[id="Navbar"] [class*="Avatar"]',
-                'header[id="Navbar"] [class*="NavBarButton"]', 'header[id="Navbar"] [data-test="presentationTitle"]',
-                'header[id="Navbar"] [aria-label*="Opções"]', 'header[id="Navbar"] [aria-label*="Sair"]',
-                '[data-test="recordingIndicator"]', '[data-test="profileSidebarButton"]',
-                '[data-test="connectionStatusItemUser"]', 'div[id*="connectionBars"]'],
-  sidebar:   ['div[class*="resizeSidebarContentWrapper"]', 'div[class*="SidebarContentBackdrop"]',
-              'div[class*="SidebarContentPanel"]', 'div[class*="PanelContent"]', 'section[class*="SidebarContent"]'],
-  chat:      ['div[class*="ChatWrapper"]', '[data-test="chatMessages"]'],
-  controles: ['[data-test="listenOnlyBtn"]', '[data-test="dropdownWebcamButton"]'],
-  superfices: ['#cameraDock', 'div[class*="VideoCanvas"]', 'div[class*="Draggable"]',
-              'div[class*="VideoList"]', 'div[class*="ChatWrapper"]', 'div[class*="SidebarContent"]',
-              'div[class*="PanelContent"]', '#layout', '#app'],
+  navbarFilho: [
+    'header[id="Navbar"] > div:first-child', 'header[id="Navbar"] div[class*="Top"]',
+    'header[id="Navbar"] div[class*="Right"]', 'header[id="Navbar"] div[class*="Left"]',
+    'header[id="Navbar"] div[class*="Center"]', 'header[id="Navbar"] [data-test="presentationTitle"]',
+    'header[id="Navbar"] #presentationTitle', 'header[id="Navbar"] #SessionDetailsModal',
+    'header[id="Navbar"] [class*="Avatar"]', 'header[id="Navbar"] [class*="NavBarButton"]',
+    'header[id="Navbar"] [aria-label*="Opções"]', 'header[id="Navbar"] [aria-label*="Options"]',
+    'header[id="Navbar"] [aria-label*="Sair"]', 'header[id="Navbar"] [aria-label*="Leave"]',
+    'div[id="connectionBars"]', 'div[id*="connectionBars"]',
+    '[data-test="connectionStatusItemUser"]', '[data-test="profileSidebarButton"]',
+    '[data-test="recordingIndicator"]'
+  ],
+  sidebarUsuarios: [
+    '[data-test="navigationSidebarContainer"]', 'nav[class*="NavigationSidebar"]',
+    'div[class*="NavigationSidebarBackdrop"]', 'div[class*="NavigationSidebar"]',
+    '[data-test="userListPanel"] [data-test="draggableUser"]',
+    '[data-test="userListPanel"] [class*="UserList"]',
+    '[data-test="userListPanel"] header', '[data-test="closeUserList"]'
+  ],
+  chatContainers: [
+    'section[class*="SidebarContent"]', 'div[class*="SidebarContentBackdrop"]',
+    'div[class*="SidebarContentPanel"]', 'div[class*="PanelContent"]',
+    'div[class*="SidebarContent"]', 'div[class*="ChatWrapper"]',
+    '[data-test="chatMessages"]'
+  ],
+  controlesGerais: [
+    '#ActionsBar', 'section#ActionsBar', 'section[id="ActionsBar"]',
+    'div[class*="ActionsBarWrapper"]', 'div[class*="ActionsBar"]',
+    '[data-test="listenOnlyBtn"]', '[data-test="dropdownWebcamButton"]',
+    '[data-test="webcamFullscreenButton"]', '[data-test="webcamsFullscreenButton"]',
+    '[data-test="pinVideoButton"]', '[data-test="dropdownToggle"]',
+    '[data-test="webcamVideoItem"] button[class*="dropdown"]',
+    '[data-test="webcamVideoItem"] [class*="Dropdown"]',
+    '#presentationToolbarWrapper', 'div[id="presentationToolbarWrapper"]',
+    '[id^="PresentationToolbar"]', '[data-test="prevSlide"]', '[data-test="nextSlide"]',
+    '[data-test="skipSlide"]', '[data-test="quickPollBtn"]', '[data-test="fitToWidth"]',
+    '[data-test="presentationFullscreen"]', '[data-test="presentationDownload"]',
+    '[data-test="multiUser"]', '.tlui-toolbar', 'div[class*="PresentationToolbar"]',
+    'div[class*="PresentationSlideControls"]', 'div[class*="PresentationZoomControls"]',
+    'div[class*="ExtraTools"]', 'div[class*="MultiUserTool"]', 'div[class*="presentationTools"]',
+    'button[class*="buttonPresentation"]', 'button[class*="MultiUser"]',
+    'button[aria-label*="ferramentas"]', 'button[aria-label*="whiteboard"]',
+    'button[aria-label*="Quadro de anotações"]', 'div[class*="SvgContainer"] button',
+    '[data-test="notificationBannerBar"]', '[data-test="toast"]', '[data-test="toastSmallMsg"]',
+    'div[class*="Toast"]', 'div[class*="Banner"]', 'span[id="destination"]',
+    'div#modals-container:empty', '.sr-only'
+  ],
+  superficies: [
+    'html', 'body', 'main', '#app', '#layout', 'div[id^="layout"]',
+    'div[class*="Layout"]', 'section[class*="Layout"]', 'div[class*="MainLayout"]',
+    '#cameraDock', 'div[class*="VideoCanvas"]', 'div[class*="Draggable"]',
+    'div[class*="VideoList"]', 'div[class*="ChatWrapper"]',
+    'section[class*="SidebarContent"]', 'div[class*="SidebarContent"]',
+    'div[class*="SidebarContentBackdrop"]', 'div[class*="SidebarContentPanel"]',
+    'div[class*="PanelContent"]', 'div[id^="scroll-box"]',
+    'div[id^="chat-list"]', 'div[id^="breakoutBox"]'
+  ],
+  divisores: [
+    'hr', 'hr[class*="Separator"]', 'div[class*="Separator"]',
+    'div[class*="Divider"]', 'div[class*="Splitter"]',
+    'div[class*="ResizeHandle"]', 'div[class*="resizeSidebarContentWrapper"]'
+  ]
 };
 
-function lista(p, arr) { return arr.map(function (s) { return p + s; }).join(',\n    '); }
-function bloco(sel, regras) {
-  return sel + ' {\n' + regras.filter(Boolean).map(function (r) { return '    ' + r; }).join('\n') + '\n}\n';
+function lista(p, arr, sufixo) {
+  sufixo = sufixo || '';
+  return arr.map(function (s) { return p + s + sufixo; }).join(',\n');
 }
+
+function bloco(sel, regras) {
+  return sel + ' {\n' + regras.filter(Boolean).map(function (r) { return '    ' + r; }).join('\n') + '\n}';
+}
+
 function rgba(hex, alpha) {
   if (String(hex).indexOf('rgb') === 0) return hex;
   const n = parseInt(String(hex).replace('#', ''), 16);
   return 'rgba(' + ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ', ' + alpha + ')';
 }
 
-function regrasTema(s, P) {
+function regrasNomeEFala(s, P) {
   const r = RECEITAS[s.rotulo];
-  const cards = lista(P, S.cards);
-  const nome = lista(P, S.nome);
+  const nomeCard = lista(P, S.nomeCard);
   const out = [];
   const alpha = (s.opacidade / 100).toFixed(2);
   const fundo = r.fundo.replace('{A}', alpha).replace('{AC}', s.accento).replace('{FALA}', s.fala);
 
-  out.push('/* ===== Rótulo de nome — estilo ' + s.rotulo + ' ===== */');
-  const regrasNome = [
-    'position: ' + (s.rotuloPos === 'topo' ? 'fixed' : 'absolute') + ' !important;',
-    s.rotuloPos === 'topo' ? 'top: 26px !important; left: 50% !important; transform: translateX(-50%);'
-                           : 'bottom: 10px !important; left: 10px !important;',
-    r.marca === 'barra' ? 'left: 0 !important; bottom: 0 !important; width: 100%;' : '',
-    'display: inline-flex !important; align-items: center; gap: 8px;',
-    'background: ' + fundo + ' !important;',
-    (r.borda === '0' ? '' : 'border: ' + r.borda.replace('{AC}', s.accento) + ' !important;'),
-    'padding: ' + r.padding + ' !important;',
-    (r.raio === '0' ? '' : 'border-radius: ' + r.raio + ' !important;'),
+  out.push('/* ===== 1. Etiqueta de nome dentro de cada câmera ===== */');
+  const usarEstiloCard = (s.rotuloPos === 'card');
+  const regrasEtiquetaCard = [
+    'position: absolute !important;',
+    (usarEstiloCard && r.marca === 'barra') ? 'left: 0 !important; bottom: 0 !important; width: 100% !important;'
+                                             : 'bottom: 8px !important; left: 8px !important;',
+    'display: inline-flex !important; align-items: center; gap: 6px;',
+    'background: ' + (usarEstiloCard ? fundo : 'rgba(15, 23, 42, ' + alpha + ')') + ' !important;',
+    (usarEstiloCard && r.borda !== '0')
+      ? 'border: ' + r.borda.replace('{AC}', s.accento) + ' !important;'
+      : 'border: 1px solid rgba(255, 255, 255, 0.15) !important;',
+    'padding: ' + (usarEstiloCard ? r.padding : '3px 10px') + ' !important;',
+    'border-radius: ' + (usarEstiloCard && r.raio !== '0' ? r.raio : '6px') + ' !important;',
     'color: ' + s.textonome + ' !important;',
     'font-family: ' + s.fonte + ' !important;',
-    'font-size: ' + s.fsize + 'px !important;',
-    'font-weight: ' + s.fweight + ' !important;',
+    'font-size: ' + (usarEstiloCard ? s.fsize : Math.max(11, s.fsize - 1.5)) + 'px !important;',
+    'font-weight: ' + (usarEstiloCard ? s.fweight : 600) + ' !important;',
     s.espac ? 'letter-spacing: ' + s.espac + 'px !important;' : '',
     s.uppercase ? 'text-transform: uppercase !important;' : '',
-    r.textoSombra ? 'text-shadow: ' + r.textoSombra + ' !important;' : '',
+    'text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85) !important;',
     r.blur ? 'backdrop-filter: blur(' + r.blur + 'px) !important; -webkit-backdrop-filter: blur(' + r.blur + 'px) !important;' : '',
-    'box-shadow: 0 4px ' + Math.max(8, s.sombra) + 'px ' + r.sombra + ' !important;',
-    'z-index: 2147483000 !important;',
+    'box-shadow: 0 4px ' + Math.max(8, s.sombra) + 'px rgba(0,0,0,0.45) !important;',
+    'z-index: 20 !important;',
     'visibility: visible !important; opacity: 1 !important; pointer-events: none;',
-    'max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;',
+    'max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;',
   ];
-  out.push(bloco(nome, regrasNome));
+  out.push(bloco(nomeCard, regrasEtiquetaCard));
 
-  /* Os dois temas colocam o selo no próprio botão do indicador de fala. */
-  if (s.rotulo === 'discord' || s.rotulo === 'streamyard') {
-    out.push(bloco(lista(P, S.falaBtn), regrasNome.map(function (x) { return x; })));
+  if (usarEstiloCard && r.marca === 'ponto') {
+    out.push(bloco(lista(P, S.nomeCard, '::before'), [
+      'content: ""; width: 7px; height: 7px; border-radius: 50%;',
+      'background: ' + s.accento + '; flex: 0 0 auto;'
+    ]));
+  } else if (usarEstiloCard && r.marca === 'LIVE') {
+    out.push(bloco(lista(P, S.nomeCard, '::before'), [
+      'content: "LIVE"; font-size: ' + Math.max(8, Math.round(s.fsize) - 4) + 'px;',
+      'font-weight: 800; background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 4px;'
+    ]));
+  }
+
+  out.push('/* ===== 2. Indicador de quem está falando no topo central ===== */');
+  if (s.rotuloPos === 'topo') {
+    out.push(bloco(lista(P, S.falaCont), [
+      'display: flex !important; visibility: visible !important; opacity: 1 !important;',
+      'position: ' + (P ? 'absolute' : 'fixed') + ' !important;',
+      'top: ' + (P ? '10px' : '26px') + ' !important; left: 50% !important; transform: translateX(-50%) !important;',
+      'z-index: 999999 !important; background: transparent !important;',
+      'border: none !important; box-shadow: none !important; gap: 8px !important; pointer-events: none !important;'
+    ]));
+    out.push(bloco(lista(P, S.falaWrap) + ',\n' + lista(P, S.falaWrap, ' *'), [
+      'background: transparent !important; background-color: transparent !important;',
+      'box-shadow: none !important; border: none !important;'
+    ]));
     out.push(bloco(lista(P, S.falaWrap), [
       'display: inline-flex !important; visibility: visible !important; opacity: 1 !important;',
-      'background: transparent !important; border: none !important; box-shadow: none !important;',
-      'padding: 0 !important; margin: 0 !important;',
+      'gap: 8px !important; padding: 0 !important; margin: 0 !important;'
+    ]));
+    out.push(bloco(lista(P, S.falaBtn), [
+      'display: inline-flex !important; align-items: center !important; justify-content: center !important;',
+      'visibility: visible !important; opacity: 1 !important; gap: 8px !important;',
+      'background: ' + fundo + ' !important;',
+      'color: ' + s.textonome + ' !important;',
+      'font-family: ' + s.fonte + ' !important;',
+      'font-weight: ' + s.fweight + ' !important;',
+      'font-size: ' + s.fsize + 'px !important;',
+      'padding: ' + r.padding + ' !important;',
+      'border-radius: ' + (r.raio === '0' ? '20px' : r.raio) + ' !important;',
+      'border: ' + (r.borda === '0' ? '2px solid rgba(255,255,255,.85)' : r.borda.replace('{AC}', s.accento)) + ' !important;',
+      'box-shadow: 0 4px 16px ' + r.sombra + ' !important;',
+      'text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8) !important;',
+      s.uppercase ? 'text-transform: uppercase !important;' : ''
     ]));
     out.push(bloco(lista(P, S.ocioso), [
       'background: ' + (s.tema === 'discord' ? '#2b2d31' : 'rgba(30, 41, 59, 0.85)') + ' !important;',
       'color: ' + (s.tema === 'discord' ? '#949ba4' : '#e2e8f0') + ' !important;',
       'border: 1px solid rgba(255,255,255,.2) !important;',
-      'border-radius: ' + r.raio + ' !important;',
-      'padding: ' + r.padding + ' !important;',
-      'opacity: .85 !important;',
+      'box-shadow: 0 2px 8px rgba(0,0,0,.25) !important;',
+      'opacity: .85 !important;'
     ]));
+  } else {
+    out.push(bloco(lista(P, S.falaCont), ['display: none !important;']));
   }
-  if (r.marca === 'ponto') {
-    out.push(bloco(nome + '::before', ['content: ""; width: 7px; height: 7px; border-radius: 50%;',
-      'background: ' + s.accento + '; flex: 0 0 auto;']));
-  } else if (r.marca === 'LIVE') {
-    out.push(bloco(nome + '::before', ['content: "LIVE"; font-size: ' + Math.max(8, Math.round(s.fsize) - 4) + 'px;',
-      'font-weight: 800; background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 4px;']));
-  }
+
   if (s.pulso) {
-    out.push(bloco(lista(P, S.falaBtn) + '::after, ' + P + '[data-test="isTalking"]', [
+    out.push(bloco(lista(P, S.falaBtn, '::after'), [
       'content: ""; width: 7px; height: 7px; border-radius: 50%; background: #ffffff;',
-      'box-shadow: 0 0 8px #ffffff; animation: rnpPulse 1.2s infinite;',
+      'box-shadow: 0 0 8px #ffffff; animation: rnpPulse 1.2s infinite;'
     ]));
     out.push('@keyframes rnpPulse {\n    0%, 100% { transform: scale(1); opacity: 1; }\n'
       + '    50% { transform: scale(1.3); opacity: .6; }\n}');
   }
-  if (!s.mostrarnomes) out.push(bloco(nome + ', ' + lista(P, S.falaBtn), ['display: none !important;']));
+
+  if (!s.mostrarnomes) {
+    out.push(bloco(nomeCard, ['display: none !important;']));
+  }
+  return out.join('\n\n');
+}
+
+function regrasCenaLayout(s, P, preview) {
+  const out = [];
+  const cena = s.cena;
+  const mostrarChat = (cena === 'completo' || cena === 'so-chat');
+  const mostrarSlides = (cena === 'completo' || cena === 'cameras-slides' || cena === 'so-slides');
+  const mostrarCameras = (cena === 'completo' || cena === 'cameras-slides' || cena === 'so-cameras');
+
+  out.push('/* ===== 3. Modo de Cena: ' + cena.toUpperCase() + ' ===== */');
+
+  if (!mostrarChat) {
+    out.push('/* Ocultar Chat Público e Painel Lateral */');
+    out.push(bloco(lista(P, S.chatContainers), [
+      'display: none !important;',
+      'width: 0 !important; min-width: 0 !important; max-width: 0 !important;',
+      'opacity: 0 !important; pointer-events: none !important;'
+    ]));
+  }
+
+  if (!mostrarSlides) {
+    out.push('/* Ocultar Área de Apresentação / Slides / Projeção / Vídeo */');
+    out.push(bloco(lista(P, S.apresentacao), [
+      'display: none !important;',
+      'width: 0 !important; height: 0 !important;',
+      'opacity: 0 !important; pointer-events: none !important;'
+    ]));
+  }
+
+  if (!mostrarCameras) {
+    out.push('/* Ocultar Câmeras / Webcams */');
+    out.push(bloco(lista(P, S.dock.concat(S.cards).concat(['div[class*="VideoCanvas"]'])), [
+      'display: none !important;',
+      'width: 0 !important; height: 0 !important;',
+      'opacity: 0 !important; pointer-events: none !important;'
+    ]));
+  }
+
+  /* Expansão em tela cheia quando é Só Câmeras, Só Slides ou Só Chat */
+  if (cena === 'so-cameras') {
+    out.push('/* Expandir grade de câmeras em 100% da tela */');
+    out.push(bloco(lista(P, S.dock.concat(['div[class*="VideoCanvas"]'])), preview ? [
+      'width: 100% !important; max-width: 100% !important; min-width: 100% !important;'
+    ] : [
+      'position: fixed !important; inset: 0 !important; top: 0 !important; left: 0 !important;',
+      'width: 100vw !important; min-width: 100vw !important; max-width: 100vw !important;',
+      'height: 100vh !important; min-height: 100vh !important; max-height: 100vh !important;',
+      'padding: 16px !important; box-sizing: border-box !important; z-index: 10 !important;'
+    ]));
+    out.push(bloco(lista(P, S.lista), [
+      'display: grid !important;',
+      'grid-template-columns: repeat(' + Math.max(1, s.colunas) + ', minmax(0, 1fr)) !important;',
+      'gap: ' + s.gap + 'px !important;',
+      'width: 100% !important; height: 100% !important; align-content: center !important;'
+    ]));
+  } else if (cena === 'so-slides') {
+    out.push('/* Expandir Slides / Projeção / Vídeo em 100% da tela */');
+    out.push(bloco(lista(P, S.apresentacao), preview ? [
+      'width: 100% !important; max-width: 100% !important;'
+    ] : [
+      'position: fixed !important; inset: 0 !important; top: 0 !important; left: 0 !important;',
+      'width: 100vw !important; max-width: 100vw !important;',
+      'height: 100vh !important; max-height: 100vh !important;',
+      'margin: 0 !important; border-radius: ' + s.raio + 'px !important; z-index: 10 !important;'
+    ]));
+  } else if (cena === 'so-chat') {
+    out.push('/* Expandir Chat Público em 100% da fonte */');
+    out.push(bloco(lista(P, ['section[class*="SidebarContent"]', 'div[class*="SidebarContentPanel"]', 'div[class*="ChatWrapper"]']), preview ? [
+      'width: 100% !important; max-width: 100% !important;'
+    ] : [
+      'position: fixed !important; inset: 0 !important; top: 0 !important; left: 0 !important;',
+      'width: 100vw !important; min-width: 100vw !important; max-width: 100vw !important;',
+      'height: 100vh !important; max-height: 100vh !important; z-index: 10 !important;'
+    ]));
+  } else {
+    /* Modo Câmeras + Slides (com ou sem Chat) */
+    if (s.dock) {
+      out.push('/* Largura fixa da coluna de câmeras */');
+      out.push(bloco(lista(P, S.dock), [
+        'width: ' + s.dock + 'px !important;',
+        'min-width: ' + Math.max(200, s.dock - 30) + 'px !important;',
+        'max-width: ' + (s.dock + 30) + 'px !important;'
+      ]));
+    }
+    if (s.gridbbb) {
+      out.push(bloco(lista(P, S.lista), [
+        'display: grid !important;',
+        'grid-template-columns: repeat(' + s.colunas + ', minmax(0, 1fr)) !important;',
+        'gap: ' + s.gap + 'px !important;'
+      ]));
+    }
+  }
+
+  return out.join('\n\n');
+}
+
+function regrasChatEstilizado(s, P) {
+  const mostrarChat = (s.cena === 'completo' || s.cena === 'so-chat');
+  if (!mostrarChat || !s.estilizarChat) return '';
+  const isDiscord = (s.tema === 'discord');
+  const cardBg = isDiscord ? 'rgba(49, 51, 56, 0.94)' : 'rgba(15, 23, 42, 0.88)';
+  const userColor = isDiscord ? '#818cf8' : s.accento;
+  const out = [];
+
+  out.push('/* ===== 4. Chat Público & Enquetes Estilizados (' + s.tema + ') ===== */');
+  if (s.cena !== 'so-chat') {
+    out.push(bloco(lista(P, ['section[class*="SidebarContent"]', 'div[class*="SidebarContentPanel"]', 'div[class*="ChatWrapper"]']), [
+      'width: 330px !important; min-width: 300px !important; max-width: 360px !important;',
+      'top: 0 !important; bottom: 0 !important; height: 100vh !important; max-height: 100vh !important;'
+    ]));
+  }
+  out.push(bloco(lista(P, [
+    '[data-test="chatTitle"]', 'header[data-test="chatTitle"]', 'div[data-test="chatTitle"]',
+    '[data-test="chatOptionsMenu"]', '[data-test="hidePublicChat"]', '[data-test="hidePrivateChat"]',
+    'header[class*="HeaderContainer"]', 'form', '#message-input', '[data-test="messageInput"]',
+    '[data-test="sendMessageButton"]', 'div[class*="EmojiPickerWrapper"]', 'div[class*="ChatMessageError"]',
+    '.chat-message-toolbar', 'div[class*="chat-message-toolbar"]', '[data-test="chatMessageToolbar"]',
+    '[data-test="replyMessageButton"]', '[data-test="reactMessageButton"]', '[data-test="pinMessageButton"]',
+    '[data-test="chatMessageActionsDropdown"]', 'div[class*="ReactionWrapper"]', 'div[class*="ReactionPopover"]',
+    '[data-test="chatMessageItem"][data-message-type="system"]',
+    '[data-test="chatMessageItem"][data-message-type*="userIsPresenter"]',
+    '[data-test="chatMessageItem"][data-message-type*="System"]',
+    '[data-test="systemMessageText"]', 'div[class*="SystemMessage"]', 'div[class*="systemMessage"]'
+  ]), ['display: none !important;']));
+
+  out.push(bloco(lista(P, ['#chat-list', 'div[id^="chat-list"]', '[data-test="chatMessages"]', 'div[class*="MessageList"]', 'div[class*="ScrollableList"]']), [
+    'background: transparent !important; height: 100% !important; padding: 16px 12px !important;',
+    'scrollbar-width: none !important; -ms-overflow-style: none !important;',
+    '-webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 3%, #000 97%, transparent 100%) !important;',
+    'mask-image: linear-gradient(to bottom, transparent 0%, #000 3%, #000 97%, transparent 100%) !important;'
+  ]));
+
+  out.push(bloco(lista(P, ['[data-test="chatMessageItem"]', '.chat-message-container']), [
+    'display: flex !important; flex-direction: column !important;',
+    'background-color: ' + cardBg + ' !important;',
+    'backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important;',
+    'border-radius: 12px !important; padding: 10px 14px !important; margin: 6px 2px !important;',
+    'border: 1px solid rgba(255, 255, 255, 0.12) !important;',
+    'box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;'
+  ]));
+
+  out.push(bloco(lista(P, [
+    '[data-test="chatMessageItem"] [class*="ChatUserName"]',
+    '[data-test="chatMessageItem"] [class*="userName"]',
+    '[data-test="chatMessageItem"] [class*="senderName"]',
+    '.chat-message-container [class*="ChatUserName"]'
+  ]), [
+    'font-weight: 800 !important; font-size: 14px !important;',
+    'color: ' + userColor + ' !important; text-shadow: 0 1px 2px rgba(0,0,0,0.8) !important;'
+  ]));
+
+  out.push(bloco(lista(P, ['[data-test="chatMessageItem"] time', '[data-test="chatMessageItem"] [class*="ChatTime"]']), [
+    'font-size: 11px !important; color: #94a3b8 !important; margin-left: 8px !important;'
+  ]));
+
+  out.push(bloco(lista(P, [
+    '[data-test="chatMessageItem"] div[class*="chat-message-content"] p',
+    '[data-test="chatMessageItem"] p', '.chat-message-container p'
+  ]), [
+    'color: #f8fafc !important; font-size: 14px !important; line-height: 1.4 !important;',
+    'margin: 2px 0 0 !important; text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;'
+  ]));
+
+  out.push(bloco(lista(P, ['[data-test="chatMessageItem"] [data-test="viewerAvatar"]']), [
+    'display: inline-flex !important; align-items: center !important; justify-content: center !important;',
+    'width: 26px !important; height: 26px !important; border-radius: 50% !important;',
+    'background: linear-gradient(135deg, ' + s.accento + ', #4752c4) !important;',
+    'color: #fff !important; font-size: 11px !important; font-weight: 800 !important; margin-right: 6px !important;'
+  ]));
+
+  out.push(bloco(lista(P, ['div[data-message-type="poll"]', '[data-test="pollResultMsg"]', 'div[class*="PollResult"]']), [
+    'background-color: #2b2d31 !important; border: 1px solid #1e1f22 !important;',
+    'border-radius: 12px !important; padding: 12px 14px !important; color: #f2f3f5 !important;'
+  ]));
+
+  out.push(bloco(lista(P, ['div[data-message-type="poll"] button', '[data-test="pollResultMsg"] button']), [
+    'display: none !important;'
+  ]));
+
   return out.join('\n\n');
 }
 
@@ -398,93 +714,103 @@ function gerar(s, P, preview) {
   P = P || '';
   const cards = lista(P, S.cards);
   const videos = lista(P, S.videos.concat(S.cards.map(function (c) { return c + ' video'; })));
-  const r = RECEITAS[s.rotulo];
   const partes = [];
 
   partes.push('/* =====================================================================\n'
-    + ' * OBS Browser Source — cliente BBB direto (fallback sem a ponte)\n'
-    + ' * Tema: ' + s.tema + ' · Rótulo: ' + s.rotulo + ' (' + (s.rotuloPos === 'topo' ? 'selo fixo no topo' : 'dentro do card') + ') · Formato: ' + s.formato + '\n'
-    + ' * ✔/origem: valores tirados de css_custom_discord.css, css_custom_v0.1.css e\n'
-    + ' * da ponte.  ✎ = seletor derivado, confirme no DOM se algo não pegar.\n'
+    + ' * OBS Browser Source — BigBlueButton / RNP WebConf\n'
+    + ' * Cena: ' + s.cena + ' · Tema: ' + s.tema + ' · Rótulo: ' + s.rotulo + ' (' + s.rotuloPos + ') · Formato: ' + s.formato + '\n'
     + ' * ===================================================================== */');
 
   if (s.transparente) {
-    partes.push('/* ✔ A transparência real do BBB vem das variáveis do cliente —\n'
-      + '   é a mesma receita dos seus css_custom*.css. */\n'
-      + bloco(':root', ['--color-background: transparent !important;',
-          '--color-surface: transparent !important;', '--color-white: transparent !important;',
-          '--color-content-background: transparent !important;'])
-      + bloco(lista(P, S.superfices), ['background: transparent !important;',
-          'background-color: transparent !important;', 'box-shadow: none !important;']));
+    partes.push('/* Transparência Global (Canal Alpha para o OBS Studio) */\n'
+      + bloco(':root', [
+          '--color-background: transparent !important;',
+          '--color-surface: transparent !important;',
+          '--color-white: transparent !important;',
+          '--color-content-background: transparent !important;'
+        ]) + '\n\n'
+      + bloco(lista(P, S.superficies), [
+          'background: transparent !important;',
+          'background-color: transparent !important;',
+          'background-image: none !important;',
+          'box-shadow: none !important;',
+          'border: none !important;'
+        ]) + '\n\n'
+      + bloco(lista(P, S.divisores), [
+          'display: none !important;',
+          'border: none !important;'
+        ]));
   }
 
-  partes.push('/* ✔ moldura das câmeras */\n' + bloco(cards, [
+  /* Moldura das câmeras */
+  partes.push('/* Moldura e cantos arredondados das câmeras */\n' + bloco(cards, [
     'position: relative !important;',
     'border-radius: ' + s.raio + 'px !important;',
     (s.rborda ? 'border: ' + s.rborda + 'px solid ' + s.bordacam + ' !important;' : 'border: 0 !important;'),
-    'box-shadow: ' + (s.sombra ? '0 ' + Math.round(s.sombra / 3) + 'px ' + s.sombra + 'px rgba(0,0,0,.55) !important;' : 'none !important;'),
+    'box-shadow: ' + (s.sombra ? '0 ' + Math.round(s.sombra / 3) + 'px ' + s.sombra + 'px rgba(0,0,0,.5) !important;' : 'none !important;'),
     'overflow: hidden !important;',
-    'background: ' + (s.transparente ? 'transparent !important;' : '#0f172a !important;'),
+    'background: ' + (s.tema === 'discord' ? '#1e1f22' : (s.transparente ? 'transparent' : '#0f172a')) + ' !important;',
+    'transition: border-color 0.2s ease, box-shadow 0.2s ease !important;',
+    'margin-bottom: 8px !important;'
   ]));
 
-  partes.push('/* ✔ vídeo: proporção e ajuste */\n' + bloco(videos, [
+  partes.push('/* Vídeo: proporção e ajuste */\n' + bloco(videos, [
     'object-fit: ' + FIT[s.formato] + ' !important;',
-    'width: 100% !important;', 'height: 100% !important;',
+    'width: 100% !important;',
+    'height: 100% !important;'
   ]));
 
   if (PROP[s.formato]) {
-    partes.push('/* ✔ proporção travada */\n' + bloco(cards, ['aspect-ratio: ' + PROP[s.formato] + ' !important;']));
+    partes.push('/* Proporção travada */\n' + bloco(cards, ['aspect-ratio: ' + PROP[s.formato] + ' !important;']));
   }
 
-  if (s.gridbbb) {
-    partes.push('/* ✔ grade de cameras: só no nivel da lista, para nao aninhar grades */\n'
-      + bloco(lista(P, S.lista), [
-      'display: grid !important;',
-      'grid-template-columns: repeat(' + s.colunas + ', minmax(0, 1fr)) !important;',
-      'gap: ' + s.gap + 'px !important;',
-    ]));
-  }
-
-  if (s.dock) {
-    partes.push('/* ✔ largura do dock de câmeras (330px é o valor do seu Discord) */\n'
-      + bloco(lista(P, S.dock), ['width: ' + s.dock + 'px !important;',
-        'min-width: ' + Math.max(240, s.dock - 30) + 'px !important;',
-        'max-width: ' + (s.dock + 30) + 'px !important;']));
-  }
-
-  partes.push('/* ✔ quem está falando: anel no card (usa :has(), Chromium 105+) */\n'
-    + bloco(cards + ':has(' + lista(P, S.falaBtn) + ')', s.anel ? [
-      'border-color: ' + s.fala + ' !important;',
-      'box-shadow: 0 0 0 1px ' + rgba(s.fala, .7) + ', 0 0 16px ' + rgba(s.fala, .5) + ' !important;',
+  /* Anel em quem está falando — aplicado em CADA seletor de card! */
+  const seletoresCardFalando = [];
+  S.cards.forEach(function (c) {
+    seletoresCardFalando.push(P + c + ':has([data-test="isTalking"])');
+    seletoresCardFalando.push(P + c + ':has(div[class*="TalkingIndicatorButton"])');
+    seletoresCardFalando.push(P + c + '[class*="talking"]');
+    seletoresCardFalando.push(P + c + '[class*="Speaking"]');
+  });
+  partes.push('/* Destaque na câmera de quem está falando */\n'
+    + bloco(seletoresCardFalando.join(',\n'), s.anel ? [
+      'border: ' + Math.max(2, s.rborda) + 'px solid ' + s.fala + ' !important;',
+      'box-shadow: 0 0 0 1px ' + rgba(s.fala, .7) + ', 0 0 16px ' + rgba(s.fala, .55) + ' !important;'
     ] : ['border-color: ' + s.bordacam + ' !important;']));
 
-  partes.push('/* ✔ apresentação / compartilhamento de tela */\n' + bloco(lista(P, S.tela), [
-    'object-fit: contain !important;', 'border-radius: ' + s.raio + 'px !important;',
+  /* Apresentação / Slides / Compartilhamento de tela */
+  partes.push('/* Área de Apresentação / Slides / Vídeo */\n' + bloco(lista(P, S.apresentacao), [
+    'background: transparent !important;',
+    'background-color: transparent !important;',
+    'object-fit: contain !important;',
+    'border-radius: ' + s.raio + 'px !important;',
+    'overflow: hidden !important;',
     'border: ' + (s.rborda ? s.rborda + 'px solid ' + s.bordacam : '0') + ' !important;',
+    'box-shadow: ' + (s.sombra ? '0 8px ' + s.sombra + 'px rgba(0, 0, 0, 0.35)' : 'none') + ' !important;'
   ]));
 
-  partes.push(regrasTema(s, P));
+  partes.push(regrasNomeEFala(s, P));
+  partes.push(regrasCenaLayout(s, P, preview));
+  partes.push(regrasChatEstilizado(s, P));
 
+  /* Ocultar elementos de interface do BBB */
   const oculta = [];
   if (s.ocultaNavbar) oculta.push.apply(oculta, S.navbarFilho);
-  if (s.ocultaSidebar) oculta.push.apply(oculta, S.sidebar);
-  if (s.ocultaChat) oculta.push.apply(oculta, S.chat);
-  if (s.ocultaControles) oculta.push.apply(oculta, S.controles);
+  if (s.ocultaSidebar) oculta.push.apply(oculta, S.sidebarUsuarios);
+  if (s.ocultaControles) oculta.push.apply(oculta, S.controlesGerais);
   if (oculta.length) {
-    partes.push('/* ✔ esconder interface (mesma lista dos seus css_custom*.css) */\n'
-      + bloco(lista(P, oculta), ['display: none !important;']));
+    partes.push('/* Limpeza de interface do BBB (botões, barras, modais e toasts) */\n'
+      + bloco(lista(P, oculta), ['display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;']));
   }
   if (s.ocultaNavbar) {
-    partes.push('/* ✔ navbar como contêiner invisível, sem sumir com o selo de fala */\n'
-      + bloco(lista(P, S.navbar), ['background: transparent !important;',
-        'border: none !important;', 'box-shadow: none !important;',
-        'pointer-events: none !important;', 'overflow: visible !important;']));
+    partes.push('/* Navbar como contêiner invisível (preserva o selo de quem fala) */\n'
+      + bloco(lista(P, S.navbar), [
+        'background: transparent !important; background-color: transparent !important;',
+        'border: none !important; box-shadow: none !important;',
+        'pointer-events: none !important; overflow: visible !important;'
+      ]));
   }
 
-  if (s.transparente && !preview) {
-    partes.push('/* Se ainda houver fundo pintado, procure o contêiner no Inspecionar e\n'
-      + '   adicione aqui. As variáveis acima cobrem o caminho oficial do cliente. */');
-  }
   return partes.filter(Boolean).join('\n\n');
 }
 
@@ -501,17 +827,19 @@ function pintarPreview(s) {
     v.style.minHeight = '74px';
     v.style.background = 'linear-gradient(160deg,#2b3f61,#1a2740 60%,#243350)';
   });
-  const falando = document.querySelector('#pv [data-test="isTalking"]');
-  if (falando) falando.style.display = s.simulafala ? 'inline-flex' : 'none';
-  const ocioso = document.querySelector('#pv [data-test="wasTalking"]');
-  if (ocioso) ocioso.style.display = s.simulafala ? 'none' : 'inline-flex';
+  document.querySelectorAll('#pv [data-test="isTalking"]').forEach(function (el) {
+    el.style.display = s.simulafala ? 'inline-flex' : 'none';
+  });
 }
 
 /* ---------------- bindings ---------------- */
 const IDS = ['formato', 'colunas', 'gap', 'dock', 'rotulo', 'rotuloPos', 'fonte', 'fsize',
              'fweight', 'espac', 'uppercase', 'opacidade', 'mostrarnomes', 'accento', 'fala',
              'textonome', 'bordacam', 'rborda', 'raio', 'sombra', 'pulso', 'anel', 'transparente',
-             'oculta-navbar', 'oculta-sidebar', 'oculta-controles', 'oculta-chat', 'gridbbb', 'simulafala'];
+             'oculta-navbar', 'oculta-sidebar', 'oculta-controles', 'gridbbb', 'simulafala',
+             'mostrar-chat', 'estilizar-chat'];
+
+let estadoCenaAtual = 'cameras-slides';
 
 function lerEstado() {
   const s = {};
@@ -522,19 +850,26 @@ function lerEstado() {
     s[chave] = el.type === 'checkbox' ? el.checked
              : (el.type === 'range' || el.type === 'number') ? Number(el.value) : el.value;
   });
-  s.tema = s.tema || document.querySelector('.temas button.ativo').dataset.tema;
+  const btnTema = document.querySelector('.temas button.ativo');
+  s.tema = btnTema ? btnTema.dataset.tema : 'discord';
+  s.cena = estadoCenaAtual;
   return s;
 }
 
 function escreverEstado(s) {
-  const mapa = { formato: s.formato, colunas: s.colunas, gap: s.gap, dock: s.dock,
+  estadoCenaAtual = s.cena || (s.mostrarChat ? 'completo' : 'cameras-slides');
+  s.mostrarChat = (estadoCenaAtual === 'completo' || estadoCenaAtual === 'so-chat');
+  const mapa = {
+    formato: s.formato, colunas: s.colunas, gap: s.gap, dock: s.dock,
     rotulo: s.rotulo, rotuloPos: s.rotuloPos, fonte: s.fonte, fsize: s.fsize,
     fweight: s.fweight, espac: s.espac, uppercase: s.uppercase, opacidade: s.opacidade,
     mostrarnomes: s.mostrarnomes, accento: s.accento, fala: s.fala, textonome: s.textonome,
     bordacam: s.bordacam, rborda: s.rborda, raio: s.raio, sombra: s.sombra, pulso: s.pulso,
     anel: s.anel, transparente: s.transparente, 'oculta-navbar': s.ocultaNavbar,
     'oculta-sidebar': s.ocultaSidebar, 'oculta-controles': s.ocultaControles,
-    'oculta-chat': s.ocultaChat, gridbbb: s.gridbbb, simulafala: s.simulafala };
+    gridbbb: s.gridbbb, simulafala: s.simulafala,
+    'mostrar-chat': s.mostrarChat, 'estilizar-chat': s.estilizarChat !== false
+  };
   Object.keys(mapa).forEach(function (id) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -542,6 +877,9 @@ function escreverEstado(s) {
   });
   document.querySelectorAll('.temas button').forEach(function (b) {
     b.classList.toggle('ativo', b.dataset.tema === s.tema);
+  });
+  document.querySelectorAll('#modosCena button').forEach(function (b) {
+    b.classList.toggle('ativo', b.dataset.cena === estadoCenaAtual);
   });
 }
 
@@ -556,6 +894,9 @@ function mostrarValores(s) {
 
 function render() {
   const s = lerEstado();
+  document.querySelectorAll('#modosCena button').forEach(function (b) {
+    b.classList.toggle('ativo', b.dataset.cena === s.cena);
+  });
   document.getElementById('saida').value = gerar(s, '', false);
   mostrarValores(s);
   pintarPreview(s);
@@ -563,17 +904,48 @@ function render() {
 }
 
 document.querySelectorAll('select, input').forEach(function (el) {
-  el.addEventListener('input', render);
+  el.addEventListener('input', function () {
+    if (el.id === 'mostrar-chat') {
+      if (el.checked && (estadoCenaAtual === 'cameras-slides' || estadoCenaAtual === 'so-cameras' || estadoCenaAtual === 'so-slides')) {
+        estadoCenaAtual = 'completo';
+      } else if (!el.checked && (estadoCenaAtual === 'completo' || estadoCenaAtual === 'so-chat')) {
+        estadoCenaAtual = 'cameras-slides';
+      }
+    }
+    render();
+  });
   el.addEventListener('change', render);
+});
+
+document.querySelectorAll('#modosCena button').forEach(function (b) {
+  b.onclick = function () {
+    estadoCenaAtual = b.dataset.cena;
+    const chkChat = document.getElementById('mostrar-chat');
+    if (chkChat) {
+      chkChat.checked = (estadoCenaAtual === 'completo' || estadoCenaAtual === 'so-chat');
+    }
+    if (estadoCenaAtual === 'so-cameras') {
+      document.getElementById('gridbbb').checked = true;
+      if (Number(document.getElementById('colunas').value) < 2) {
+        document.getElementById('colunas').value = 3;
+      }
+    }
+    render();
+  };
 });
 
 document.querySelectorAll('.temas button').forEach(function (b) {
   b.onclick = function () {
-    const t = Object.assign({}, BASE, TEMAS[b.dataset.tema], { tema: b.dataset.tema });
+    const atual = lerEstado();
+    const t = Object.assign({}, BASE, TEMAS[b.dataset.tema], {
+      tema: b.dataset.tema,
+      cena: atual.cena,
+      mostrarChat: atual.mostrarChat,
+      estilizarChat: atual.estilizarChat
+    });
     t.ocultaNavbar = (t.oculos || {}).navbar !== false;
     t.ocultaSidebar = (t.oculos || {}).sidebar !== false;
-    t.ocultaControles = (t.oculos || {}).controles === true;
-    t.ocultaChat = (t.oculos || {}).chat === true;
+    t.ocultaControles = (t.oculos || {}).controles !== false;
     escreverEstado(t); render();
   };
 });
@@ -588,10 +960,11 @@ document.getElementById('copiar').onclick = async function () {
 };
 
 document.getElementById('baixar').onclick = function () {
+  const s = lerEstado();
   const blob = new Blob([document.getElementById('saida').value], { type: 'text/css' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'rnp-obs-bbb-' + lerEstado().tema + '.css';
+  a.download = 'rnp-obs-bbb-' + s.tema + '-' + s.cena + '.css';
   a.click(); URL.revokeObjectURL(a.href);
 };
 
