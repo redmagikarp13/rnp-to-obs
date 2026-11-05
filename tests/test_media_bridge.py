@@ -827,6 +827,8 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertIn('id="energiaCard"', html, 'Card de ajustes de energia ausente no /control.')
         self.assertIn('id="btnToggleMeters"', html, 'Botão de toggle dos medidores VU ausente no /control.')
         self.assertIn('RnpMeters.toggle()', html)
+        self.assertIn('class="tab-icon"', html, 'Abas do dock devem usar ícones compactos.')
+        self.assertNotIn('class="tab-long"', html, 'Rótulos longos nas abas não devem alargar o dock.')
         self.assertNotIn(r'HKLM\\', html, 'Caminhos de registro renderizados no HTML devem ter barra simples.')
         self.assertIn(r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile', html)
 

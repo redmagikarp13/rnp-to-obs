@@ -3524,11 +3524,11 @@ async def get_control_panel():
     <!-- SALVAR / CARREGAR CONFIGURAÇÕES -->
     </div>
     <nav class="dock-tabs" id="dockTabs" role="tablist" aria-label="Seções do dock">
-        <button class="dock-tab is-active" role="tab" aria-selected="true" data-tab="conexao"><span class="tab-long">Conexão</span><span class="tab-short">Conex</span></button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="palco"><span class="tab-long">Palco</span><span class="tab-short">Palco</span></button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="cameras"><span class="tab-long">Câmeras</span><span class="tab-short">Câm</span></button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="audio"><span class="tab-long">Áudio</span><span class="tab-short">Áudio</span></button>
-        <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat"><span class="tab-long">Chat</span><span class="tab-short">Chat</span></button>
+        <button class="dock-tab is-active" role="tab" aria-selected="true" data-tab="conexao" title="Conexão &amp; Fontes" aria-label="Conexão"><span class="tab-icon" aria-hidden="true">⚡</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="palco" title="Palco, Slides, Libras &amp; Enquete" aria-label="Palco"><span class="tab-icon" aria-hidden="true">🎬</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="cameras" title="Câmeras Sincronizadas" aria-label="Câmeras"><span class="tab-icon" aria-hidden="true">🎥</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="audio" title="Áudio &amp; Mixer OBS" aria-label="Áudio"><span class="tab-icon" aria-hidden="true">🔊</span></button>
+        <button class="dock-tab" role="tab" aria-selected="false" data-tab="chat" title="Chat ao Vivo (RNP &amp; YouTube)" aria-label="Chat"><span class="tab-icon" aria-hidden="true">💬</span></button>
     </nav>
     <div class="dock-mosaico" id="dockMosaico" data-block-order="{dock_order_csv}">
     <section class="dock-bloco" data-bloco="mixer" data-cat="audio" data-span="2" data-rows="2">

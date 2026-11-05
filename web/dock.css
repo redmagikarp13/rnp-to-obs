@@ -717,26 +717,28 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 .dock-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
 .dock-tab {
     flex: 1;
-    padding: 6px 0;
-    font-size: 11px;
+    min-width: 0;
+    padding: 7px 4px;
+    font-size: 16px;
+    line-height: 1;
     font-weight: 700;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
     color: var(--text-disabled);
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.dock-tab .tab-icon {
+    display: inline-block;
+    line-height: 1;
 }
 .dock-tab.is-active {
     background: var(--primary);
     border-color: var(--primary-border);
     color: var(--primary-text);
-}
-/* 5 abas não cabem com rótulo longo em dock muito estreito: troca por curto. */
-.tab-short { display: none; }
-@media (max-width: 599px) {
-    .tab-long { display: none; }
-    .tab-short { display: inline; }
-    .dock-tab { font-size: 10px; }
 }
 
 /* Modelo de blocos em MASONRY de colunas: cada painel mantém sua altura natural e
