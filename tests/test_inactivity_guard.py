@@ -87,6 +87,27 @@ class GuardInatividadeTests(unittest.TestCase):
             return await page.evaluate('() => window._confirmado === true')
         self.assertTrue(self._rodar(MODAL_ATRASADO_HTML, script))
 
+    def test_popup_microfone_e_ocultado_sem_afetar_presentation_container(self):
+        html = """<!DOCTYPE html>
+<html lang="pt-BR"><body>
+  <div id="layout">
+    <div id="presentationContainer">
+      <div id="micPopupBox" class="mute-toast">
+        <span>Clique em <svg></svg> para ativar seu microfone.</span>
+      </div>
+    </div>
+  </div>
+</body></html>"""
+        async def script(page):
+            await page.wait_for_function('() => (window._rnpHiddenMicPopups || 0) >= 1', timeout=4000)
+            return await page.evaluate('''() => ({
+                popupDisplay: getComputedStyle(document.getElementById('micPopupBox')).display,
+                presDisplay: getComputedStyle(document.getElementById('presentationContainer')).display,
+            })''')
+        res = self._rodar(html, script)
+        self.assertEqual(res['popupDisplay'], 'none')
+        self.assertNotEqual(res['presDisplay'], 'none')
+
 
 if __name__ == '__main__':
     unittest.main()

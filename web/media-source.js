@@ -605,7 +605,51 @@
     const inactivityModalRe = /inactivity|atividade|inatividade|ainda est[aá]|still.?here|sess[ãa]o/i;
     const inactivityConfirmRe = /^(verificar|confirm\w*|continuar|estou aqui|sim[,\s]*ainda estou aqui|i'?m still here|stay in meeting)$/i;
     const inactivityDangerRe = /logout|sair|leave|encerrar|disconnect/i;
+    const micPopupRe = /ativar seu microfone|unmute your microphone|activar su micr[oó]fono|abrir seu microfone/i;
+    function hideMicPopups() {
+        if (!document.getElementById('rnp-hide-mic-popup-style')) {
+            const st = document.createElement('style');
+            st.id = 'rnp-hide-mic-popup-style';
+            st.textContent = `
+                [data-test="muteModal"],
+                [data-test="unmuteModal"],
+                [class*="muteModal" i],
+                [class*="muteWarning" i],
+                [role="tooltip"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                }
+            `;
+            (document.head || document.documentElement).appendChild(st);
+        }
+        const stopSelector = 'body, html, main, #app, #layout, #presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"], [data-test="whiteboard"], #svgContainer';
+        for (const el of document.querySelectorAll('div, span, p, aside, section')) {
+            if (el.matches(stopSelector) || el.closest('[data-test="chatMessages"], #chat-messages, [data-test="chatMessageItem"]')) continue;
+            const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!txt || txt.length > 140 || !micPopupRe.test(txt)) continue;
+            if (el.querySelector('video, #presentationContainer, [data-test="presentationContainer"], [data-test="whiteboard"]')) continue;
+            let target = el;
+            while (
+                target.parentElement &&
+                !target.parentElement.matches(stopSelector) &&
+                !target.parentElement.querySelector('video, #presentationContainer, [data-test="presentationContainer"], [data-test="whiteboard"]')
+            ) {
+                const pTxt = (target.parentElement.textContent || '').replace(/\s+/g, ' ').trim();
+                if (pTxt.length > txt.length + 10 || !micPopupRe.test(pTxt)) break;
+                target = target.parentElement;
+            }
+            if (target.style.display !== 'none') {
+                target.style.setProperty('display', 'none', 'important');
+                target.style.setProperty('visibility', 'hidden', 'important');
+                target.style.setProperty('opacity', '0', 'important');
+                window._rnpHiddenMicPopups = (window._rnpHiddenMicPopups || 0) + 1;
+            }
+        }
+    }
     function dismissInactivityModals() {
+        hideMicPopups();
         const roots = [document, document.querySelector('#videoPlayer')?.shadowRoot].filter(Boolean);
         for (const root of roots) {
             const hosts = [...root.querySelectorAll('[data-test], .modal, [role="dialog"]')];
