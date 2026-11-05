@@ -89,17 +89,25 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 
 ---
 
-## 🔊 Arquitetura de Áudio (PCM WebRTC)
+## 🔊 Arquitetura de Áudio (PCM WebRTC) e Estabilidade
 
 - Captura as trilhas `<audio>/<video>` da conferência via **Web Audio API** na página da sala
   (`startPcm` em `web/media-source.js` → `/ws/pcm_in`), com analisador por canal.
+- **Navegador de captura (`RNP_BROWSER_CHANNEL`):** `server.py` lança o navegador de captura percorrendo `["msedge", "chrome", "chromium", None]`. O Chromium completo (`channel="chromium"`) entra **antes** do fallback `None` porque `headless=True` sem `channel` no Playwright sobe o `chrome-headless-shell` (build reduzido sem pilha de áudio real, que reduz o clock do `AudioContext` para ~0,625×). A variável `RNP_BROWSER_CHANNEL` (`msedge`, `chrome`, `chromium`/`full`, `shell`) permite fixar o canal sem editar código.
 - **Web Worker + `MessageChannel` (anti-stutter):** o `AudioWorkletProcessor` (`PcmCapture`, blocos de 2048 amostras ≈ 42,7 ms) transfere cada chunk por `MessagePort` diretamente para um **Web Worker dedicado** (`WORKER_SRC`), que mantém o WebSocket `/ws/pcm_in`. Assim, travamentos periódicos da *main thread* do BBB (React/SVG/DOM) não represam o envio de áudio.
+- **Chat do YouTube sem bloquear o event loop (`youtube_chat_loop`):** `pytchat` é consumido via `await asyncio.to_thread(chat.get)` lendo diretamente `data.items` (lista pronta). **Nunca** iterar `data.sync_items()` na thread do event loop: no `pytchat`, `sync_items()` é um generator que executa `time.sleep(1.0)` síncrono ao final de cada lote, o que congelava o event loop por 1 s a cada 2 s e causava underrun/rajada no `/stage` do OBS.
 - Transmite por WebSocket binário (`/ws/pcm_out`) em **Float32 48.000 Hz** usando filas não-bloqueantes por cliente (`_enqueue_latest`, `PCM_QUEUE_MAX=64`, drop-oldest) e jitter buffer de `TARGET_LEAD = 0.12s` no player (`PCM_AUDIO_SCRIPT`, com `bufferSource.onended -> disconnect()`).
+- **Telemetria ponta a ponta (`pcm_diag` em `/api/status` e `/api/pcm_playback`):** expõe `chegada_pcm_in`, `event_loop_atraso_ms` (`loop_lag_monitor`), `captura` (`gerados`, `enviados_ws`, `via_worker`), `ouvintes` e `playback` por cliente (`/stage`, `/control`, incluindo `rearmar_colado`, `rearmar_adiantado` e `lead_ms`).
 - **Master:** é reproduzido pelo `/stage` (`PCM_AUDIO_SCRIPT`) e pelo monitor local do `/control`. Não há segundo player em `/audio` — dois masters duplicavam o consumo no OBS e causavam eco.
 - **No OBS:** na fonte `/stage`, marque "Controlar áudio via OBS" e **desligue**
   "Shutdown source when not visible", senão o som some em cenas sem o palco.
 - A captura continua ativa mesmo sem ninguém ouvindo: é dela que vêm os picos usados
   na detecção de fala (`is_speaking` / chips de voz), com *peak-hold* τ=300 ms.
+- **Padrões de economia de CPU no `/control`:**
+  - Previews de vídeo (`cameras`, `presentation`, `stage`) nascem **desligados** (`previewOff = { cameras: true, presentation: true, stage: true }` em `web/dock.js`).
+  - Monitor local de áudio nasce **mudo** (`savedMuted !== '0'`).
+  - Medidores VU individuais nascem **desligados** (`window.RnpMeters` / `#btnToggleMeters` em `web/audio-mixer.js`, classe `.medidores-desligados` em `web/dock.css`); quando desligados, o dock não abre `/ws/peaks_out` e reduz o poll de `/api/media` de `500 ms` para `3000 ms`.
+- **Card de Ajustes de Energia do Windows (`#energiaCard` no `/control`):** tutorial recolhível com 9 grupos e 29 comandos clicáveis (`copiarComando`) para `powercfg` (`PROCTHROTTLEMIN`, `PERFBOOSTMODE`, `CPMINCORES`, `ASPM` PCIe, suspensão seletiva USB), MMCSS (`NetworkThrottlingIndex`, `SystemResponsiveness`, `Tasks\Audio`) e `PowerThrottlingOff`.
 
 ---
 
@@ -117,11 +125,14 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 
 ## 🎨 Gerador de CSS para BBB Direto na Browser Source (`tools/gerador_css_obs.html`)
 
-- Ferramenta standalone para quando o operador abre `https://conferenciaweb.rnp.br/sala/<slug>` diretamente numa Browser Source do OBS (fallback sem a ponte), consolidando os seletores de `css_custom_discord.css` e `css_custom_v0.1.css`.
+- Ferramenta standalone que consolida os seletores de `css_custom_discord.css` e `css_custom_v0.1.css` para estilizar o **DOM do cliente BBB** dentro de uma Browser Source do OBS.
+- ⛔ **Não funciona no portal da RNP** (`https://conferenciaweb.rnp.br/sala/<slug>`). O OBS injeta o *CSS personalizado* **somente no frame principal** — `obs-browser/browser-client.cpp`, `BrowserClient::OnLoadEnd`: `if (frame->IsMain() && bs->css.length())` anexa um `<style>` ao `head` daquele frame. Nessa URL o documento principal é o **portal Rails** (`/conference/rooms/<slug>/invite_userid`, verificado: 0 ocorrências de `data-test`, `#cameraDock` e `html5client` no HTML) e o cliente BBB (`html5client` / host Mconf) roda num **iframe filho**, onde o CSS do OBS nunca chega. É a mesma razão pela qual `server.py` precisa de `find_active_bbb_frame` para eleger o frame real da reunião.
+- **Caminho correto no portal da RNP:** usar os endpoints da ponte, que já são overlays transparentes e prontos — `/cameras/grid`, `/presentation`, `/stage` (presets `cameras-only`, `slide-only`, `grid-libras`…), `/libras`, `/chat`, `/tv`. Eles cobrem os 5 Modos de Cena sem injetar CSS.
+- O CSS gerado só tem efeito quando a Browser Source carrega o **cliente BBB como documento principal** (ex.: deployment BBB em que o `html5client` é a URL de topo). O aviso consta na interface (`.aviso.bloqueio`) e no cabeçalho do próprio CSS exportado.
 - **5 Modos de Cena (`#modosCena`):**
   1. `cameras-slides`: oculta o chat/sidebar e exibe apenas Câmeras + Slides/Projeção.
   2. `completo`: exibe Chat Público estilizado + Slides/Projeção + Câmeras.
   3. `so-cameras`: oculta chat e apresentação e expande o `#cameraDock` em `100vw x 100vh` em grade.
   4. `so-slides`: oculta chat e câmeras e expande a área de apresentação/compartilhamento/vídeo em `100vw x 100vh`.
   5. `so-chat`: oculta câmeras e slides e expande o chat estilizado em `100vw x 100vh`.
-- **Próximo passo planejado:** integrar o editor de CSS como Dock dentro do OBS (`http://localhost:3333/css-editor`) com aplicação em tempo real no OBS.
+- **Próximo passo planejado:** integrar o editor de CSS como Dock dentro do OBS (`http://localhost:3333/css-editor`). Para ter efeito no portal da RNP a aplicação teria de ser feita **pela ponte**, injetando o CSS no frame BBB ativo via `frame.evaluate()` (a ponte já resolve esse frame), e não pelo campo *CSS personalizado* do OBS.

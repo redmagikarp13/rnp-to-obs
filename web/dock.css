@@ -795,6 +795,13 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     text-transform: uppercase;
 }
 
+/* Medidores desligados (novo padrão): o /ws/peaks_out nem é aberto, então a barra e o
+   readout ficam parados. Esmaecer deixa explícito que é estado escolhido, não defeito —
+   sem isto o operador lê "— dB" e acha que a trilha está muda. */
+.medidores-desligados .channel-meter-box,
+.medidores-desligados .vu-track-vertical,
+.medidores-desligados .meter-db-readout { opacity: 0.3; }
+
 /* Avançado recolhido (limiar de fala): ajuste raro, não ocupa a zona fixa. */
 .dock-advanced summary {
     cursor: pointer;
@@ -804,6 +811,69 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     padding: 2px 0;
 }
 .dock-advanced[open] summary { margin-bottom: 2px; }
+
+/* Tutorial de ajustes de energia do Windows (card #energiaCard no /control).
+   Cores via opacidade/rgba neutro de propósito: o dock tem tema escuro (broadcast)
+   e claro (ifes), e um fundo/letra fixo ficaria ilegível em um dos dois. */
+.energia-tut { font-size: 11.5px; line-height: 1.55; padding: 8px 10px 10px; }
+.energia-tut p { margin: 0 0 8px; opacity: 0.9; }
+.energia-tut code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.8px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: rgba(127, 127, 127, 0.16);
+}
+.energia-aviso {
+    border-left: 3px solid rgba(245, 158, 11, 0.75);
+    background: rgba(245, 158, 11, 0.1);
+    padding: 6px 9px;
+    border-radius: 0 6px 6px 0;
+}
+.energia-grupo { margin-top: 12px; }
+.energia-grupo h5 {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+.energia-grupo h5 span {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    opacity: 0.6;
+}
+.energia-grupo > p { margin: 0 0 6px; opacity: 0.85; }
+/* Um comando por linha, clicável para copiar. Quebra de linha é obrigatória: os
+   reg add passam de 120 caracteres e o dock pode ficar estreito. */
+.energia-cmd {
+    display: block;
+    width: 100%;
+    margin: 0 0 4px;
+    padding: 5px 9px;
+    text-align: left;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.energia-cmd code { background: none; padding: 0; font-size: 10.8px; }
+.energia-cmd.copiado {
+    background: rgba(34, 197, 94, 0.28);
+    border-color: rgba(34, 197, 94, 0.6);
+}
+.energia-nota {
+    margin-top: 12px;
+    padding-top: 9px;
+    border-top: 1px solid rgba(127, 127, 127, 0.28);
+    font-size: 11px;
+    opacity: 0.85;
+}
 
 /* Estreito: compacta o mixer para a zona fixa não empurrar as abas da dobra. */
 @media (max-width: 899px) {

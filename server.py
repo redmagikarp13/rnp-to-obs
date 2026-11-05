@@ -9,6 +9,7 @@ import time
 import urllib.parse
 import unicodedata
 from collections import deque
+from functools import lru_cache
 from typing import Dict, List, Optional, Set
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse, RedirectResponse, StreamingResponse
@@ -68,6 +69,7 @@ elif hasattr(sys.stderr, 'reconfigure'):
         pass
 
 
+@lru_cache(maxsize=512)
 def emojize_text(text: str) -> str:
     if not text:
         return ""
@@ -344,7 +346,9 @@ def save_disk_config(cfg: dict, best_effort: bool = False):
         with open(CONFIG_FILE + '.tmp', "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=4, ensure_ascii=False)
             f.flush()
-            os.fsync(f.fileno())
+        # Substituição atômica sem os.fsync(): evita barreira síncrona de disco
+        # na thread do event-loop (que podia atrasar o repasse de áudio PCM em
+        # 20-100 ms ao clicar em presets/câmeras no dock).
         os.replace(CONFIG_FILE + '.tmp', CONFIG_FILE)
         print(f"[Config] Configurações salvas com sucesso em {CONFIG_FILE}")
     except Exception as e:
@@ -751,7 +755,15 @@ async def youtube_chat_loop(video_id: str):
 
         while state.youtube_connected and chat.is_alive():
             data = await asyncio.to_thread(chat.get)
-            items = data.sync_items()
+            # NUNCA iterar data.sync_items() na thread do event-loop: no pytchat,
+            # Chatdata.sync_items() é um generator que executa time.sleep(wait_sec)
+            # entre itens e time.sleep(1.0) ao final quando não há mensagens novas,
+            # congelando o event-loop inteiro do Python por ~1.000 ms a cada ciclo de
+            # 2 s e interrompendo o repasse de áudio (/ws/pcm_in -> /ws/pcm_out) para
+            # o /stage no OBS. Chatdata.items já contém a lista pronta sem sleep.
+            items = data if isinstance(data, list) else getattr(data, "items", None)
+            if items is None:
+                items = await asyncio.to_thread(lambda: list(data.sync_items()))
             for c in items:
                 t_str = ""
                 if hasattr(c, 'datetime') and c.datetime:
@@ -887,14 +899,45 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         ]
 
         browser_obj = None
-        for ch in ["msedge", "chrome", None]:
+        # RNP_BROWSER_CHANNEL fixa o navegador de captura sem editar codigo.
+        # Isto NAO e so uma questao de marca: no Playwright, headless=True sem
+        # 'channel' sobe o chrome-headless-shell (build reduzido, sem pilha de audio
+        # real), enquanto channel='chromium'/'msedge'/'chrome' sobe o navegador
+        # COMPLETO em --headless=new. Medido ao vivo na sala vila-velha: com o shell o
+        # AudioContext avanca a ~0,63x do relogio de parede (clock_ratio de janela) e o
+        # event loop do servidor chega a ~1,9 s de atraso; com o Edge completo fica em
+        # 0,994x e ~6 ms. Ou seja: o que quebra o audio e o MODO headless reduzido,
+        # nao o fabricante do navegador.
+        #   'msedge' / 'chrome'            -> navegador do sistema (completo)
+        #   'chromium' / 'full'            -> Chromium completo do Playwright
+        #   'shell' / 'playwright' / ''    -> chrome-headless-shell (so p/ comparar)
+        #   ausente                        -> Edge, Chrome, Chromium completo, shell
+        # O ultimo item da ordem default NAO e decorativo: sem ele, uma maquina sem
+        # Edge/Chrome cai direto no chrome-headless-shell, que nao tem pilha de audio
+        # real e produz o stutter na fonte (medido: clock 0,63x, 62,5% da taxa nominal).
+        _canal_env = os.environ.get('RNP_BROWSER_CHANNEL')
+        if _canal_env is None:
+            canais_navegador = ["msedge", "chrome", "chromium", None]
+        else:
+            _canal = _canal_env.strip().lower()
+            if _canal in ('chromium', 'full'):
+                canais_navegador = ["chromium", None]
+            elif _canal in ('shell', 'headless_shell', 'headless-shell', 'playwright', ''):
+                canais_navegador = [None]
+            else:
+                canais_navegador = [_canal_env.strip()]
+        for ch in canais_navegador:
             try:
                 if ch:
                     browser_obj = await state.playwright.chromium.launch(headless=True, channel=ch, args=launch_args)
                 else:
                     browser_obj = await state.playwright.chromium.launch(headless=True, args=launch_args)
                 if browser_obj:
-                    log(f"Chromium iniciado com sucesso via {ch if ch else 'playwright default'}!")
+                    try:
+                        _versao = browser_obj.version
+                    except Exception:
+                        _versao = '?'
+                    log(f"Chromium iniciado com sucesso via {ch if ch else 'playwright default (chrome-headless-shell: audio degrada)'} (versao {_versao})!")
                     break
             except Exception:
                 continue
@@ -1524,7 +1567,7 @@ async def sync_loop():
                     _enqueue_latest(q, ('txt', msg_txt), state.pcm_clientes_stats.get(ws_cli))
 
             # 2. Capturar Apresentação (Screenshare rápido via Canvas)
-            screen_data = await target_frame.evaluate('''(captureJpeg) => {
+            screen_data = await asyncio.wait_for(target_frame.evaluate('''(captureJpeg) => {
                 const vid = document.querySelector('#screenshareVideo, #screenshareContainer video, [data-test="screenshareVideo"]');
                 if (vid && vid.videoWidth > 0) {
                     if (!captureJpeg) return { mode: 'screenshare', frame: null };
@@ -1550,7 +1593,7 @@ async def sync_loop():
                     return { mode: 'slides', sig };
                 }
                 return null;
-            }''', not state.webrtc_only)
+            }''', not state.webrtc_only), timeout=SYNC_EVAL_TIMEOUT)
 
             if screen_data and screen_data.get('mode') == 'screenshare':
                 state.latest_presentation_frame = base64.b64decode(screen_data['frame']) if screen_data['frame'] else None
@@ -1566,7 +1609,7 @@ async def sync_loop():
                     if await ext_video_loc.count() > 0 and await ext_video_loc.first.is_visible():
                         if not state.webrtc_only or state.latest_presentation_frame is None or (now - last_slide_shot >= 3.0):
                             try:
-                                vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=80)
+                                vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=80, timeout=3000, animations="allow")
                                 state.latest_presentation_frame = vid_bytes
                                 last_slide_shot = now
                             except Exception:
@@ -1577,7 +1620,7 @@ async def sync_loop():
                         pres_loc = target_frame.locator('#presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"]')
                         if await pres_loc.count() > 0 and await pres_loc.first.is_visible():
                             try:
-                                slide_bytes = await pres_loc.first.screenshot(type="jpeg", quality=80)
+                                slide_bytes = await pres_loc.first.screenshot(type="jpeg", quality=80, timeout=3000, animations="allow")
                                 state.latest_presentation_frame = slide_bytes
                                 state.screenshare_active = False
                                 state.presentation_mode = "Slides / Apresentação"
@@ -1615,12 +1658,15 @@ content_sync_loop = sync_loop
 async def extract_rnp_chat(target_frame):
     try:
         # 3. Capturar Chat da RNP (com abertura automática da aba e múltiplos seletores BBB/Mconf)
-        rnp_messages = await target_frame.evaluate(r'''() => {
+        rnp_messages = await asyncio.wait_for(target_frame.evaluate(r'''() => {
                 // 1. Garantir que a aba de bate-papo público está aberta no DOM do BBB
-                const hasChatItems = document.querySelector('[data-test="chatMessageItem"], div.chat-message-container, [data-test="chatUserMessageText"], [data-test="chatMessageList"]');
-                if (!hasChatItems) {
+                // (inclui seletores de painel vazio e cooldown de 15s para não clicar em loop quando o chat está sem mensagens)
+                const hasChatContainer = document.querySelector('[data-test="chatMessageItem"], div.chat-message-container, [data-test="chatUserMessageText"], [data-test="chatMessageList"], [data-test="chatMessages"], #chat-messages, [data-test="chatInput"], textarea[id*="message-input"]');
+                const nowMs = Date.now();
+                if (!hasChatContainer && (!window._rnpLastChatOpenAttempt || nowMs - window._rnpLastChatOpenAttempt > 15000)) {
+                    window._rnpLastChatOpenAttempt = nowMs;
                     const chatOpeners = Array.from(document.querySelectorAll('button, div, a, [role="button"], [role="tab"]')).filter(el => {
-                        const t = (el.innerText || '').toLowerCase();
+                        const t = (el.textContent || '').toLowerCase();
                         const a = (el.getAttribute('aria-label') || '').toLowerCase();
                         const dt = (el.getAttribute('data-test') || '').toLowerCase();
                         return (t.includes('bate-papo público') || a.includes('bate-papo público') || dt === 'publicchat' || dt === 'chatbutton') && !a.includes('opções');
@@ -1796,13 +1842,20 @@ async def extract_rnp_chat(target_frame):
                 });
 
                 return list;
-            }''')
+            }'''), timeout=SYNC_EVAL_TIMEOUT)
 
-        clean_rnp_messages = []
+        changed = False
         for m in rnp_messages:
             m['text'] = emojize_text(m['text'])
-            clean_rnp_messages.append(m)
-            
+            msg_key = m.get('id') or f"{m['user']}___{m['text']}___{m['time']}"
+            existing = state.rnp_messages_map.get(msg_key)
+            if (existing is not None
+                    and existing.get('user') == m.get('user')
+                    and existing.get('avatar', '') == m.get('avatar', '')
+                    and existing.get('time') == m.get('time')):
+                continue
+
+            changed = True
             # Se a mensagem possui remetente identificado, purgar qualquer versão antiga com 'Participante'
             if m['user'] != 'Participante':
                 for k in list(state.rnp_messages_map.keys()):
@@ -1826,7 +1879,6 @@ async def extract_rnp_chat(target_frame):
                         if prev_m.get('source') == 'rnp' and prev_m.get('user') == user_name and prev_m.get('avatar'):
                             prev_m['avatar'] = ''
 
-            msg_key = m.get('id') or f"{m['user']}___{m['text']}___{m['time']}"
             if msg_key not in state.rnp_messages_map:
                 if 'timestamp' not in m:
                     m['timestamp'] = time.time()
@@ -1840,10 +1892,11 @@ async def extract_rnp_chat(target_frame):
                 if m.get('time'):
                     curr['time'] = m['time']
 
-        # Merge e ordenação cronológica
-        all_msgs = list(state.rnp_messages_map.values()) + state.youtube_messages_list
-        all_msgs.sort(key=lambda x: x.get('timestamp', 0))
-        state.chat_messages = all_msgs[-120:]
+        # Merge e ordenação cronológica (apenas quando houve mensagem nova/alterada ou lista vazia)
+        if changed or not state.chat_messages:
+            all_msgs = list(state.rnp_messages_map.values()) + state.youtube_messages_list
+            all_msgs.sort(key=lambda x: x.get('timestamp', 0))
+            state.chat_messages = all_msgs[-120:]
     except Exception:
         pass
 
@@ -1851,10 +1904,10 @@ async def extract_rnp_chat(target_frame):
 async def extract_rnp_poll(target_frame):
     try:
         # 4. Capturar Enquete Ativa ou Publicada
-        poll_info = await target_frame.evaluate('''() => {
+        poll_info = await asyncio.wait_for(target_frame.evaluate('''() => {
                 // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
                 const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
-                    const t = (b.innerText || '').toLowerCase();
+                    const t = (b.textContent || '').toLowerCase();
                     const a = (b.getAttribute('aria-label') || '').toLowerCase();
                     return t.includes('somente ouvir') || a.includes('somente ouvir') || t.includes('listen only') || a.includes('listen only');
                 });
@@ -1862,12 +1915,12 @@ async def extract_rnp_poll(target_frame):
                     audioDismissBtns[0].click();
                 }
 
-                // 1. Modal de Votação Ativo (Procura por ID, data-test ou texto característico)
-                let pollContainer = document.querySelector('#polling-container, [data-test="pollingContainer"], [data-test="pollingModal"]');
+                // 1. Modal de Votação Ativo (Procura por ID, data-test ou contêiner semântico sem varrer todos os divs com innerText)
+                let pollContainer = document.querySelector('#polling-container, [data-test="pollingContainer"], [data-test="pollingModal"], [data-test*="poll" i], aside[class*="poll" i], div[class*="poll" i]');
                 if (!pollContainer) {
-                    pollContainer = Array.from(document.querySelectorAll('aside, div, section')).find(el => {
-                        const t = el.innerText || '';
-                        return (t.includes('Opções da enquete') || t.includes('Pergunta da enquete') || t.includes('Abstenção') || (t.includes('Sim') && t.includes('Não'))) && el.querySelectorAll('button').length > 0;
+                    pollContainer = Array.from(document.querySelectorAll('aside, section, [role="dialog"], [role="region"]')).find(el => {
+                        const t = el.textContent || '';
+                        return (t.includes('Opções da enquete') || t.includes('Pergunta da enquete') || t.includes('Abstenção')) && el.querySelectorAll('button').length > 0;
                     });
                 }
 
@@ -2016,7 +2069,7 @@ async def extract_rnp_poll(target_frame):
                 }
 
                 return null;
-            }''')
+            }'''), timeout=SYNC_EVAL_TIMEOUT)
 
         if poll_info:
             if not state.poll_data or state.poll_data.get('question') != poll_info.get('question'):
@@ -3530,6 +3583,15 @@ async def get_control_panel():
             </div>
 
             <!-- FONTES INDIVIDUAIS (GERADAS DINAMICAMENTE PARA CADA CÂMERA / PARTICIPANTE) -->
+            <!-- Medidores (VU) das fontes individuais: DESLIGADOS por padrão. Sem eles
+                 o dock nem abre o /ws/peaks_out (~16 msg/s) e o poll de /api/media cai
+                 de 500 ms para 3 s - ver web/audio-mixer.js (window.RnpMeters). O texto
+                 do botão já nasce no estado padrão para não piscar rótulo errado. -->
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px">
+                <span style="font-size: 11px; opacity: 0.85">Medidores de nível (VU) das fontes individuais — desligados para poupar CPU</span>
+                <button id="btnToggleMeters" class="btn-ctrl" style="padding: 5px 10px; font-size: 11.5px; border-radius: 6px" onclick="RnpMeters.toggle()">Ligar medidores</button>
+            </div>
+
             <div id="individualChannelsContainer" style="display: flex; gap: 12px; align-items: stretch"></div>
 
             <!-- PLACEHOLDER QUANDO NÃO HÁ FONTES ADICIONAIS -->
@@ -3674,6 +3736,139 @@ async def get_control_panel():
                 </div>
                 <div style="font-size: 10.5px; opacity: 0.85; margin-top: 8px; line-height: 1.4" id="lanHint">💡 Se não abrir, libere a porta {_lan_port} no Firewall do Windows desta máquina (veja o aviso ao lado). Trocar este ajuste exige <strong>reiniciar o app</strong>.</div>
             </div>
+        </div>
+        <!-- AJUSTES DE ENERGIA DO WINDOWS. O slider "Melhor desempenho" só troca o
+             overlay AC: ele NÃO cobre estado mínimo do processador, ASPM, suspensão
+             seletiva USB nem o MMCSS — que são justamente os que afetam áudio em tempo
+             real. Fica como tutorial (e não ação automática) porque é mudança de
+             máquina inteira, exige admin e não cabe à ponte decidir por ela. -->
+        <div class="card" id="energiaCard" style="padding: 12px 14px; margin-top: 8px">
+            <details class="dock-advanced">
+                <summary>⚡ Áudio trava em segundo plano? Ajustes de energia do Windows</summary>
+                <div class="energia-tut">
+                    <p>
+                        <strong>Diagnóstico medido nesta máquina:</strong> o modo
+                        <em>Melhor desempenho</em> foi aplicado (overlay AC), mas o plano clássico
+                        continua <strong>Equilibrado</strong> e três ajustes que afetam áudio em
+                        tempo real seguem no padrão — estado mínimo do processador em
+                        <strong>5%</strong>, <strong>ASPM em máximo</strong> e
+                        <strong>NetworkThrottlingIndex = 10</strong>. Há também interface
+                        <strong>Focusrite USB Audio</strong> e captura <strong>ezcap U3</strong>,
+                        então a suspensão seletiva USB importa.
+                    </p>
+                    <p class="energia-aviso">
+                        Tudo abaixo exige <strong>PowerShell ou CMD como Administrador</strong>.
+                        Rode o grupo <strong>2</strong> primeiro e <strong>anote os valores</strong>:
+                        parte destes ajustes fica oculta e o valor original varia por máquina.
+                    </p>
+
+                    <div class="energia-grupo">
+                        <h5>1 · Revelar os ajustes ocultos <span>só na primeira vez</span></h5>
+                        <p>O <code>powercfg</code> esconde boost, core parking e USB. Sem isto você não consegue ler nem conferir os grupos 3 e 4.</p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg -attributes SUB_PROCESSOR be337238-0d82-4146-a960-4f3749d470c7 -ATTRIB_HIDE</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg -attributes SUB_PROCESSOR 0cc5b647-c1df-4637-891a-dec35c318583 -ATTRIB_HIDE</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg -attributes SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 -ATTRIB_HIDE</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>2 · Ler o estado atual <span>anote antes de mudar</span></h5>
+                        <p>Os valores aparecem como <code>0x...</code>: o primeiro é <strong>CA</strong> (na tomada) e o segundo <strong>CC</strong> (na bateria).</p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_PROCESSOR PERFBOOSTMODE</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_PROCESSOR CPMINCORES</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_PCIEXPRESS</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_USB</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>3 · Impedir a CPU de cair de frequência</h5>
+                        <p>
+                            Com o mínimo em 5% a CPU desce ao P-state mais baixo entre rajadas e demora a subir.
+                            É o que faz o áudio engasgar <em>justo ao voltar para o primeiro plano</em> —
+                            medido aqui: buffer de reprodução chegou a <code>lead_ms = -235</code> na fase restaurada.
+                        </p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 100</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFBOOSTMODE 1</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>4 · Tirar latência dos dispositivos (PCIe e USB)</h5>
+                        <p>
+                            ASPM em <strong>máximo (2)</strong> adiciona latência a tudo que é PCIe:
+                            a NIC Realtek (por onde vem o WebRTC da sala), a GPU e a captura ezcap.
+                            Suspensão seletiva USB desliga dispositivos USB ociosos — arriscado com a Focusrite.
+                        </p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ee12f906-d277-404b-b6da-e5fa1a576df5 0</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>5 · Aplicar</h5>
+                        <p>Reaplica o esquema para os itens 3 e 4 valerem sem reiniciar.</p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setactive SCHEME_CURRENT</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>6 · Rede e prioridade de áudio (MMCSS)</h5>
+                        <p>
+                            O áudio da ponte anda por <strong>WebSocket</strong>, então o
+                            <code>NetworkThrottlingIndex = 10</code> padrão limita pacotes/ms justamente
+                            durante playback de mídia. <code>SystemResponsiveness = 20</code> reserva 20% da CPU
+                            <em>contra</em> as threads de mídia. E <code>Tasks\\Audio</code> vem com
+                            Scheduling Category <strong>Medium</strong>.
+                        </p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 4294967295 /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 10 /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Audio" /v "Scheduling Category" /t REG_SZ /d High /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Audio" /v "SFIO Priority" /t REG_SZ /d High /f</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>7 · Não deixar o Windows "economizar" com o OBS em segundo plano</h5>
+                        <p>
+                            Desliga o <em>power throttling</em> (EcoQoS / Modo de eficiência) no sistema inteiro.
+                            É o que empurra processos em segundo plano para os E-cores num CPU híbrido como o i7-12650H.
+                            <strong>Reinicie o OBS depois.</strong>
+                        </p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f</code></button>
+                        <p class="energia-nota">
+                            Alternativa sem registro: <strong>Gerenciador de Tarefas → Detalhes</strong>, botão direito em
+                            <code>obs64.exe</code> e <code>obs-browser-page.exe</code> → <em>Modo de eficiência</em> → desativar.
+                            Vale só enquanto o processo viver, mas não mexe no resto do sistema.
+                        </p>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>8 · Conferir</h5>
+                        <p>Esperado: <code>PROCTHROTTLEMIN</code> CA = <code>0x00000064</code> (100) e ASPM CA = <code>0x00000000</code>.</p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /query SCHEME_CURRENT SUB_PCIEXPRESS</code></button>
+                    </div>
+
+                    <div class="energia-grupo">
+                        <h5>9 · Reverter <span>valores medidos ANTES nesta máquina</span></h5>
+                        <p>PERFBOOSTMODE e suspensão USB estavam ocultos aqui — use o que você anotou no grupo 2.</p>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 5</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setacvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ee12f906-d277-404b-b6da-e5fa1a576df5 2</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 10 /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 20 /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Audio" /v "Scheduling Category" /t REG_SZ /d Medium /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Audio" /v "SFIO Priority" /t REG_SZ /d Normal /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>reg delete "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /f</code></button>
+                        <button class="btn-copy energia-cmd" onclick="copiarComando(this)"><code>powercfg /setactive SCHEME_CURRENT</code></button>
+                    </div>
+
+                    <p class="energia-nota">
+                        Energia não é a única causa possível. Antes de culpar o Windows, confirme:
+                        (1) o build instalado tem o <strong>Web Worker de captura PCM</strong> — 1.1.12 em diante;
+                        (2) não há <strong>duas Browser Sources com a sala BBB aberta e desmutadas</strong> ao mesmo
+                        tempo (cada uma é um cliente BBB completo e satura a CPU — medido aqui: event loop chegou a
+                        <strong>2184 ms</strong> de atraso); (3) em <code>/api/status</code>, o bloco
+                        <code>pcm_diag.event_loop_atraso_ms</code> é o primeiro lugar a olhar.
+                    </p>
+                </div>
+            </details>
         </div>
         <div class="card dock-notice">
             {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}

@@ -70,6 +70,40 @@ class YouTubeChatTests(unittest.TestCase):
         self.assertEqual(chamado.get('interruptable'), False,
                          'pytchat.create deve rodar com interruptable=False fora da main thread.')
 
+    def test_youtube_chat_loop_usa_items_sem_chamar_sync_items_bloqueante(self):
+        # Chatdata.sync_items() no pytchat é um generator que chama time.sleep(1.0)
+        # na thread onde é iterado. Iterá-lo no event loop congelava o servidor por
+        # 1 s a cada 2 s e fazia o áudio do /stage picotar no OBS.
+        class _FakeItem:
+            datetime = '2026-11-05 19:00:00'
+            message = 'Olá live!'
+            author = type('A', (), {'name': 'Maria', 'imageUrl': ''})()
+
+        class _FakeData:
+            def __init__(self):
+                self.items = [_FakeItem()]
+
+            def sync_items(self):
+                raise AssertionError('Não deve chamar sync_items() quando data.items existe!')
+
+        class _FakeChat:
+            def __init__(self):
+                self._calls = 0
+
+            def is_alive(self):
+                self._calls += 1
+                return self._calls == 1
+
+            def get(self):
+                return _FakeData()
+
+        server.state.youtube_messages_list.clear()
+        with patch.object(server.pytchat, 'create', lambda video_id, **kw: _FakeChat()):
+            with patch.object(server.asyncio, 'sleep', new=AsyncMock()):
+                asyncio.run(server.youtube_chat_loop('abc123DEF'))
+        self.assertEqual(len(server.state.youtube_messages_list), 1)
+        self.assertEqual(server.state.youtube_messages_list[0]['user'], 'Maria')
+
 
 class MediaRoutesTests(unittest.TestCase):
     def setUp(self):
@@ -787,6 +821,72 @@ class MediaRoutesTests(unittest.TestCase):
         ):
             res = self.client.post(rota, json=payload, headers=headers)
             self.assertEqual(res.status_code, 403, f'{rota} deveria bloquear Origin externo.')
+
+    def test_novos_padroes_do_dock_e_tutorial_de_energia(self):
+        html = self.client.get('/control').text
+        self.assertIn('id="energiaCard"', html, 'Card de ajustes de energia ausente no /control.')
+        self.assertIn('id="btnToggleMeters"', html, 'Botão de toggle dos medidores VU ausente no /control.')
+        self.assertIn('RnpMeters.toggle()', html)
+        self.assertNotIn(r'HKLM\\', html, 'Caminhos de registro renderizados no HTML devem ter barra simples.')
+        self.assertIn(r'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile', html)
+
+        dj = self.client.get('/assets/dock.js').text
+        self.assertIn('let previewOff = { cameras: true, presentation: true, stage: true };', dj)
+        self.assertIn("if (savedMuted !== '0') {", dj)
+        self.assertIn('function copiarComando(', dj)
+
+        am = self.client.get('/assets/audio-mixer.js').text
+        self.assertIn("let metersOff = localStorage.getItem(METERS_KEY) !== '0';", am)
+        self.assertIn('window.RnpMeters = {', am)
+        self.assertIn('const POLL_LENTO_MS = 3000;', am)
+
+        dc = self.client.get('/assets/dock.css').text
+        self.assertIn('.medidores-desligados', dc)
+        self.assertIn('.energia-cmd', dc)
+
+    def test_extract_rnp_chat_e_poll_nao_bloqueiam_nem_reprocessam_mensagens_inalteradas(self):
+        class FakeFrame:
+            def __init__(self, payload):
+                self.payload = payload
+                self.scripts = []
+
+            async def evaluate(self, script, *args):
+                self.scripts.append(script)
+                return self.payload
+
+        batch = [
+            {'id': 'rnp_1', 'source': 'rnp', 'user': 'Participante', 'text': 'Olá :smile:', 'time': '19:00', 'avatar': ''},
+            {'id': 'rnp_2', 'source': 'rnp', 'user': 'Maria', 'text': 'Boa noite', 'time': '19:01', 'avatar': 'https://img/a.png'},
+        ]
+        frame = FakeFrame(batch)
+        asyncio.run(server.extract_rnp_chat(frame))
+        self.assertEqual(len(self.state.chat_messages), 2)
+        self.assertIn('window._rnpLastChatOpenAttempt', frame.scripts[0])
+
+        # Segunda rodada idêntica não deve reordenar nem recriar entradas existentes
+        first_ref = self.state.rnp_messages_map['rnp_1']
+        ts_before = first_ref['timestamp']
+        asyncio.run(server.extract_rnp_chat(frame))
+        self.assertIs(self.state.rnp_messages_map['rnp_1'], first_ref)
+        self.assertEqual(self.state.rnp_messages_map['rnp_1']['timestamp'], ts_before)
+
+        # Quando o remetente real de rnp_1 passa a ser conhecido, atualiza in-place
+        batch[0] = {'id': 'rnp_1', 'source': 'rnp', 'user': 'João', 'text': 'Olá :smile:', 'time': '19:00', 'avatar': ''}
+        asyncio.run(server.extract_rnp_chat(frame))
+        self.assertEqual(self.state.rnp_messages_map['rnp_1']['user'], 'João')
+
+        # Enquete: não deve varrer todos os divs com innerText e deve publicar ao fechar votação
+        poll_frame = FakeFrame({
+            'is_active': True, 'status': 'voting', 'question': 'Enquete 1',
+            'options': [{'id': 0, 'text': 'Sim', 'votes': 0, 'percentage': 0}],
+            'total_votes': 0, 'published': False,
+        })
+        asyncio.run(server.extract_rnp_poll(poll_frame))
+        self.assertNotIn("querySelectorAll('aside, div, section')", poll_frame.scripts[0])
+        self.assertEqual(self.state.poll_data['status'], 'voting')
+        poll_frame.payload = None
+        asyncio.run(server.extract_rnp_poll(poll_frame))
+        self.assertEqual(self.state.poll_data['status'], 'published')
 
 
 if __name__ == '__main__':

@@ -269,8 +269,13 @@
                 document.getElementById('rngMonitorVol').value = savedVol;
                 if (window.setLocalMonitorVolume) window.setLocalMonitorVolume(parseFloat(savedVol));
             }
+            // Monitor local DESLIGADO por padrão: o dock é painel de controle, e o
+            // master de áudio que vai para a live sai pelo /stage, não por aqui. Só um
+            // '0' explícito (o operador ligou e a preferência ficou gravada) mantém o
+            // som saindo no dock — assim ninguém herda áudio duplicado nem o custo do
+            // player PCM local sem pedir.
             const savedMuted = localStorage.getItem('rnp_monitor_muted');
-            if (savedMuted === '1') {
+            if (savedMuted !== '0') {
                 toggleMonitorMute();
             }
         });
@@ -1277,6 +1282,35 @@
             }
         }
 
+        // Copia um comando do tutorial de energia do Windows (card #energiaCard).
+        // O texto sai do <code> filho, então não há duplicação entre o que é exibido
+        // e o que é copiado — e os caminhos de registro chegam com a barra invertida
+        // única que o reg.exe/CMD espera. Fica no escopo global de propósito: o
+        // onclick= inline do f-string em server.py precisa enxergar window.copiarComando.
+        function copiarComando(btnElement) {
+            const code = btnElement && btnElement.querySelector('code');
+            const texto = code ? code.textContent.trim() : '';
+            if (!texto) {
+                showSaveNotice(false, 'Comando vazio');
+                return;
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(texto).catch(() => fallbackCopy(texto));
+            } else {
+                fallbackCopy(texto);
+            }
+            const toast = document.getElementById('saveToast');
+            if (toast) {
+                toast.innerText = '📋 Comando copiado — cole num terminal como Administrador';
+                toast.style.display = 'inline-block';
+                setTimeout(() => { toast.style.display = 'none'; }, 2500);
+            }
+            if (btnElement) {
+                btnElement.classList.add('copiado');
+                setTimeout(() => { btnElement.classList.remove('copiado'); }, 1200);
+            }
+        }
+
         setInterval(fetchStatus, 1000);
         fetchStatus();
 
@@ -1385,6 +1419,22 @@
     // (para de decodificar de verdade) e marca o contêiner para o placeholder; o estado
     // persiste por operador em localStorage. O poll que refresca o thumb da apresentação
     // consulta previewOff antes de religar (guarda no server.py).
+    //
+    // PADRÃO DESLIGADO nos três. Não é cosmético: cada preview é uma página inteira a
+    // mais dentro do dock — o grid de câmeras e o palco abrem os PRÓPRIOS receptores
+    // WebRTC (decodificando vídeo), e o palco ainda roda um segundo player PCM; o
+    // thumb da apresentação força um /raw_frame/presentation no servidor.
+    // Uma preferência já gravada em localStorage continua valendo sobre o padrão,
+    // então quem ligou antes não perde a escolha.
+    //
+    // Honestidade sobre o ganho: medido ao vivo com a sala conectada, a diferença no
+    // CPU agregado da máquina ficou em ~0,5 ponto percentual — dentro do ruído, porque
+    // a máquina já estava em ~97% (navegador de captura ~23%, OBS ~21%, páginas de
+    // navegador do OBS ~10%, IDE ~14%). Com o teto de CPU atingido, o agregado não
+    // mostra custo marginal, então isto NÃO está aqui como "a" economia de CPU. O corte
+    // vale mesmo assim: são dois decodificadores de vídeo e um player PCM a menos
+    // disputando o que sobra — e o que sobra é justamente o que decide se o event loop
+    // do servidor atrasa e o áudio picota.
     const PREVIEW_KEY = 'rnpDockPreviewsOff';
     const PREVIEW_ALVO = {
         cameras: 'gridPreviewIframe',
@@ -1396,7 +1446,7 @@
         presentation: 'btnToggleScreenPreview',
         stage: 'btnToggleStagePreview',
     };
-    let previewOff = { cameras: false, presentation: false };
+    let previewOff = { cameras: true, presentation: true, stage: true };
     try { previewOff = Object.assign(previewOff, JSON.parse(localStorage.getItem(PREVIEW_KEY) || '{}')); } catch (_) {}
 
     function applyPreview(kind) {

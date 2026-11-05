@@ -17,7 +17,7 @@ Desenvolvida especialmente para eventos institucionais, aulas magnas e transmiss
 - **Persistência Completa:** Todas as preferências, nomes personalizados, câmeras em foco, fixadas e intérpretes são salvos automaticamente no `config.json`.
 
 ### 🎚️ 2. Rack de Áudio com VU Meters Verticais e Detecção de Voz Ativa
-- **Mixer Visual em Tempo Real:** Medição precisa de volume no painel de controle com rack vertical de medidores estéreo.
+- **Mixer Visual em Tempo Real:** Medição precisa de volume no painel de controle com rack vertical de medidores estéreo (medidores individuais, monitor local e previews de vídeo iniciam desligados por padrão para poupar CPU, podendo ser ligados a qualquer momento com 1 clique).
 - **Isolamento de Áudio Ativo:** Indicadores visuais dinâmicos que destacam o participante que está falando no momento (`activeTalkers`).
 - **Prevenção de Eco no OBS:** o master de áudio é transmitido por **uma única** fonte, o `/stage` (com "Controlar áudio via OBS" marcado). Os demais overlays de vídeo (`/libras`, `/cameras/grid`, `/presentation`) mantêm a saída mutada, evitando duplicação e microfonia.
 

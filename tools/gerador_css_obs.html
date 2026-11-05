@@ -58,6 +58,13 @@
     border: 1px solid rgba(56,189,248,.32); color: #bfe3fb; }
   .aviso.revisar { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.4);
     color: #f8dcaa; }
+  .aviso.bloqueio { background: rgba(248,113,113,.1); border-color: rgba(248,113,113,.45);
+    color: #fbcaca; }
+  .aviso.bloqueio strong { color: #fecaca; }
+  .aviso code { background: rgba(0,0,0,.28); padding: 1px 5px; border-radius: 4px;
+    font-size: 11.5px; }
+  .aviso ul { margin: 7px 0 0; padding-left: 18px; }
+  .aviso li { margin: 3px 0; }
   .titulo { display: flex; align-items: center; justify-content: space-between;
     gap: 10px; margin-bottom: 8px; }
   .titulo h2 { margin: 0; font-size: 13px; letter-spacing: .04em;
@@ -81,7 +88,7 @@
 <body>
 <header>
   <h1>Gerador de CSS para OBS</h1>
-  <p>Alvo: cliente BBB (<code>conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>) numa Browser Source do OBS · temas Ponte / Discord / StreamYard</p>
+  <p>Alvo: DOM do cliente BBB (seletores <code>data-test</code> / <code>#cameraDock</code>) · temas Ponte / Discord / StreamYard · leia o aviso sobre o portal da RNP abaixo</p>
 </header>
 
 <main>
@@ -270,11 +277,30 @@
           <button type="button" id="baixar">Baixar .css</button>
         </div>
       </div>
-      <div class="aviso">
-        Cole em <strong>Propriedades da fonte → CSS personalizado</strong> de uma Browser Source
-        apontando para <code>https://conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>. Use os botões de
-        <strong>Modo de Cena</strong> no topo para gerar CSS específico para <em>Câmeras + Slides</em>,
-        <em>Só as Câmeras</em>, <em>Só os Slides/Projeção</em> ou <em>Tudo com Chat</em>.
+      <div class="aviso bloqueio">
+        <strong>⛔ O CSS NÃO se aplica ao portal <code>conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>.</strong>
+        O OBS injeta o "CSS personalizado" <em>somente no frame principal</em> — em
+        <code>obs-browser/browser-client.cpp</code>, <code>BrowserClient::OnLoadEnd</code> faz
+        <code>if (frame-&gt;IsMain() &amp;&amp; bs-&gt;css.length())</code> e então anexa um
+        <code>&lt;style&gt;</code> ao <code>head</code> daquele frame.
+        Nessa URL o documento principal é o <strong>portal Rails</strong>
+        (<code>/conference/rooms/&lt;slug&gt;/invite_userid</code>), e o cliente BBB
+        (<code>html5client</code> / host Mconf) roda num <strong>iframe filho</strong> — para onde o
+        CSS do OBS nunca chega. Conferido no HTML do portal: <strong>0</strong> ocorrências de
+        <code>data-test</code>, <code>#cameraDock</code> ou <code>html5client</code>.
+        É a mesma razão pela qual a ponte precisa de <code>find_active_bbb_frame</code> em
+        <code>server.py</code> para achar o frame real da reunião.
+        <ul>
+          <li><strong>Use os endpoints da ponte</strong> (recomendado): são overlays prontos,
+            transparentes e dispensam injetar CSS — <code>/cameras/grid</code>,
+            <code>/presentation</code>, <code>/stage</code> (presets <code>cameras-only</code>,
+            <code>slide-only</code>, <code>grid-libras</code>…), <code>/libras</code>,
+            <code>/chat</code> e <code>/tv</code>. Eles já cobrem os 5 Modos de Cena daqui.</li>
+          <li><strong>O CSS abaixo só funciona</strong> se a Browser Source carregar o cliente BBB
+            como <em>documento principal</em> (ex.: um deployment BBB em que o
+            <code>html5client</code> é a URL de topo). Aí sim: Propriedades da fonte →
+            <strong>CSS personalizado</strong>.</li>
+        </ul>
       </div>
       <textarea id="saida" spellcheck="false" readonly></textarea>
     </div>
@@ -719,6 +745,16 @@ function gerar(s, P, preview) {
   partes.push('/* =====================================================================\n'
     + ' * OBS Browser Source — BigBlueButton / RNP WebConf\n'
     + ' * Cena: ' + s.cena + ' · Tema: ' + s.tema + ' · Rótulo: ' + s.rotulo + ' (' + s.rotuloPos + ') · Formato: ' + s.formato + '\n'
+    + ' *\n'
+    + ' * ATENCAO — onde colar este CSS:\n'
+    + ' * O OBS injeta o CSS personalizado SO no frame principal (obs-browser,\n'
+    + ' * BrowserClient::OnLoadEnd -> if (frame->IsMain())). Em\n'
+    + ' * conferenciaweb.rnp.br/sala/<slug> o documento principal e o portal Rails\n'
+    + ' * (/conference/rooms/<slug>/invite_userid) e o cliente BBB roda num iframe\n'
+    + ' * filho, entao estes seletores nao casam com nada e o CSS nao tem efeito.\n'
+    + ' * So funciona se a Browser Source carregar o cliente BBB como documento\n'
+    + ' * principal. No portal da RNP, use os endpoints da ponte: /cameras/grid,\n'
+    + ' * /presentation, /stage, /libras, /chat e /tv.\n'
     + ' * ===================================================================== */');
 
   if (s.transparente) {

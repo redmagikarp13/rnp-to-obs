@@ -89,3 +89,11 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 ### 5. O som da sala some quando troco de cena
 - **Causa:** O master de áudio é acoplado à fonte `/stage`. Se essa fonte não estiver visível na cena ativa e a opção "Shutdown source when not visible" estiver ligada, o OBS suspende a página e o áudio junto.
 - **Solução:** Nas propriedades da fonte `/stage`, **desligue** "Shutdown source when not visible" (e mantenha "Controlar áudio via OBS" ligado). Alternativa: inclua o `/stage` em todas as cenas, ainda que fora do enquadramento, ou use uma trilha individual `/audio?source=<canal>` na cena que precisa de som sem o palco.
+
+### 6. Previews de vídeo, medidores VU e monitor local vêm desligados ao abrir o painel
+- **Comportamento esperado:** Para poupar decodificadores de vídeo e CPU na máquina da transmissão, os 3 previews do painel (`Câmeras`, `Apresentação` e `Palco`), os **medidores VU individuais** e o **Monitor Local de Áudio** iniciam desligados/mudos por padrão. A preferência fica salva no navegador quando você alternar os botões (`Mostrar preview`, `Ligar medidores` ou `Monitor Local`).
+
+### 7. O áudio engasga quando o OBS ou o painel está em segundo plano
+- **Solução:**
+  1. Evite manter Browser Sources apontando diretamente para a URL da sala BBB (`conferenciaweb.rnp.br/...`) abertas junto com a ponte — cada uma roda um cliente BBB completo e satura a CPU. Use apenas os endpoints leves da ponte (`/stage`, `/cameras/grid`, `/presentation`, `/libras`, `/chat`).
+  2. No bloco **Fontes para o OBS Studio** do painel (`/control`), abra o guia recolhível **⚡ Áudio trava em segundo plano? Ajustes de energia do Windows** para copiar os comandos de `powercfg` (estado mínimo da CPU em 100% na tomada, desativação de ASPM PCIe e suspensão seletiva USB) e de prioridade de áudio/rede do Windows (MMCSS e desativação de *Power Throttling*).

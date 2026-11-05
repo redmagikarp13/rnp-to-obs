@@ -5,7 +5,7 @@
 > os **próximos passos** para continuar o refinamento. Complementa o
 > `docs/WEBRTC_TRANSPORTE.md` (vídeo) e o `GUIA_DE_OPERACAO.md` (operação).
 
-Última atualização: 2026-11-04. Versão empacotada atual: **1.1.11**.
+Última atualização: 2026-11-05. Versão empacotada atual: **1.1.14** (ver relatório completo da investigação ao vivo em `docs/SESSAO_2026-11-05_AUDIO_CAPTURA_E_ENERGIA.md`).
 
 ---
 

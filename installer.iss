@@ -2,7 +2,7 @@
 ; Desenvolvido para Cefor / Ifes
 
 #define MyAppName "RNP to OBS"
-#define MyAppVersion "1.1.11"
+#define MyAppVersion "1.1.14"
 #define MyAppPublisher "Cefor / Ifes"
 #define MyAppExeName "RNP to OBS.exe"
 #define MyAppIcon "app_icon.ico"
@@ -31,7 +31,7 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 Name: "desktopicon"; Description: "Criar atalho na Área de Trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: unchecked
 
 [Files]
-Source: "dist\RNP to OBS\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\RNP to OBS\*"; DestDir: "{app}"; Excludes: "*.old"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}\{#MyAppName} - Painel de Controle"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcon}"
