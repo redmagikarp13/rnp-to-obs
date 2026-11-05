@@ -440,12 +440,29 @@
             renderChatList(currentMessages);
         }
 
+        function escHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function escJsStr(s) {
+            return String(s ?? '')
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/\r/g, '\\r')
+                .replace(/\n/g, '\\n');
+        }
+
         function renderFeaturedBox(msg) {
             const box = document.getElementById('featuredBox');
             if (msg) {
                 box.style.display = 'flex';
                 document.getElementById('featUser').innerText = msg.user || 'Participante';
-                document.getElementById('featText').innerHTML = msg.text || '';
+                document.getElementById('featText').textContent = msg.text || '';
                 const b = document.getElementById('featSourceBadge');
                 if (msg.source === 'youtube') {
                     b.className = 'source-tag yt';
@@ -483,18 +500,19 @@
                     <div style="flex: 1; min-width: 0">
                         <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px">
                             ${srcBadge}
-                            <strong style="font-size: 12px">${m.user}</strong>
-                            <span style="font-size: 10px">${m.time || ''}</span>
+                            <strong style="font-size: 12px">${escHtml(m.user)}</strong>
+                            <span style="font-size: 10px">${escHtml(m.time || '')}</span>
                         </div>
-                        <div style="font-size: 12px; word-break: break-word">${m.text}</div>
+                        <div style="font-size: 12px; word-break: break-word">${escHtml(m.text)}</div>
                     </div>
-                    <div style="flex-shrink: 0">
-                        ${isFeatured ? 
-                            `<button class="btn-ctrl active-focus" style="padding: 4px 8px; font-size: 11px" onclick="clearFeaturedMessage()">❌ Desfocar</button>` :
-                            `<button class="btn-ctrl" style="padding: 4px 8px; font-size: 11px" onclick='highlightMessage(${JSON.stringify(m)})'>🌟 Destacar</button>`
-                        }
-                    </div>
+                    <div style="flex-shrink: 0" class="chat-msg-actions"></div>
                 `;
+                const btn = document.createElement('button');
+                btn.className = 'btn-ctrl' + (isFeatured ? ' active-focus' : '');
+                btn.style.cssText = 'padding: 4px 8px; font-size: 11px';
+                btn.textContent = isFeatured ? '❌ Desfocar' : '🌟 Destacar';
+                btn.onclick = isFeatured ? () => clearFeaturedMessage() : () => highlightMessage(m);
+                row.querySelector('.chat-msg-actions').appendChild(btn);
                 container.appendChild(row);
             });
         }
@@ -539,6 +557,26 @@
                 }
                 const data = await res.json();
                 document.getElementById('healthHeartbeat').innerText = '● Ao Vivo (500ms)';
+
+                // Acesso LAN: mantém URLs e toggle sincronizados com o servidor (o IP
+                // pode mudar via DHCP). Não sobrescreve enquanto o usuário opera o toggle.
+                if (Array.isArray(data.lan_ips) && data.lan_ips.length) {
+                    const port = location.port || '3333';
+                    const base = 'http://' + data.lan_ips[0] + ':' + port;
+                    window._lanBaseUrl = base;
+                    const tvSpan = document.getElementById('lanUrlTv');
+                    const ctrlSpan = document.getElementById('lanUrlControl');
+                    if (tvSpan) tvSpan.textContent = base + '/tv';
+                    if (ctrlSpan) ctrlSpan.textContent = base + '/control';
+                }
+                const chkLan = document.getElementById('chkLanAccess');
+                if (chkLan && typeof data.lan_access === 'boolean' && document.activeElement !== chkLan) {
+                    chkLan.checked = data.lan_access;
+                    const lblLan = document.getElementById('lblLanAccess');
+                    if (lblLan) lblLan.textContent = data.lan_access ? 'Ligado' : 'Desligado';
+                    const boxLan = document.getElementById('lanUrlBox');
+                    if (boxLan) boxLan.style.display = data.lan_access ? 'block' : 'none';
+                }
                 
                 const badge = document.getElementById('statusBadge');
                 if (data.connecting) {
@@ -791,35 +829,37 @@
                         if (isLibras) box.style.borderColor = '#06b6d4';
                         if (isPin && !isFocus && !isLibras) box.style.borderColor = '#10b981';
 
+                        const safeCidAttr = escHtml(escJsStr(cid));
+                        const safeNameAttr = escHtml(escJsStr(c.name));
                         box.innerHTML = `
                             <div class="mod-title">
                                 <span style="display:flex; align-items:center; gap:5px">
-                                    ${isLibras ? '🤟' : (isFocus ? '🌟' : (isPin ? '📌' : '🎥'))} <strong>${c.name}</strong>
+                                    ${isLibras ? '🤟' : (isFocus ? '🌟' : (isPin ? '📌' : '🎥'))} <strong>${escHtml(c.name)}</strong>
                                 </span>
-                                <span style="font-size: 10.5px">● ${c.width}x${c.height}</span>
+                                <span style="font-size: 10.5px">● ${Number(c.width) || 0}x${Number(c.height) || 0}</span>
                                 <span class="cam-fps" style="font-size: 10.5px">${Math.round(c.fps || 0)} FPS</span>
                             </div>
                             <div class="thumb-box">
-                                <img src="/raw_frame/camera/${c.id}?t=${Date.now()}" id="thumbCam_${c.id}" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
+                                <img src="/raw_frame/camera/${encodeURIComponent(cid)}?t=${Date.now()}" id="thumbCam_${escHtml(cid)}" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
                                 ${isLibras ? '<div class="libras-badge-overlay">🤟 Libras</div>' : ''}
                             </div>
                             
                             <div class="cam-controls">
-                                <button class="btn-ctrl ${isFocus ? 'active-focus' : ''}" onclick="toggleFocus('${c.id}')">
+                                <button class="btn-ctrl ${isFocus ? 'active-focus' : ''}" onclick="toggleFocus('${safeCidAttr}')">
                                     🌟 ${isFocus ? 'Desfocar' : 'Focar'}
                                 </button>
-                                <button class="btn-ctrl ${isLibras ? 'active-libras' : ''}" onclick="toggleLibras('${c.id}')">
+                                <button class="btn-ctrl ${isLibras ? 'active-libras' : ''}" onclick="toggleLibras('${safeCidAttr}')">
                                     🤟 ${isLibras ? 'Libras (Ativo)' : 'Libras'}
                                 </button>
-                                <button class="btn-ctrl ${isPin ? 'active-pin' : ''}" onclick="togglePin('${c.id}')">
+                                <button class="btn-ctrl ${isPin ? 'active-pin' : ''}" onclick="togglePin('${safeCidAttr}')">
                                     📌 ${isPin ? 'Desfixar' : 'Fixar'}
                                 </button>
-                                <button class="btn-ctrl" onclick="renameCamera('${c.id}', '${c.name}')">
+                                <button class="btn-ctrl" onclick="renameCamera('${safeCidAttr}', '${safeNameAttr}')">
                                     ✏️ Renomear
                                 </button>
                             </div>
 
-                            <button class="btn-copy" onclick="copyUrl('/camera/${c.id}')">📋 Link Câmera ${c.id}</button>
+                            <button class="btn-copy" onclick="copyUrl('/camera/${safeCidAttr}')">📋 Link Câmera ${escHtml(cid)}</button>
                         `;
                         grid.appendChild(box);
                     });
@@ -1078,11 +1118,11 @@
 
                     row.innerHTML = `
                         <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; margin-bottom: 4px">
-                            <span>${opt.text}</span>
+                            <span>${escHtml(opt.text)}</span>
                             <span >${votes > 0 ? votes + ' votos (' + pct + '%)' : pct + '%'}</span>
                         </div>
                         <div style="width: 100%; height: 5px; border-radius: 3px; overflow: hidden">
-                            <div style="width: ${pct}%; height: 100%; transition: width 0.3s ease"></div>
+                            <div style="width: ${Number(pct) || 0}%; height: 100%; transition: width 0.3s ease"></div>
                         </div>
                     `;
                     optsContainer.appendChild(row);
@@ -1166,6 +1206,74 @@
                     btnElement.innerHTML = orig;
                     btnElement.style.filter = 'none';
                 }, 1500);
+            }
+        }
+
+        // Alterna o acesso LAN (bind 0.0.0.0). O servidor só aplica no boot, então
+        // avisamos que é preciso reiniciar o app. Gravamos via /api/config/save.
+        async function toggleLanAccess(checked) {
+            const lbl = document.getElementById('lblLanAccess');
+            const box = document.getElementById('lanUrlBox');
+            const hint = document.getElementById('lanHint');
+            if (lbl) lbl.textContent = checked ? 'Ligado' : 'Desligado';
+            if (box) box.style.display = checked ? 'block' : 'none';
+            let restart = false;
+            try {
+                const res = await fetch('/api/config/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lan_access: checked })
+                });
+                const corpo = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(corpo.message || ('HTTP ' + res.status));
+                restart = !!corpo.restart_needed;
+                showSaveNotice(true);
+            } catch (erro) {
+                showSaveNotice(false, erro.message);
+                // Reverte o toggle para o estado que continua valendo no servidor.
+                const chk = document.getElementById('chkLanAccess');
+                if (chk) chk.checked = !checked;
+                if (lbl) lbl.textContent = !checked ? 'Ligado' : 'Desligado';
+                if (box) box.style.display = !checked ? 'block' : 'none';
+                return;
+            }
+            if (hint) {
+                if (restart && checked) {
+                    hint.innerHTML = '⚠️ <strong>Reinicie o app</strong> para o servidor passar a escutar na rede. Depois use os links acima na outra máquina e, se preciso, libere a porta no Firewall do Windows.';
+                    hint.style.color = '#fbbf24';
+                } else if (restart && !checked) {
+                    hint.innerHTML = '⚠️ <strong>Reinicie o app</strong> para voltar a escutar só em localhost (mais seguro).';
+                    hint.style.color = '#fbbf24';
+                } else {
+                    hint.style.color = '';
+                }
+            }
+        }
+
+        // Copia uma URL LAN (usa o IP da rede, não o localhost do dock). Ideal para
+        // colar no navegador da TV/notebook que vai exibir /tv, /stage etc.
+        function copyLanUrl(path, btnElement) {
+            const base = window._lanBaseUrl;
+            if (!base) {
+                showSaveNotice(false, 'IP da rede indisponível');
+                return;
+            }
+            const url = base + path;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).catch(() => fallbackCopy(url));
+            } else {
+                fallbackCopy(url);
+            }
+            const toast = document.getElementById('saveToast');
+            if (toast) {
+                toast.innerText = '📋 Link LAN Copiado: ' + url;
+                toast.style.display = 'inline-block';
+                setTimeout(() => { toast.style.display = 'none'; }, 2500);
+            }
+            if (btnElement) {
+                const orig = btnElement.innerHTML;
+                btnElement.innerHTML = '✅ Copiado!';
+                setTimeout(() => { btnElement.innerHTML = orig; }, 1500);
             }
         }
 

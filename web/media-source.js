@@ -137,19 +137,106 @@
         const master = ctx.createGain();
         const nodes = new Map();
         window._rnpAudioNodes = nodes;
-        const ws = new WebSocket(url);
-        ws.binaryType = 'arraybuffer';
         // Canal de picos por trilha: empurra o peakHold de cada canal individual na
         // cadência do sampler (60ms) para a ponte repassar à mesa do dock em tempo
         // real. Sem isto o medidor individual ficaria refém de um poll de 500ms.
         const pws = new WebSocket(url.replace('/ws/pcm_in', '/ws/peaks_in'));
         pws.onerror = () => pws.close();
-        // Captura em AudioWorklet: o processador roda na thread de áudio e só cruza
-        // para a main thread a cada 2048 amostras (buffer transferido, sem cópia).
-        // O ScriptProcessorNode anterior fazia callback na main thread a ~23 Hz —
-        // CPU queimada no piso da ponte mesmo sem ninguém ouvindo.
+        // --- Diagnostico de cadencia (Plano A do docs/AUDIO_ESTABILIDADE_2026-11.md) ---
+        // Separar GERACAO (relógio do worklet) de ENTREGA (thread que recebe o
+        // postMessage e da o ws.send). Quando o Web Worker dedicado está ativo, o
+        // caminho AudioWorklet -> MessageChannel -> Worker -> WebSocket não passa
+        // pela main thread do BBB (eliminando buracos/rajadas quando o React trava).
+        const PCM_STATS = {
+            gerados: 0, enviados_ws: 0, descartados_guarda: 0,
+            gaps_acum: 0,
+            entrega: [], gaps_entrega: 0, t_ultimo: 0,
+            t_audio_i: 0, t_audio_f: 0, w_i: 0, w_f: 0,
+            via_worker: false,
+        };
+        window._rnpPcmStats = PCM_STATS;
+        let ultimoResumoWorker = null;
+        let ws = null;
+        let pcmWorker = null;
+        let capNode = null;
+        let encerrado = false;
+        let interval = null;
+        let peakInterval = null;
+
+        function encerrarCaptura() {
+            if (encerrado) return;
+            encerrado = true;
+            if (interval) clearInterval(interval);
+            if (peakInterval) clearInterval(peakInterval);
+            try { pws.close(); } catch (e) {}
+            if (pcmWorker) {
+                try { pcmWorker.postMessage({type: 'close'}); } catch (e) {}
+                try { pcmWorker.terminate(); } catch (e) {}
+                pcmWorker = null;
+            }
+            if (ws) {
+                try { ws.onclose = null; ws.close(); } catch (e) {}
+                ws = null;
+            }
+            for (const node of nodes.values()) {
+                node.input.disconnect(); node.gain.disconnect(); node.analyser.disconnect();
+            }
+            nodes.clear(); master.disconnect();
+            if (capNode) capNode.disconnect();
+            if (window._pcmProc) { window._pcmProc.disconnect(); window._pcmProc = null; }
+            ctx.close();
+            window._pcmCaptureActive = false;
+            window._rnpApplyAudioControls = null;
+            setTimeout(() => startPcm(url), 2000);
+        }
+
+        function iniciarWsMainThread() {
+            if (ws || encerrado) return;
+            ws = new WebSocket(url);
+            ws.binaryType = 'arraybuffer';
+            ws.onclose = encerrarCaptura;
+            ws.onerror = () => { try { ws.close(); } catch (e) {} };
+        }
+
+        function registrarChunk(t_audio) {
+            const agora = performance.now();
+            PCM_STATS.gerados++;
+            if (PCM_STATS.t_ultimo) {
+                const d = agora - PCM_STATS.t_ultimo;
+                PCM_STATS.entrega.push(d);
+                if (PCM_STATS.entrega.length > 4096) PCM_STATS.entrega.shift();
+                if (d > 60) { PCM_STATS.gaps_entrega++; PCM_STATS.gaps_acum++; }
+            } else if (t_audio !== undefined) {
+                PCM_STATS.t_audio_i = t_audio; PCM_STATS.w_i = agora / 1000;
+            }
+            PCM_STATS.t_ultimo = agora;
+            if (t_audio !== undefined) { PCM_STATS.t_audio_f = t_audio; PCM_STATS.w_f = agora / 1000; }
+        }
+        function empurrar(chunk, t_audio) {
+            registrarChunk(t_audio);
+            if (ws && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000) {
+                ws.send(chunk);
+                PCM_STATS.enviados_ws++;
+            } else {
+                PCM_STATS.descartados_guarda++;
+            }
+        }
+        // Captura em AudioWorklet: o processador roda na thread de áudio e envia cada
+        // bloco de 2048 amostras por MessagePort direto ao Web Worker dedicado (sem
+        // passar pela main thread do BBB). Se Worker não estiver disponível (ex.:
+        // about:blank), cai automaticamente para entrega via main thread.
         const WORKLET_SRC = `class PcmCapture extends AudioWorkletProcessor {
-            constructor() { super(); this.buf = new Float32Array(2048); this.n = 0; }
+            constructor() {
+                super();
+                this.buf = new Float32Array(2048);
+                this.n = 0;
+                this.outPort = this.port;
+                this.port.onmessage = (e) => {
+                    if (e.data && 'port' in e.data) {
+                        this.outPort = e.data.port || this.port;
+                    }
+                };
+            }
             process(inputs) {
                 const ch = inputs[0] && inputs[0][0];
                 if (ch) {
@@ -159,7 +246,7 @@
                         this.buf.set(ch.subarray(off, off + take), this.n);
                         this.n += take; off += take;
                         if (this.n === this.buf.length) {
-                            this.port.postMessage(this.buf, [this.buf.buffer]);
+                            this.outPort.postMessage({b: this.buf, t: currentTime}, [this.buf.buffer]);
                             this.buf = new Float32Array(2048); this.n = 0;
                         }
                     }
@@ -168,16 +255,137 @@
             }
         }
         registerProcessor('pcm-capture', PcmCapture);`;
-        let capNode = null;
+
+        const WORKER_SRC = `
+            let ws = null;
+            let port = null;
+            let timer = null;
+            const S = {
+                gerados: 0, enviados_ws: 0, descartados_guarda: 0,
+                gaps_acum: 0, entrega: [], gaps_entrega: 0, t_ultimo: 0,
+                t_audio_i: 0, t_audio_f: 0, w_i: 0, w_f: 0,
+            };
+            function registrar(t_audio) {
+                const agora = performance.now();
+                S.gerados++;
+                if (S.t_ultimo) {
+                    const d = agora - S.t_ultimo;
+                    S.entrega.push(d);
+                    if (S.entrega.length > 4096) S.entrega.shift();
+                    if (d > 60) { S.gaps_entrega++; S.gaps_acum++; }
+                } else if (t_audio !== undefined) {
+                    S.t_audio_i = t_audio; S.w_i = agora / 1000;
+                }
+                S.t_ultimo = agora;
+                if (t_audio !== undefined) { S.t_audio_f = t_audio; S.w_f = agora / 1000; }
+            }
+            function resumo() {
+                const v = S.entrega.slice().sort((a, b) => a - b), n = v.length;
+                const r = {
+                    gerados: S.gerados,
+                    enviados_ws: S.enviados_ws,
+                    descartados_guarda: S.descartados_guarda,
+                    gaps_entrega_gt_60ms: S.gaps_entrega,
+                    gaps_entrega_acumulado: S.gaps_acum,
+                    via_worker: true,
+                };
+                if (n) {
+                    r.entrega_mediana_ms = +v[n >> 1].toFixed(1);
+                    r.entrega_p95_ms = +v[Math.min(n - 1, Math.floor(n * 0.95))].toFixed(1);
+                    r.entrega_max_ms = +v[n - 1].toFixed(1);
+                    r.entrega_amostras = n;
+                }
+                const spanAudio = S.t_audio_f - S.t_audio_i;
+                const spanParede = S.w_f - S.w_i;
+                if (spanAudio > 0 && spanParede > 0) r.clock_ratio = +(spanAudio / spanParede).toFixed(3);
+                S.entrega.length = 0;
+                S.gaps_entrega = 0;
+                return r;
+            }
+            self.onmessage = (ev) => {
+                const msg = ev.data || {};
+                if (msg.type === 'init') {
+                    port = msg.port;
+                    ws = new WebSocket(msg.url);
+                    ws.binaryType = 'arraybuffer';
+                    ws.onclose = () => self.postMessage({type: 'closed'});
+                    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+                    port.onmessage = (e) => {
+                        const d = e.data || {};
+                        registrar(d.t);
+                        if (ws && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000) {
+                            ws.send(d.b);
+                            S.enviados_ws++;
+                        } else {
+                            S.descartados_guarda++;
+                        }
+                    };
+                    timer = setInterval(() => {
+                        self.postMessage({type: 'stats', stats: resumo()});
+                    }, 1000);
+                } else if (msg.type === 'close') {
+                    if (timer) clearInterval(timer);
+                    try { if (port) port.close(); } catch (e) {}
+                    try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) {}
+                }
+            };
+        `;
+
+        let workerChan = null;
+        if (ctx.audioWorklet && typeof Worker === 'function' && typeof MessageChannel === 'function' && location.origin !== 'null') {
+            try {
+                const wBlob = new Blob([WORKER_SRC], {type: 'application/javascript'});
+                const wUrl = URL.createObjectURL(wBlob);
+                pcmWorker = new Worker(wUrl);
+                URL.revokeObjectURL(wUrl);
+                workerChan = new MessageChannel();
+                PCM_STATS.via_worker = true;
+                pcmWorker.onmessage = (ev) => {
+                    const d = ev.data || {};
+                    if (d.type === 'stats' && d.stats) {
+                        ultimoResumoWorker = d.stats;
+                        PCM_STATS.gerados = d.stats.gerados;
+                        PCM_STATS.enviados_ws = d.stats.enviados_ws;
+                        PCM_STATS.descartados_guarda = d.stats.descartados_guarda;
+                        PCM_STATS.gaps_acum = d.stats.gaps_entrega_acumulado;
+                    } else if (d.type === 'closed') {
+                        encerrarCaptura();
+                    }
+                };
+                pcmWorker.onerror = () => {
+                    if (!pcmWorker) return;
+                    try { pcmWorker.terminate(); } catch (e) {}
+                    pcmWorker = null;
+                    workerChan = null;
+                    PCM_STATS.via_worker = false;
+                    if (capNode) {
+                        try { capNode.port.postMessage({port: null}); } catch (e) {}
+                    }
+                    iniciarWsMainThread();
+                };
+                pcmWorker.postMessage({type: 'init', url, port: workerChan.port2}, [workerChan.port2]);
+            } catch (e) {
+                pcmWorker = null;
+                workerChan = null;
+                PCM_STATS.via_worker = false;
+            }
+        }
+        if (!pcmWorker) {
+            iniciarWsMainThread();
+        }
+
         const ligarFallback = () => {
             // Navegador sem AudioWorklet OU página fora de contexto seguro
             // (about:blank tem audioWorklet undefined): volta ao ScriptProcessor.
+            if (pcmWorker) {
+                try { pcmWorker.postMessage({type: 'close'}); pcmWorker.terminate(); } catch (e) {}
+                pcmWorker = null;
+                workerChan = null;
+                PCM_STATS.via_worker = false;
+            }
+            iniciarWsMainThread();
             const proc = ctx.createScriptProcessor(2048, 1, 1);
-            proc.onaudioprocess = ev => {
-                if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000) {
-                    ws.send(ev.inputBuffer.getChannelData(0).buffer);
-                }
-            };
+            proc.onaudioprocess = ev => empurrar(ev.inputBuffer.getChannelData(0).buffer);
             master.connect(proc);
             proc.connect(ctx.destination);
             window._pcmProc = proc;
@@ -191,11 +399,10 @@
                 capNode = new AudioWorkletNode(ctx, 'pcm-capture', {
                     numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
                 });
-                capNode.port.onmessage = e => {
-                    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 48000) {
-                        ws.send(e.data.buffer);
-                    }
-                };
+                capNode.port.onmessage = e => empurrar(e.data.b, e.data.t);
+                if (pcmWorker && workerChan) {
+                    capNode.port.postMessage({port: workerChan.port1}, [workerChan.port1]);
+                }
                 master.connect(capNode);
                 capNode.connect(ctx.destination);
             }).catch(ligarFallback);
@@ -233,11 +440,45 @@
         };
         window._rnpApplyAudioControls = scan;
         scan();
-        const interval = setInterval(scan, 500);
+        interval = setInterval(scan, 500);
         // Pico segurado com decaimento: o pico instantâneo (~42ms) some entre sílabas
         // e faz o indicador de fala piscar. Aqui seguramos o pico recente e decaímos
         // suavemente (tau=300ms), então quem fala continua "aceso" nas pausas curtas.
         const PEAK_TAU = 0.30;
+        // Relatorio de diagnostico a cada ~2 s, carreado na MESMA janela dos picos
+        // (nada de WebSocket nova nem de rota extra no caminho quente do audio). A
+        // ponte remove a chave '_pcm' antes de repassar os picos ao dock.
+        let ultimoRelato = 0;
+        function resumoPcmStats() {
+            if (PCM_STATS.via_worker && ultimoResumoWorker) {
+                return ultimoResumoWorker;
+            }
+            const v = PCM_STATS.entrega.slice().sort((a, b) => a - b), n = v.length;
+            const r = {
+                gerados: PCM_STATS.gerados,
+                enviados_ws: PCM_STATS.enviados_ws,
+                descartados_guarda: PCM_STATS.descartados_guarda,
+                gaps_entrega_gt_60ms: PCM_STATS.gaps_entrega,
+                // Acumulado desde o inicio da captura: so assim da para comparar com
+                // o gap acumulado do servidor na MESMA base (a janela de 2 s reinicia).
+                gaps_entrega_acumulado: PCM_STATS.gaps_acum,
+                via_worker: false,
+            };
+            if (n) {
+                r.entrega_mediana_ms = +v[n >> 1].toFixed(1);
+                r.entrega_p95_ms = +v[Math.min(n - 1, Math.floor(n * 0.95))].toFixed(1);
+                r.entrega_max_ms = +v[n - 1].toFixed(1);
+                r.entrega_amostras = n;
+            }
+            // 1,0 = worklet renderizou em tempo real Wall-clock; <1 = thread de audio
+            // nao deu conta (a causa que o note suspeitava ser o sink nulo do headless).
+            const spanAudio = PCM_STATS.t_audio_f - PCM_STATS.t_audio_i;
+            const spanParede = PCM_STATS.w_f - PCM_STATS.w_i;
+            if (spanAudio > 0 && spanParede > 0) r.clock_ratio = +(spanAudio / spanParede).toFixed(3);
+            PCM_STATS.entrega.length = 0;
+            PCM_STATS.gaps_entrega = 0;
+            return r;
+        }
         const samplePeaks = () => {
             const now = performance.now();
             for (const node of nodes.values()) {
@@ -248,31 +489,20 @@
                 node.lastPeakAt = now;
                 node.peakHold = Math.max(instant, node.peakHold * Math.exp(-dt / PEAK_TAU));
             }
-            if (pws.readyState === WebSocket.OPEN && nodes.size) {
+            const deveRelatar = now - ultimoRelato > 2000;
+            if (pws.readyState === WebSocket.OPEN && (nodes.size || deveRelatar)) {
                 const picos = {};
                 for (const node of nodes.values()) {
                     if (node.entryId) picos[node.entryId] = +node.peakHold.toFixed(4);
                 }
+                if (deveRelatar) {
+                    ultimoRelato = now;
+                    picos._pcm = resumoPcmStats();
+                }
                 pws.send(JSON.stringify(picos));
             }
         };
-        const peakInterval = setInterval(samplePeaks, 60);
-        ws.onclose = () => {
-            clearInterval(interval);
-            clearInterval(peakInterval);
-            pws.close();
-            for (const node of nodes.values()) {
-                node.input.disconnect(); node.gain.disconnect(); node.analyser.disconnect();
-            }
-            nodes.clear(); master.disconnect();
-            if (capNode) capNode.disconnect();
-            if (window._pcmProc) { window._pcmProc.disconnect(); window._pcmProc = null; }
-            ctx.close();
-            window._pcmCaptureActive = false;
-            window._rnpApplyAudioControls = null;
-            setTimeout(() => startPcm(url), 2000);
-        };
-        ws.onerror = () => ws.close();
+        peakInterval = setInterval(samplePeaks, 60);
     }
 
     function audioInfo() {

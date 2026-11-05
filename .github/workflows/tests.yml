@@ -1,0 +1,35 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt httpx
+
+      - name: Run unit tests
+        run: |
+          python -m unittest \
+            tests/test_app_watchdog.py \
+            tests/test_dock_window.py \
+            tests/test_libras_identity.py \
+            tests/test_media_bridge.py \
+            tests/test_pcm_fanout.py
+

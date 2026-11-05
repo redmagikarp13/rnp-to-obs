@@ -1,6 +1,7 @@
 """Sinalização local do protótipo WebRTC; Python não transporta os pixels."""
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -12,6 +13,18 @@ from pydantic import BaseModel, Field
 WEB_DIR = Path(__file__).resolve().parent / 'web'
 MEDIA_SOURCE_JS = '\n'.join((WEB_DIR / name).read_text(encoding='utf-8')
                             for name in ('connection-quality.js', 'media-source.js'))
+
+# Timeout dos evaluate() no frame da sala. O BBB periodicamente trava a main thread
+# (render pesado, troca de layout); como o Playwright serializa os evaluate() por
+# frame, uma trava vira fila. Sem timeout, /api/media chegou a pendurar 26 s — e
+# como o dock/stage/webrtc consultam a cada 0,5-1 s, os pedidos se acumulavam numa
+# bola de neve (metadados congelam e "somem/voltam"). Falhar rápido (503) evita isso.
+_MEDIA_EVAL_TIMEOUT = 6.0
+# Single-flight: um lock + cache curto faz todos os consumidores paralelos de
+# /api/media compartilharem UMA única chamada de evaluate() em vez de N.
+_MEDIA_CACHE_TTL = 0.25
+_MEDIA_CACHE = {'ts': 0.0, 'data': None}
+_MEDIA_LOCK = None
 
 
 class Offer(BaseModel):
@@ -34,8 +47,8 @@ def require_same_origin(request: Request):
 
 
 async def ensure_media_adapter(frame):
-    if not await frame.evaluate('() => window.RnpMedia?.version === 1'):
-        await frame.evaluate(MEDIA_SOURCE_JS)
+    if not await asyncio.wait_for(frame.evaluate('() => window.RnpMedia?.version === 1'), timeout=_MEDIA_EVAL_TIMEOUT):
+        await asyncio.wait_for(frame.evaluate(MEDIA_SOURCE_JS), timeout=_MEDIA_EVAL_TIMEOUT)
 
 
 def register_media_routes(app, get_state, get_frame):
@@ -84,17 +97,35 @@ def register_media_routes(app, get_state, get_frame):
         state = get_state()
         if not state.connected or not state.page:
             return {'sources': [], 'audio_individual_available': False, 'experimental': True}
-        try:
-            frame = await active_frame()
-            result = await frame.evaluate('() => window.RnpMedia.describe()')
-            for source in result['sources']:
-                if source['kind'] == 'audio':
-                    source.update(getattr(state, 'audio_controls', {}).get(source['id'], {}))
-            return {**result, 'experimental': True}
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(503, 'A mídia da sala está sendo atualizada. Tente novamente.')
+        # Cache curto (single-flight): se uma consulta acabou de responder, reusa.
+        cached = _MEDIA_CACHE['data']
+        if cached is not None and time.monotonic() - _MEDIA_CACHE['ts'] < _MEDIA_CACHE_TTL:
+            return cached
+        global _MEDIA_LOCK
+        if _MEDIA_LOCK is None:
+            _MEDIA_LOCK = asyncio.Lock()
+        async with _MEDIA_LOCK:
+            # Re-checa após adquirir o lock: os pedidos que esperaram compartilham
+            # o evaluate() de quem entrou primeiro (coalescência).
+            cached = _MEDIA_CACHE['data']
+            if cached is not None and time.monotonic() - _MEDIA_CACHE['ts'] < _MEDIA_CACHE_TTL:
+                return cached
+            try:
+                frame = await active_frame()
+                result = await asyncio.wait_for(
+                    frame.evaluate('() => window.RnpMedia.describe()'),
+                    timeout=_MEDIA_EVAL_TIMEOUT)
+                for source in result['sources']:
+                    if source['kind'] == 'audio':
+                        source.update(getattr(state, 'audio_controls', {}).get(source['id'], {}))
+                payload = {**result, 'experimental': True}
+                _MEDIA_CACHE['ts'] = time.monotonic()
+                _MEDIA_CACHE['data'] = payload
+                return payload
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(503, 'A mídia da sala está sendo atualizada. Tente novamente.')
 
     @app.post('/api/webrtc/offer')
     async def offer(body: Offer, request: Request):
@@ -131,10 +162,10 @@ def register_media_routes(app, get_state, get_frame):
     async def audio_control(body: AudioControl, request: Request):
         require_same_origin(request)
         frame = await active_frame()
-        sources = await frame.evaluate('() => window.RnpMedia.audioInfo()')
+        sources = await asyncio.wait_for(frame.evaluate('() => window.RnpMedia.audioInfo()'), timeout=_MEDIA_EVAL_TIMEOUT)
         if body.source_id not in {s['id'] for s in sources}:
             raise HTTPException(404, 'Trilha individual indisponível; o master não será usado no lugar dela.')
         state = get_state()
         state.audio_controls[body.source_id] = {'volume': body.volume, 'muted': body.muted}
-        await frame.evaluate('(controls) => { window._rnpAudioControls = controls; window._rnpApplyAudioControls?.(); }', state.audio_controls)
+        await asyncio.wait_for(frame.evaluate('(controls) => { window._rnpAudioControls = controls; window._rnpApplyAudioControls?.(); }', state.audio_controls), timeout=_MEDIA_EVAL_TIMEOUT)
         return {'status': 'ok', **state.audio_controls[body.source_id]}

@@ -39,12 +39,13 @@ Este documento serve como manual operacional para técnicos de transmissão, ope
 O operador pode alternar os layouts a qualquer instante conforme o momento da transmissão:
 - **Abertura / Apresentação de Slides com Palestrante:** Use o preset `Lado a Lado (70/30)`.
 - **Destaque Máximo aos Slides com Palestrante Discreto:** Use `PIP Canto Inferior` ou `PIP Canto Superior`.
-- **Mesa Redonda / Debate entre Convidados:** Use `Split 50 / 50` ou alterne para a cena de `Grid de Câmeras`.
+- **Mesa Redonda / Debate entre Convidados:** Use `Split 50 / 50`, `Todas + Libras (sem slide)` ou `Só Câmeras (sem slide)`.
+- **Palestrante + Intérprete (sem slides):** Use `Câmera + Libras (sem slide)`.
 - **Apenas Slides em Tela Cheia:** Use `Somente Slides`.
 
-### Fixar Palestrante Principal (*Pin Speaker*)
-- Ao fixar um participante específico (clicando em **📌 Fixar** no card da câmera), ele ganha prioridade absoluta de exibição ao lado dos slides nos modos de palco.
-- Se nenhum palestrante for fixado, o sistema alterna automaticamente para a câmera de quem estiver com a voz ativa no momento.
+### Foco e Fixação de Câmeras (*Focus* vs *Pin*)
+- **Em Foco (Foco):** Destaca uma ou mais câmeras na tela de retorno (`/tv`) e prioriza o participante como câmera principal nos layouts de palco.
+- **Fixar (Fixar):** Restringe o palco às câmeras fixadas. Se nenhuma câmera for fixada, o palco alterna automaticamente conforme quem está falando.
 
 ### Destaque de Mensagens do Chat (*Lower-Thirds*)
 - Todas as mensagens do chat da RNP e do YouTube aparecem em tempo real no feed do Dock de Controle.
@@ -62,8 +63,8 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 
 ## 🛑 Pós-Live e Encerramento
 
-1. No cabeçalho do Dock de Controle, clique em **Desconectar da Sala**.
-2. Ao fechar a janela do painel, escolha **Sim** na caixa de diálogo de confirmação para finalizar o servidor e liberar as portas e memória.
+1. No cabeçalho do Dock de Controle, clique em **Desconectar**.
+2. Fechar a janela do painel encerra automaticamente o servidor iniciado pelo aplicativo (sem necessidade de confirmação adicional).
 3. Se preferir encerrar via linha de comando ou atalho, basta executar **`Parar Servidor.bat`**.
 
 ---
@@ -83,7 +84,7 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 - **Solução:** O servidor gera automaticamente avatares SVG estilizados com as iniciais do participante e cor exclusiva para cada nome, garantindo visual profissional e sem contaminação entre usuários.
 
 ### 4. O firewall do Windows solicitou permissão
-- **Solução:** Permita a conexão em redes privadas/locais para o Python e para o executável `RNP to OBS.exe`. O servidor opera exclusivamente no endereço de loopback local (`127.0.0.1:3333`).
+- **Solução:** Permita a conexão em redes privadas/locais para o Python e para o executável `RNP to OBS.exe`. Por padrão, o servidor escuta apenas em loopback (`127.0.0.1:3333`); quando a opção **Acesso na Rede Local (LAN)** está habilitada no painel, ele escuta em `0.0.0.0:3333` para permitir abrir `/tv` em outras máquinas da rede local.
 
 ### 5. O som da sala some quando troco de cena
 - **Causa:** O master de áudio é acoplado à fonte `/stage`. Se essa fonte não estiver visível na cena ativa e a opção "Shutdown source when not visible" estiver ligada, o OBS suspende a página e o áudio junto.

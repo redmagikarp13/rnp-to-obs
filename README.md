@@ -9,11 +9,12 @@ Desenvolvida especialmente para eventos institucionais, aulas magnas e transmiss
 ## 🌟 Principais Recursos e Funcionalidades
 
 ### 🎛️ 1. Painel de Controle Integrado (`/control`)
-- **Modo Dock OBS & Janela Desktop Nativa:** Pode ser embutido como Dock no OBS Studio ou executado como aplicativo de desktop independente (via Microsoft Edge / Google Chrome em modo `--app`).
+- **Modo Dock OBS & Janela Desktop Nativa:** Pode ser embutido como Dock no OBS Studio ou executado como aplicativo de desktop independente via `pywebview` (com fallback para Microsoft Edge / Google Chrome em modo `--app`).
 - **Conexão em 1 Clique:** Entrada automatizada na sala da RNP WebConf com bypass anti-inatividade autônomo (mantém a sessão ativa sem desconexões).
 - **Integração YouTube Live:** Vinculação simultânea com qualquer transmissão ao vivo do YouTube para mesclagem de chat e super chats.
-- **Seletor de Temas do Painel:** Inclui tema oficial **Ifes (Instituto Federal)**, **Hardware Broadcast**, **Cyberpunk Neon**, **Glassmorphism**, **Discord** e **Minimal Slate**.
-- **Persistência Completa:** Todas as preferências, nomes personalizados, palestrante fixado e intérpretes são salvos automaticamente no `config.json`.
+- **Seletor de Temas do Painel:** Inclui o tema escuro **Broadcast** (`broadcast`) e o tema claro institucional **Ifes** (`ifes`), alternáveis diretamente na barra de status.
+- **Acesso em Rede Local (LAN) & Tela de Retorno (`/tv`):** Permite abrir a tela de retorno dos participantes em foco (`http://<IP-DO-PC>:3333/tv`) em outra máquina ou Smart TV da mesma rede.
+- **Persistência Completa:** Todas as preferências, nomes personalizados, câmeras em foco, fixadas e intérpretes são salvos automaticamente no `config.json`.
 
 ### 🎚️ 2. Rack de Áudio com VU Meters Verticais e Detecção de Voz Ativa
 - **Mixer Visual em Tempo Real:** Medição precisa de volume no painel de controle com rack vertical de medidores estéreo.
@@ -28,13 +29,16 @@ Desenvolvida especialmente para eventos institucionais, aulas magnas e transmiss
 - **Memória de Reconexão:** Se o intérprete perder a conexão momentaneamente, o sistema o reconhece e restaura na cena com as configurações salvas.
 
 ### 🎭 4. Palco Composto Inteligente (`/stage`)
-Combinação dinâmica em tempo real da apresentação/slides e das câmeras dos participantes com transições suaves e 6 presets:
+Combinação dinâmica em tempo real da apresentação/slides e das câmeras dos participantes com transições suaves e 9 presets (6 com slide e 3 sem slide):
 - `📺 Lado a Lado (70/30)`: Slides em 70% à esquerda + Câmeras e Libras em 30% à direita.
 - `⬇️ Slide Top + Rodapé`: Apresentação no topo com grid horizontal de participantes embaixo.
 - `🖼️ PIP Canto Inferior`: Slides em tela cheia com palestrante flutuando no canto inferior direito.
 - `↗️ PIP Canto Superior`: Slides em tela cheia com palestrante no canto superior direito.
-- `⚖️ Split 50 / 50`: Divisão meio a meio para debates, entrevistas e mesas-redondas.
+- `⚖️ Split 50 / 50`: Divisão meio a meio entre slides e câmeras.
 - `📊 Somente Slides`: Foco exclusivo no material da apresentação.
+- `🎥 Câmera + Libras (sem slide)`: Divide a tela 50/50 entre a câmera principal em foco e o intérprete de Libras.
+- `👥 Todas + Libras (sem slide)`: Grade com todos os participantes + intérprete de Libras dividindo a largura.
+- `📹 Só Câmeras (sem slide)`: Todas as câmeras no palco com a janela de Libras flutuante no canto.
 
 ### 📊 5. Enquetes ao Vivo BBB com 5 Temas Visuais (`/poll`)
 - Extração em tempo real das enquetes abertas e resultados publicados na conferência RNP/BBB.
@@ -69,7 +73,7 @@ Todos os endpoints operam em `http://localhost:3333` com transparência total (`
 | `http://localhost:3333/chat/featured` | **Browser Source** | `1920 x 1080` | Tarja de mensagem em destaque (*Lower-Third*). |
 | `http://localhost:3333/poll` | **Browser Source** | `1920 x 1080` | Card animado de resultado da enquete ao vivo. |
 | `http://localhost:3333/audio?source=<canal>` | **Browser Source** | `200 x 200` | Áudio **individual** de um participante (redireciona ao receptor WebRTC). O master não fica mais aqui — sai pelo `/stage`. Links prontos no rack de áudio do `/control`. |
-| `http://localhost:3333/catalog` | **Navegador Web** | — | Vitrine visual interativa com demonstração de todos os temas. |
+| `http://localhost:3333/tv` | **Navegador Web / TV** | Tela Cheia | Tela de retorno de participantes em foco (spotlight) + fila secundária e destaque de chat (`?chat=0` oculta o destaque). |
 
 ---
 
@@ -82,10 +86,10 @@ O projeto conta com automação para geração de instalador `.exe` via Inno Set
 - **Instalar:** Execute o instalador gerado; ele criará atalhos no Menu Iniciar e na Área de Trabalho com ícone oficial.
 
 ### Opção 2: Modo Desktop com Python Local
-1. Dê um duplo clique no atalho **`Abrir Painel.bat`** (ou execute `pythonw app.pyw`).
-2. O servidor iniciará em segundo plano e abrirá uma janela de aplicativo dedicada, sem barras de navegador.
-3. Ao fechar a janela, o sistema pergunta se deseja encerrar o servidor ou mantê-lo ativo para o OBS Studio continuar transmitindo.
-4. Para forçar a parada a qualquer momento, execute **`Parar Servidor.bat`** ou clique no botão *Desligar Servidor* no cabeçalho do Dock.
+1. Dê um duplo clique no atalho **`Abrir Painel.bat`** (ou execute `python app.py`).
+2. O servidor iniciará em segundo plano (vigiado por watchdog automático) e abrirá uma janela nativa dedicada do painel.
+3. Ao fechar a janela do painel, o servidor iniciado pelo aplicativo é encerrado automaticamente (servidores já existentes antes da abertura do painel são preservados).
+4. Para forçar a parada a qualquer momento, execute **`Parar Servidor.bat`**.
 
 ### Opção 3: Modo Servidor Console Tradicional
 ```bash

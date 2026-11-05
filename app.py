@@ -62,8 +62,13 @@ if len(sys.argv) > 1 and sys.argv[1] == "--server":
     base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     if base_dir not in sys.path:
         sys.path.insert(0, base_dir)
-    from server import app as fastapi_app
-    uvicorn.run(fastapi_app, host="127.0.0.1", port=3333, log_level="warning")
+    from server import app as fastapi_app, resolve_bind_host, resolve_bind_port, _lan_ip_candidates
+    _host = resolve_bind_host()
+    _port = resolve_bind_port()
+    if _host == "0.0.0.0":
+        _ips = _lan_ip_candidates()
+        print(f"[Bridge] Acesso LAN ativo. Outras máquinas: http://{(_ips[0] if _ips else '<IP>')}:{_port}/tv", flush=True)
+    uvicorn.run(fastapi_app, host=_host, port=_port, log_level="warning")
     sys.exit(0)
 
 
@@ -85,11 +90,17 @@ _WATCHDOG_BASE = 3
 _WATCHDOG_TETO = 60
 _GRACA_STAB = 8  # s para considerar que o servidor reanimado ficou de pé
 
+def _resolve_port() -> int:
+    try:
+        return int(os.environ.get("RNP_PORT", "3333"))
+    except ValueError:
+        return 3333
+
 def is_server_running() -> bool:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.3)
-            return s.connect_ex(('127.0.0.1', 3333)) == 0
+            return s.connect_ex(('127.0.0.1', _resolve_port())) == 0
     except Exception:
         return False
 
@@ -109,8 +120,10 @@ def _comando_servidor():
     return [python_exe, os.path.join(PROJECT_DIR, "server.py")]
 
 def _spawn_servidor():
-    return subprocess.Popen(_comando_servidor(), cwd=PROJECT_DIR,
-                            creationflags=0x08000000, close_fds=True)
+    kwargs = {"cwd": PROJECT_DIR, "close_fds": True}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = 0x08000000
+    return subprocess.Popen(_comando_servidor(), **kwargs)
 
 def start_server():
     global SERVER_PROC
@@ -128,7 +141,7 @@ def start_server():
             return True
         time.sleep(0.2)
 
-    show_error("O servidor RNP to OBS não respondeu na porta 3333 após 15 segundos.\nVerifique se o Firewall permite conexões locais.")
+    show_error(f"O servidor RNP to OBS não respondeu na porta {_resolve_port()} após 15 segundos.\nVerifique se o Firewall permite conexões locais.")
     return False
 
 
@@ -211,7 +224,7 @@ def _zelo_do_servidor():
 def stop_server_api():
     try:
         req = urllib.request.Request(
-            "http://127.0.0.1:3333/api/server/stop",
+            f"http://127.0.0.1:{_resolve_port()}/api/server/stop",
             data=b"{}",
             headers={"Content-Type": "application/json"}
         )

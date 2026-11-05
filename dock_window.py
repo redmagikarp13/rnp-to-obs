@@ -6,12 +6,53 @@ janela: em vez de abrir o Edge/Chrome em modo --app=, abre uma janela nativa
 caminho antigo garante que máquina sem backend WebView2 não fique sem painel.
 """
 import os
+import shutil
 import subprocess
 
-SERVER_URL = 'http://127.0.0.1:3333/control'
+
+def _resolve_port() -> int:
+    try:
+        return int(os.environ.get('RNP_PORT', '3333'))
+    except ValueError:
+        return 3333
+
+
+SERVER_URL = f'http://127.0.0.1:{_resolve_port()}/control'
 JANELA_TITULO = 'RNP to OBS — Painel'
 JANELA_SIZE = (1360, 860)
 JANELA_MIN = (900, 600)
+
+# Mantém o painel 100% ativo mesmo com a janela minimizada/inativa. Sem isto o
+# WebView2 (Chromium) coloca o renderer em segundo plano e suspende timers quando a
+# janela perde a visibilidade — o monitor de áudio local "trava" até o operador
+# voltar para a janela. As flags desligam esse throttling/occlusion.
+#
+# Fonte única: as MESMAS flags valem para as duas rotas de janela. Antes viviam só
+# na rota nativa (variável de ambiente do WebView2); o fallback de navegador abria
+# um Edge/Chrome --app= sem nenhuma delas, e era justamente ai que minimizar voltava
+# a estrangular o painel — o defeito do §5.2 reaparecendo pela porta dos fundos.
+KEEP_ALIVE_FLAGS = [
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--autoplay-policy=no-user-gesture-required',
+]
+# '--disable-features' so pode aparecer uma vez na linha de comando: os valores
+# precisam ser mesclados num unico argumento, sena um sobrescreve o outro.
+KEEP_ALIVE_FEATURES = ['CalculateNativeWinOcclusion']
+
+WEBVIEW2_KEEP_ALIVE_ARGS = ' '.join(
+    KEEP_ALIVE_FLAGS + ['--disable-features=' + ','.join(KEEP_ALIVE_FEATURES)])
+
+
+def _aplicar_args_webview2():
+    """Injeta as flags anti-throttling no processo do WebView2. Elas são lidas da
+    variável de ambiente antes do CoreWebView2Environment nascer, por isso precisa
+    ser chamada antes do webview.start()."""
+    atual = os.environ.get('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS', '').strip()
+    os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = (
+        (atual + ' ' + WEBVIEW2_KEEP_ALIVE_ARGS).strip() if atual else WEBVIEW2_KEEP_ALIVE_ARGS
+    )
 
 
 def profile_dir() -> str:
@@ -30,6 +71,7 @@ def abrir_janela_pywebview(url=SERVER_URL, ao_fechar=None):
     icon por janela); em desenvolvimento herda o ícone do pythonw.
     """
     import webview
+    _aplicar_args_webview2()
     janela = webview.create_window(
         title=JANELA_TITULO, url=url,
         width=JANELA_SIZE[0], height=JANELA_SIZE[1],
@@ -49,6 +91,11 @@ def find_browser_app() -> str:
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
         os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
         os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        shutil.which("microsoft-edge") or "",
+        shutil.which("google-chrome") or "",
+        shutil.which("chromium") or "",
     ]
     for c in candidates:
         if c and os.path.exists(c):
@@ -69,10 +116,13 @@ def abrir_janela_navegador(url=SERVER_URL, ao_fechar=None):
         f"--app={url}",
         f"--window-size={JANELA_SIZE[0]},{JANELA_SIZE[1]}",
         f"--user-data-dir={profile_dir()}",
-        "--disable-features=Translate",
+        '--disable-features=' + ','.join(['Translate'] + KEEP_ALIVE_FEATURES),
         "--app-id=rnp_to_obs_control",
         "--no-first-run",
         "--disable-default-apps",
+        # Sem isto, minimizar o painel no fallback suspende o renderer e o audio
+        # local para — o mesmo motivo que ja foi resolvido na rota nativa.
+        *KEEP_ALIVE_FLAGS,
     ])
     proc.wait()
     if ao_fechar:

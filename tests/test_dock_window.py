@@ -69,7 +69,11 @@ class DockWindowTests(unittest.TestCase):
         proc = mock.Mock()
         fechou = []
         cb = lambda *a: fechou.append(True)
+        # find_browser_app so enxerga caminho do Windows; sem mockar, em macOS/Linux o
+        # codigo cai no webbrowser.open e o Popen nunca roda (teste falhava por
+        # ambiente, nao pelo comportamento).
         with mock.patch.dict(sys.modules, {'webview': stub}), \
+             mock.patch.object(dock_window, 'find_browser_app', return_value='C:\\Edge\\msedge.exe'), \
              mock.patch.object(dock_window.subprocess, 'Popen', return_value=proc) as pop:
             dock_window.launch_app_window(cb)
         cmd = pop.call_args[0][0]
@@ -85,6 +89,34 @@ class DockWindowTests(unittest.TestCase):
              mock.patch.object(dock_window, 'abrir_janela_navegador') as nav:
             dock_window.launch_app_window()
         nav.assert_called_once()
+
+    def test_fallback_carrega_as_mesmas_flags_antithrottling(self):
+        # O §5.2 resolveu "minimizar o painel para o áudio" só na rota nativa. Se o
+        # WebView2 falhar e cair no Edge/Chrome --app= sem as flags, o defeito volta
+        # exactamente onde o operador minimiza -- e as duas rotas precisa usar a
+        # MESMA lista, para nao divergirem de novo.
+        stub = _Webview(falha=RuntimeError('sem backend'))
+        with mock.patch.dict(sys.modules, {'webview': stub}), \
+             mock.patch.object(dock_window, 'find_browser_app', return_value='C:\\Edge\\msedge.exe'), \
+             mock.patch.object(dock_window.subprocess, 'Popen', return_value=mock.Mock()) as pop:
+            dock_window.launch_app_window()
+        cmd = [str(a) for a in pop.call_args[0][0]]
+        for flag in dock_window.KEEP_ALIVE_FLAGS:
+            self.assertIn(flag, cmd, f'fallback do painel sem {flag}: minimizar volta a estrangular o áudio.')
+        # '--disable-features' duplicado na linha de comando: um sobrescreve o outro.
+        recursos = [a for a in cmd if a.startswith('--disable-features=')]
+        self.assertEqual(len(recursos), 1, f'--disable-features deve aparecer 1 vez, veio {recursos}')
+        for valor in dock_window.KEEP_ALIVE_FEATURES:
+            self.assertIn(valor, recursos[0])
+
+    def test_rota_nativa_recebe_as_mesmas_flags_da_rota_fallback(self):
+        # Mesma fonte única, vista do outro lado: a string do WebView2 tem de conter
+        # cada flag que o fallback passa como argumento.
+        env = dock_window.WEBVIEW2_KEEP_ALIVE_ARGS
+        for flag in dock_window.KEEP_ALIVE_FLAGS:
+            self.assertIn(flag, env)
+        for valor in dock_window.KEEP_ALIVE_FEATURES:
+            self.assertIn(valor, env)
 
 
 class FecharJanelaEncerraServicoTests(unittest.TestCase):

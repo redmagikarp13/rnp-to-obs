@@ -50,7 +50,15 @@ class GuardInatividadeTests(unittest.TestCase):
     def _rodar(self, html, script):
         async def main():
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                browser = None
+                for ch in ('msedge', 'chrome', None):
+                    try:
+                        browser = await p.chromium.launch(headless=True, **({'channel': ch} if ch else {}))
+                        break
+                    except Exception:
+                        continue
+                if not browser:
+                    raise RuntimeError('Nenhum navegador Chromium disponível')
                 page = await browser.new_page()
                 await page.set_content(html)
                 await ensure_media_adapter(page.main_frame)

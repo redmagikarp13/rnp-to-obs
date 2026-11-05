@@ -50,6 +50,7 @@ page_dump.html
 !web/ifes-logo.png
 
 # IDE & Antigravity
+.DS_Store
 node_modules/
 .system_generated/
 .user_uploaded/

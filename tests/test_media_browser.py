@@ -75,8 +75,19 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         while not self.http.started:
             await asyncio.sleep(.01)
         self.pw = await async_playwright().start()
-        self.browser = await self.pw.chromium.launch(channel='msedge', headless=True,
-            args=['--autoplay-policy=no-user-gesture-required', '--mute-audio'])
+        self.browser = None
+        for ch in ('msedge', 'chrome', None):
+            try:
+                self.browser = await self.pw.chromium.launch(
+                    headless=True,
+                    args=['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+                    **({'channel': ch} if ch else {}),
+                )
+                break
+            except Exception:
+                continue
+        if not self.browser:
+            raise RuntimeError('Nenhum navegador Chromium disponível')
         self.producer = await self.browser.new_page()
         await self.producer.set_content('<body></body>')
         await self.producer.evaluate(FIXTURE)

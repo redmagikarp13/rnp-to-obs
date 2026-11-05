@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerador de CSS para OBS — BBB direto na Browser Source</title>
+<style>
+  /* Interface do gerador. Nada daqui entra no CSS gerado. */
+  :root {
+    --bg: #0b1220; --painel: #111a2b; --borda: #1f2c45; --texto: #e6edf7;
+    --fraco: #8ba0bf; --accento: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--texto);
+    font-family: 'Outfit', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+  header { padding: 16px 22px; border-bottom: 1px solid var(--borda);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 17px; letter-spacing: .02em; }
+  header p { margin: 0; color: var(--fraco); font-size: 12.5px; }
+  main { display: grid; grid-template-columns: 336px 1fr; gap: 18px;
+    padding: 18px 22px 34px; align-items: start; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  .coluna { display: flex; flex-direction: column; gap: 14px; }
+  fieldset { margin: 0; padding: 12px 14px 14px; border: 1px solid var(--borda);
+    border-radius: 10px; background: var(--painel); }
+  legend { padding: 0 6px; font-size: 11px; font-weight: 800; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--fraco); }
+  label { display: block; font-size: 11.5px; color: var(--fraco); margin: 9px 0 4px; }
+  label.primeiro { margin-top: 2px; }
+  select, input[type=text], input[type=number] { width: 100%; padding: 6px 8px;
+    border-radius: 7px; border: 1px solid var(--borda); background: #0d1524;
+    color: var(--texto); font: inherit; font-size: 13px; }
+  input[type=range] { width: 100%; accent-color: var(--accento); }
+  input[type=color] { width: 100%; height: 30px; border: 1px solid var(--borda);
+    border-radius: 7px; background: #0d1524; padding: 2px; }
+  .linha { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .linha.trio { grid-template-columns: 1fr 78px 78px; }
+  .chk { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 12.5px;
+    color: var(--texto); cursor: pointer; }
+  .chk input { width: auto; accent-color: var(--accento); }
+  .valor { font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--accento); }
+  .temas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .temas button, .acoes button { padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--borda); background: #0d1524; color: var(--texto);
+    font: inherit; font-size: 12px; cursor: pointer; }
+  .temas button.ativo { border-color: var(--accento); background: rgba(56,189,248,.14);
+    font-weight: 800; }
+  .acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .acoes button.principal { background: var(--accento); color: #04121e;
+    border-color: var(--accento); font-weight: 800; }
+  textarea { width: 100%; min-height: 360px; resize: vertical; padding: 12px;
+    border-radius: 10px; border: 1px solid var(--borda); background: #070d18;
+    color: #cfe3f7; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px; line-height: 1.55; }
+  .aviso { margin: 0 0 10px; padding: 9px 12px; border-radius: 8px; font-size: 12px;
+    line-height: 1.5; background: rgba(56,189,248,.09);
+    border: 1px solid rgba(56,189,248,.32); color: #bfe3fb; }
+  .aviso.revisar { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.4);
+    color: #f8dcaa; }
+  .titulo { display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 8px; }
+  .titulo h2 { margin: 0; font-size: 13px; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--fraco); }
+
+  /* ---- Pré-visualização: DOM falso do BBB, vestido pelo CSS gerado ---- */
+  .pv-scope { padding: 14px; border-radius: 12px; border: 1px solid var(--borda);
+    background: repeating-conic-gradient(#16223a 0 25%, #101a2c 0 50%) 0 0/22px 22px;
+    position: relative; min-height: 300px; }
+  .pv-scope video { display: block; width: 100%; height: 100%; min-height: 74px;
+    background: linear-gradient(160deg, #2b3f61, #1a2740 60%, #243350); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gerador de CSS para OBS</h1>
+  <p>Alvo único: cliente BBB (<code>conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>) numa Browser Source, sem a ponte · temas Ponte / Discord / StreamYard</p>
+</header>
+
+<main>
+  <div class="coluna">
+    <fieldset>
+      <legend>Tema</legend>
+      <div class="temas" id="temas">
+        <button data-tema="ponte">Ponte</button>
+        <button data-tema="discord">Discord</button>
+        <button data-tema="streamyard">StreamYard</button>
+      </div>
+      <label class="primeiro" for="rotulo">Rótulo de nome</label>
+      <select id="rotulo">
+        <option value="glass">glass — vidro fosco + ponto</option>
+        <option value="pill">pill — pílula com selo LIVE</option>
+        <option value="minimal">minimal — barra no rodapé</option>
+        <option value="glow">glow — gradiente com brilho</option>
+        <option value="discord">discord — verde #23a55a, borda branca</option>
+        <option value="streamyard">streamyard — gradiente esmeralda</option>
+      </select>
+      <label for="rotuloPos">Onde o rótulo mora</label>
+      <select id="rotuloPos">
+        <option value="card">dentro de cada câmera</option>
+        <option value="topo">fixo no topo (assinatura Discord/StreamYard)</option>
+      </select>
+    </fieldset>
+
+    <fieldset>
+      <legend>Formato de câmera</legend>
+      <label class="primeiro" for="formato">Proporção e ajuste</label>
+      <select id="formato">
+        <option value="original">original — contém, sem cortar a cabeça</option>
+        <option value="auto">auto — capa, preenche o quadro</option>
+        <option value="esticado">esticado — estica (distorce)</option>
+        <option value="paisagem">paisagem — trava 16/9</option>
+        <option value="retrato">retrato — trava 9/16</option>
+        <option value="quadrada">quadrada — trava 1/1</option>
+      </select>
+      <label for="colunas"><span>Colunas da grade</span> <span class="valor" id="v-colunas"></span></label>
+      <input type="range" id="colunas" min="1" max="6" step="1">
+      <label for="gap"><span>Espaço entre câmeras</span> <span class="valor" id="v-gap"></span></label>
+      <input type="range" id="gap" min="0" max="32" step="1">
+      <label for="dock"><span>Largura do dock de câmeras</span> <span class="valor" id="v-dock"></span></label>
+      <input type="range" id="dock" min="0" max="480" step="10">
+    </fieldset>
+
+    <fieldset>
+      <legend>Tipografia do rótulo</legend>
+      <div class="linha trio">
+        <div><label class="primeiro" for="fonte">Fonte</label><input type="text" id="fonte"></div>
+        <div><label class="primeiro" for="fsize"><span>Tam.</span></label><input type="number" id="fsize" min="9" max="34"></div>
+        <div><label class="primeiro" for="espac"><span>Spacing</span></label><input type="number" id="espac" min="0" max="4" step=".1"></div>
+      </div>
+      <label for="fweight"><span>Peso</span> <span class="valor" id="v-fweight"></span></label>
+      <input type="range" id="fweight" min="400" max="900" step="100">
+      <label class="chk"><input type="checkbox" id="uppercase"> Nomes em CAIXA ALTA</label>
+      <label for="opacidade"><span>Fundo do rótulo (opacidade)</span> <span class="valor" id="v-opacidade"></span></label>
+      <input type="range" id="opacidade" min="0" max="100" step="1">
+      <label class="chk"><input type="checkbox" id="mostrarnomes"> Mostrar nomes</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cor &amp; material</legend>
+      <div class="linha">
+        <div><label class="primeiro" for="accento">Destaque</label><input type="color" id="accento"></div>
+        <div><label class="primeiro" for="fala">Quem fala</label><input type="color" id="fala"></div>
+      </div>
+      <div class="linha">
+        <div><label for="textonome">Texto</label><input type="color" id="textonome"></div>
+        <div><label for="bordacam">Borda da câmera</label><input type="color" id="bordacam"></div>
+      </div>
+      <label for="rborda"><span>Largura da borda</span> <span class="valor" id="v-rborda"></span></label>
+      <input type="range" id="rborda" min="0" max="8" step="1">
+      <label for="raio"><span>Raio dos cantos</span> <span class="valor" id="v-raio"></span></label>
+      <input type="range" id="raio" min="0" max="28" step="1">
+      <label for="sombra"><span>Sombra</span> <span class="valor" id="v-sombra"></span></label>
+      <input type="range" id="sombra" min="0" max="40" step="2">
+      <label class="chk"><input type="checkbox" id="pulso"> Ponto pulsante em quem fala</label>
+      <label class="chk"><input type="checkbox" id="anel"> Anel de destaque no card de quem fala</label>
+      <label class="chk"><input type="checkbox" id="transparente"> Transparência real (var do BBB)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Esconder interface do BBB</legend>
+      <label class="chk"><input type="checkbox" id="oculta-navbar"> Navbar, título da sala, avatares, gravação</label>
+      <label class="chk"><input type="checkbox" id="oculta-sidebar"> Painel lateral / lista de participantes</label>
+      <label class="chk"><input type="checkbox" id="oculta-controles"> Controles e "somente ouvir"</label>
+      <label class="chk"><input type="checkbox" id="oculta-chat"> Chat da sala</label>
+      <label class="chk"><input type="checkbox" id="gridbbb"> Forçar câmeras em grade</label>
+    </fieldset>
+  </div>
+
+  <div class="coluna">
+    <div>
+      <div class="titulo"><h2>Pré-visualização</h2>
+        <label class="chk" style="margin:0"><input type="checkbox" id="simulafala" checked> Alguém falando</label>
+      </div>
+      <div class="pv-scope" id="pv">
+        <header id="Navbar">título da sala · avatares · gravação</header>
+        <div id="layout"><div id="app"><div class="camera-area">
+          <div data-test="webcamVideoItem" class="VideoListItem">
+            <div data-test="videoPlayer"><video></video></div>
+            <div class="TalkingIndicatorWrapper"><div class="TalkingIndicatorButton">Profª Marina</div></div>
+            <div data-test="webcamItemName">Profª Marina</div>
+            <span data-test="isTalking"></span>
+          </div>
+          <div data-test="webcamVideoItem" class="VideoListItem">
+            <div data-test="videoPlayer"><video></video></div>
+            <div data-test="webcamItemName">Leonardo</div>
+            <span data-test="wasTalking"></span>
+          </div>
+          <div data-test="webcamItem" class="VideoListItem">
+            <div data-test="videoPlayer"><video></video></div>
+            <div data-test="webcamItemName">Intérprete de Libras</div>
+          </div>
+        </div></div></div>
+        <div class="resizeSidebarContentWrapper">painel lateral</div>
+        <div class="ChatWrapper">chat</div>
+        <div id="cameraDock">dock de câmeras</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="titulo"><h2>CSS gerado</h2>
+        <div class="acoes">
+          <button class="principal" id="copiar">Copiar para o OBS</button>
+          <button id="baixar">Baixar .css</button>
+        </div>
+      </div>
+      <div class="aviso">
+        Cole em <strong>Propriedades da fonte → CSS personalizado</strong> de uma Browser Source
+        apontando para <code>https://conferenciaweb.rnp.br/sala/&lt;slug&gt;</code>. Dê "Ativar
+        interação" uma vez para entrar como convidado. Os temas Discord e StreamYard vêm dos seus
+        próprios <code>css_custom_discord.css</code> / <code>css_custom_v0.1.css</code>, então a
+        transparência funciona de verdade aqui: sobrescreve as <code>--color-*</code> do cliente.
+      </div>
+      <div class="aviso revisar">
+        <strong>Proveniência dos seletores.</strong> ✔ = aparece no seu <code>css_custom*.css</code>
+        ou no código da ponte, logo já provado no DOM real da RNP. ✎ = derivado por mim dos padrões
+        deles (ex.: <code>webcamItemName</code>) — se o nome não estilizar, inspecione e troque o
+        seletor. Classes com <code>[class*="…"]</code> dependem do hash de versão do BBB.
+      </div>
+      <textarea id="saida" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+</main>
+
+<script>
+/* =========================================================================
+   Gerador de CSS para o cliente BBB aberto direto numa Browser Source do OBS.
+
+   De onde vem cada valor:
+   - Tema Ponte ...... CAM_FORMAT_CSS / NAME_TAG_CSS / SPEAKING_CSS (server.py)
+   - Tema Discord .... css_custom_discord.css  (verde #23a55a, ocioso #2b2d31/#949ba4,
+                       raio 20, borda 2px rgba(255,255,255,.85), selo fixo em top:26px)
+   - Tema StreamYard . css_custom_v0.1.css     (gradiente #10b981->#059669, raio 25,
+                       ocioso rgba(30,41,59,.85)/#e2e8f0, card 2px rgba(255,255,255,.25))
+   - Transparência ... :root com --color-background/surface/white/content-background
+                       transparentes + contêineres zerados (a receita dos dois arquivos)
+
+   Seletores: ✔ = comprovados (seus css_custom*.css ou a ponte).  ✎ = derivado.
+   ========================================================================= */
+const TEMAS = {
+  ponte: {
+    rotulo: 'glass', rotuloPos: 'card', accento: '#38bdf8', fala: '#22c55e',
+    textonome: '#ffffff', bordacam: '#38bdf8', rborda: 2, raio: 12, sombra: 18,
+    fonte: "'Outfit', sans-serif", fsize: 13, fweight: 700, espac: 0, uppercase: false,
+    opacidade: 85, pulso: true, anel: true, transparente: false, oculos: {},
+  },
+  discord: {
+    rotulo: 'discord', rotuloPos: 'topo', accento: '#5865f2', fala: '#23a55a',
+    textonome: '#ffffff', bordacam: '#949ba4', rborda: 2, raio: 12,
+    sombra: 16, fonte: "'Outfit', 'Helvetica Neue', sans-serif", fsize: 13.5, fweight: 700,
+    espac: .3, uppercase: false, opacidade: 100, pulso: true, anel: true, transparente: true,
+    oculos: { navbar: true, sidebar: true, controles: true, chat: true },
+  },
+  streamyard: {
+    rotulo: 'streamyard', rotuloPos: 'topo', accento: '#10b981', fala: '#10b981',
+    textonome: '#ffffff', bordacam: '#ffffff', rborda: 2, raio: 12, sombra: 14,
+    fonte: "'Outfit', sans-serif", fsize: 14, fweight: 700, espac: .4, uppercase: true,
+    opacidade: 100, pulso: true, anel: true, transparente: true,
+    oculos: { navbar: true, sidebar: true, controles: false, chat: true },
+  },
+};
+
+const BASE = Object.assign({
+  tema: 'ponte', formato: 'original', colunas: 3, gap: 10, dock: 330,
+  mostrarnomes: true, gridbbb: true, simulafala: true,
+  ocultaNavbar: true, ocultaSidebar: true, ocultaControles: false, ocultaChat: false,
+}, TEMAS.ponte);
+
+/* Receitas do rótulo. Os quatro primeiros são da ponte; os dois últimos, seus. */
+const RECEITAS = {
+  glass:      { fundo: 'rgba(15, 23, 42, {A})', raio: '8px',  borda: '1px solid rgba(255,255,255,.2)', padding: '5px 12px',  sombra: 'rgba(0,0,0,.6)',      marca: 'ponto', blur: 10 },
+  pill:       { fundo: '#0f172a',                raio: '24px', borda: '2px solid {AC}',               padding: '4px 14px',  sombra: 'rgba(56,189,248,.4)', marca: 'LIVE', blur: 0 },
+  minimal:    { fundo: 'rgba(0, 0, 0, {A})',     raio: '0',    borda: '0',                            padding: '5px 12px',  sombra: 'rgba(0,0,0,.45)',     marca: 'barra', blur: 0 },
+  glow:       { fundo: 'linear-gradient(135deg, rgba(14,165,233,.95), rgba(99,102,241,.95))', raio: '6px', borda: '0', padding: '5px 12px', sombra: 'rgba(14,165,233,.5)', marca: 'nenhum', blur: 0 },
+  discord:    { fundo: '{FALA}',                 raio: '20px', borda: '2px solid rgba(255,255,255,.85)', padding: '6px 18px', sombra: 'rgba(35,165,90,.5)', marca: 'nenhum', blur: 0, textoSombra: '0 1px 2px rgba(0,0,0,.8)' },
+  streamyard: { fundo: 'linear-gradient(135deg, #10b981, #059669)', raio: '25px', borda: '2px solid rgba(255,255,255,.85)', padding: '6px 18px', sombra: 'rgba(0,0,0,.25)', marca: 'nenhum', blur: 0, textoSombra: '0 1px 2px rgba(0,0,0,.8)' },
+};
+
+const FIT = { original: 'contain', esticado: 'fill', auto: 'cover',
+              retrato: 'cover', paisagem: 'cover', quadrada: 'cover' };
+const PROP = { retrato: '9 / 16', paisagem: '16 / 9', quadrada: '1 / 1' };
+
+/* ✔ comprovado nos seus css_custom*.css / na ponte · ✎ derivado por mim */
+const S = {
+  cards:     ['[data-test="webcamVideoItem"]', '[data-test="webcamItem"]', 'div[class*="VideoListItem"]'],
+  videos:    ['[data-test="videoPlayer"]'],
+  falaWrap:  ['div[class*="TalkingIndicatorWrapper"]', 'div[class*="IsTalkingWrapper"]', 'div[class*="Speaking"]'],
+  falaBtn:   ['div[class*="TalkingIndicatorButton"]', '[data-test="talkingIndicator"]', '[data-test="isTalking"]'],
+  ocioso:    ['[data-test="wasTalking"]', 'div[class*="VideoListItem"] [data-test="wasTalking"]',
+              'div[class*="TalkingIndicator"] [data-test="wasTalking"]'],
+  nome:      ['[data-test="webcamItemName"]',
+              /* O span generico do VideoListItem tambem casa com os spans do indicador
+                 de fala/ocioso, e por especificidade VENCE a regra do badge: sem estes
+                 :not() o "quem nao esta falando" sai pintado como selo ativo. */
+              'div[class*="VideoListItem"] > span:not([class*="Talking"]):not([data-test="wasTalking"]):not([data-test="isTalking"])'],
+  tela:      ['#screenshareContainer', '#screenshareVideo', '[data-test="screenshareVideo"]'],
+  lista:     ['div[class*="VideoList"]', 'div[class*="camera-area"]'],
+  /* NAO vao para a regra de grade: #layout/#app/#cameraDock/VideoCanvas sao
+     ancestrais da lista. Aplicar grid em nivel de fora E no de dentro multiplica
+     as colunas (3x3) e cada camera encolhe -- a previa pegou isso acontecendo. */
+  ancestrais: ['#layout', '#app', '#cameraDock', 'div[class*="VideoCanvas"]', 'div[class*="Draggable"]'],
+  dock:      ['#cameraDock', 'div[id="cameraDock"]'],
+  navbar:    ['#Navbar', 'header#Navbar', 'header[id="Navbar"]'],
+  navbarFilho: ['header[id="Navbar"] > div:first-child', 'header[id="Navbar"] [class*="Avatar"]',
+                'header[id="Navbar"] [class*="NavBarButton"]', 'header[id="Navbar"] [data-test="presentationTitle"]',
+                'header[id="Navbar"] [aria-label*="Opções"]', 'header[id="Navbar"] [aria-label*="Sair"]',
+                '[data-test="recordingIndicator"]', '[data-test="profileSidebarButton"]',
+                '[data-test="connectionStatusItemUser"]', 'div[id*="connectionBars"]'],
+  sidebar:   ['div[class*="resizeSidebarContentWrapper"]', 'div[class*="SidebarContentBackdrop"]',
+              'div[class*="SidebarContentPanel"]', 'div[class*="PanelContent"]', 'section[class*="SidebarContent"]'],
+  chat:      ['div[class*="ChatWrapper"]', '[data-test="chatMessages"]'],
+  controles: ['[data-test="listenOnlyBtn"]', '[data-test="dropdownWebcamButton"]'],
+  superfices: ['#cameraDock', 'div[class*="VideoCanvas"]', 'div[class*="Draggable"]',
+              'div[class*="VideoList"]', 'div[class*="ChatWrapper"]', 'div[class*="SidebarContent"]',
+              'div[class*="PanelContent"]', '#layout', '#app'],
+};
+
+function lista(p, arr) { return arr.map(function (s) { return p + s; }).join(',\n    '); }
+function bloco(sel, regras) {
+  return sel + ' {\n' + regras.filter(Boolean).map(function (r) { return '    ' + r; }).join('\n') + '\n}\n';
+}
+function rgba(hex, alpha) {
+  if (String(hex).indexOf('rgb') === 0) return hex;
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  return 'rgba(' + ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ', ' + alpha + ')';
+}
+
+function regrasTema(s, P) {
+  const r = RECEITAS[s.rotulo];
+  const cards = lista(P, S.cards);
+  const nome = lista(P, S.nome);
+  const out = [];
+  const alpha = (s.opacidade / 100).toFixed(2);
+  const fundo = r.fundo.replace('{A}', alpha).replace('{AC}', s.accento).replace('{FALA}', s.fala);
+
+  out.push('/* ===== Rótulo de nome — estilo ' + s.rotulo + ' ===== */');
+  const regrasNome = [
+    'position: ' + (s.rotuloPos === 'topo' ? 'fixed' : 'absolute') + ' !important;',
+    s.rotuloPos === 'topo' ? 'top: 26px !important; left: 50% !important; transform: translateX(-50%);'
+                           : 'bottom: 10px !important; left: 10px !important;',
+    r.marca === 'barra' ? 'left: 0 !important; bottom: 0 !important; width: 100%;' : '',
+    'display: inline-flex !important; align-items: center; gap: 8px;',
+    'background: ' + fundo + ' !important;',
+    (r.borda === '0' ? '' : 'border: ' + r.borda.replace('{AC}', s.accento) + ' !important;'),
+    'padding: ' + r.padding + ' !important;',
+    (r.raio === '0' ? '' : 'border-radius: ' + r.raio + ' !important;'),
+    'color: ' + s.textonome + ' !important;',
+    'font-family: ' + s.fonte + ' !important;',
+    'font-size: ' + s.fsize + 'px !important;',
+    'font-weight: ' + s.fweight + ' !important;',
+    s.espac ? 'letter-spacing: ' + s.espac + 'px !important;' : '',
+    s.uppercase ? 'text-transform: uppercase !important;' : '',
+    r.textoSombra ? 'text-shadow: ' + r.textoSombra + ' !important;' : '',
+    r.blur ? 'backdrop-filter: blur(' + r.blur + 'px) !important; -webkit-backdrop-filter: blur(' + r.blur + 'px) !important;' : '',
+    'box-shadow: 0 4px ' + Math.max(8, s.sombra) + 'px ' + r.sombra + ' !important;',
+    'z-index: 2147483000 !important;',
+    'visibility: visible !important; opacity: 1 !important; pointer-events: none;',
+    'max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;',
+  ];
+  out.push(bloco(nome, regrasNome));
+
+  /* Os dois temas colocam o selo no próprio botão do indicador de fala. */
+  if (s.rotulo === 'discord' || s.rotulo === 'streamyard') {
+    out.push(bloco(lista(P, S.falaBtn), regrasNome.map(function (x) { return x; })));
+    out.push(bloco(lista(P, S.falaWrap), [
+      'display: inline-flex !important; visibility: visible !important; opacity: 1 !important;',
+      'background: transparent !important; border: none !important; box-shadow: none !important;',
+      'padding: 0 !important; margin: 0 !important;',
+    ]));
+    out.push(bloco(lista(P, S.ocioso), [
+      'background: ' + (s.tema === 'discord' ? '#2b2d31' : 'rgba(30, 41, 59, 0.85)') + ' !important;',
+      'color: ' + (s.tema === 'discord' ? '#949ba4' : '#e2e8f0') + ' !important;',
+      'border: 1px solid rgba(255,255,255,.2) !important;',
+      'border-radius: ' + r.raio + ' !important;',
+      'padding: ' + r.padding + ' !important;',
+      'opacity: .85 !important;',
+    ]));
+  }
+  if (r.marca === 'ponto') {
+    out.push(bloco(nome + '::before', ['content: ""; width: 7px; height: 7px; border-radius: 50%;',
+      'background: ' + s.accento + '; flex: 0 0 auto;']));
+  } else if (r.marca === 'LIVE') {
+    out.push(bloco(nome + '::before', ['content: "LIVE"; font-size: ' + Math.max(8, Math.round(s.fsize) - 4) + 'px;',
+      'font-weight: 800; background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 4px;']));
+  }
+  if (s.pulso) {
+    out.push(bloco(lista(P, S.falaBtn) + '::after, ' + P + '[data-test="isTalking"]', [
+      'content: ""; width: 7px; height: 7px; border-radius: 50%; background: #ffffff;',
+      'box-shadow: 0 0 8px #ffffff; animation: rnpPulse 1.2s infinite;',
+    ]));
+    out.push('@keyframes rnpPulse {\n    0%, 100% { transform: scale(1); opacity: 1; }\n'
+      + '    50% { transform: scale(1.3); opacity: .6; }\n}');
+  }
+  if (!s.mostrarnomes) out.push(bloco(nome + ', ' + lista(P, S.falaBtn), ['display: none !important;']));
+  return out.join('\n\n');
+}
+
+function gerar(s, P, preview) {
+  P = P || '';
+  const cards = lista(P, S.cards);
+  const videos = lista(P, S.videos.concat(S.cards.map(function (c) { return c + ' video'; })));
+  const r = RECEITAS[s.rotulo];
+  const partes = [];
+
+  partes.push('/* =====================================================================\n'
+    + ' * OBS Browser Source — cliente BBB direto (fallback sem a ponte)\n'
+    + ' * Tema: ' + s.tema + ' · Rótulo: ' + s.rotulo + ' (' + (s.rotuloPos === 'topo' ? 'selo fixo no topo' : 'dentro do card') + ') · Formato: ' + s.formato + '\n'
+    + ' * ✔/origem: valores tirados de css_custom_discord.css, css_custom_v0.1.css e\n'
+    + ' * da ponte.  ✎ = seletor derivado, confirme no DOM se algo não pegar.\n'
+    + ' * ===================================================================== */');
+
+  if (s.transparente) {
+    partes.push('/* ✔ A transparência real do BBB vem das variáveis do cliente —\n'
+      + '   é a mesma receita dos seus css_custom*.css. */\n'
+      + bloco(':root', ['--color-background: transparent !important;',
+          '--color-surface: transparent !important;', '--color-white: transparent !important;',
+          '--color-content-background: transparent !important;'])
+      + bloco(lista(P, S.superfices), ['background: transparent !important;',
+          'background-color: transparent !important;', 'box-shadow: none !important;']));
+  }
+
+  partes.push('/* ✔ moldura das câmeras */\n' + bloco(cards, [
+    'position: relative !important;',
+    'border-radius: ' + s.raio + 'px !important;',
+    (s.rborda ? 'border: ' + s.rborda + 'px solid ' + s.bordacam + ' !important;' : 'border: 0 !important;'),
+    'box-shadow: ' + (s.sombra ? '0 ' + Math.round(s.sombra / 3) + 'px ' + s.sombra + 'px rgba(0,0,0,.55) !important;' : 'none !important;'),
+    'overflow: hidden !important;',
+    'background: ' + (s.transparente ? 'transparent !important;' : '#0f172a !important;'),
+  ]));
+
+  partes.push('/* ✔ vídeo: proporção e ajuste */\n' + bloco(videos, [
+    'object-fit: ' + FIT[s.formato] + ' !important;',
+    'width: 100% !important;', 'height: 100% !important;',
+  ]));
+
+  if (PROP[s.formato]) {
+    partes.push('/* ✔ proporção travada */\n' + bloco(cards, ['aspect-ratio: ' + PROP[s.formato] + ' !important;']));
+  }
+
+  if (s.gridbbb) {
+    partes.push('/* ✔ grade de cameras: só no nivel da lista, para nao aninhar grades */\n'
+      + bloco(lista(P, S.lista), [
+      'display: grid !important;',
+      'grid-template-columns: repeat(' + s.colunas + ', minmax(0, 1fr)) !important;',
+      'gap: ' + s.gap + 'px !important;',
+    ]));
+  }
+
+  if (s.dock) {
+    partes.push('/* ✔ largura do dock de câmeras (330px é o valor do seu Discord) */\n'
+      + bloco(lista(P, S.dock), ['width: ' + s.dock + 'px !important;',
+        'min-width: ' + Math.max(240, s.dock - 30) + 'px !important;',
+        'max-width: ' + (s.dock + 30) + 'px !important;']));
+  }
+
+  partes.push('/* ✔ quem está falando: anel no card (usa :has(), Chromium 105+) */\n'
+    + bloco(cards + ':has(' + lista(P, S.falaBtn) + ')', s.anel ? [
+      'border-color: ' + s.fala + ' !important;',
+      'box-shadow: 0 0 0 1px ' + rgba(s.fala, .7) + ', 0 0 16px ' + rgba(s.fala, .5) + ' !important;',
+    ] : ['border-color: ' + s.bordacam + ' !important;']));
+
+  partes.push('/* ✔ apresentação / compartilhamento de tela */\n' + bloco(lista(P, S.tela), [
+    'object-fit: contain !important;', 'border-radius: ' + s.raio + 'px !important;',
+    'border: ' + (s.rborda ? s.rborda + 'px solid ' + s.bordacam : '0') + ' !important;',
+  ]));
+
+  partes.push(regrasTema(s, P));
+
+  const oculta = [];
+  if (s.ocultaNavbar) oculta.push.apply(oculta, S.navbarFilho);
+  if (s.ocultaSidebar) oculta.push.apply(oculta, S.sidebar);
+  if (s.ocultaChat) oculta.push.apply(oculta, S.chat);
+  if (s.ocultaControles) oculta.push.apply(oculta, S.controles);
+  if (oculta.length) {
+    partes.push('/* ✔ esconder interface (mesma lista dos seus css_custom*.css) */\n'
+      + bloco(lista(P, oculta), ['display: none !important;']));
+  }
+  if (s.ocultaNavbar) {
+    partes.push('/* ✔ navbar como contêiner invisível, sem sumir com o selo de fala */\n'
+      + bloco(lista(P, S.navbar), ['background: transparent !important;',
+        'border: none !important;', 'box-shadow: none !important;',
+        'pointer-events: none !important;', 'overflow: visible !important;']));
+  }
+
+  if (s.transparente && !preview) {
+    partes.push('/* Se ainda houver fundo pintado, procure o contêiner no Inspecionar e\n'
+      + '   adicione aqui. As variáveis acima cobrem o caminho oficial do cliente. */');
+  }
+  return partes.filter(Boolean).join('\n\n');
+}
+
+/* ---------------- pré-visualização ---------------- */
+function pintarPreview(s) {
+  const antigo = document.getElementById('css-preview');
+  if (antigo) antigo.remove();
+  const est = document.createElement('style');
+  est.id = 'css-preview';
+  est.textContent = gerar(s, '.pv-scope ', true);
+  document.head.appendChild(est);
+  document.querySelectorAll('#pv video').forEach(function (v) {
+    v.style.display = 'block'; v.style.width = '100%'; v.style.height = '100%';
+    v.style.minHeight = '74px';
+    v.style.background = 'linear-gradient(160deg,#2b3f61,#1a2740 60%,#243350)';
+  });
+  const falando = document.querySelector('#pv [data-test="isTalking"]');
+  if (falando) falando.style.display = s.simulafala ? 'inline-flex' : 'none';
+  const ocioso = document.querySelector('#pv [data-test="wasTalking"]');
+  if (ocioso) ocioso.style.display = s.simulafala ? 'none' : 'inline-flex';
+}
+
+/* ---------------- bindings ---------------- */
+const IDS = ['formato', 'colunas', 'gap', 'dock', 'rotulo', 'rotuloPos', 'fonte', 'fsize',
+             'fweight', 'espac', 'uppercase', 'opacidade', 'mostrarnomes', 'accento', 'fala',
+             'textonome', 'bordacam', 'rborda', 'raio', 'sombra', 'pulso', 'anel', 'transparente',
+             'oculta-navbar', 'oculta-sidebar', 'oculta-controles', 'oculta-chat', 'gridbbb', 'simulafala'];
+
+function lerEstado() {
+  const s = {};
+  IDS.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const chave = id.replace(/-([a-z])/g, function (m, c) { return c.toUpperCase(); });
+    s[chave] = el.type === 'checkbox' ? el.checked
+             : (el.type === 'range' || el.type === 'number') ? Number(el.value) : el.value;
+  });
+  s.tema = s.tema || document.querySelector('.temas button.ativo').dataset.tema;
+  return s;
+}
+
+function escreverEstado(s) {
+  const mapa = { formato: s.formato, colunas: s.colunas, gap: s.gap, dock: s.dock,
+    rotulo: s.rotulo, rotuloPos: s.rotuloPos, fonte: s.fonte, fsize: s.fsize,
+    fweight: s.fweight, espac: s.espac, uppercase: s.uppercase, opacidade: s.opacidade,
+    mostrarnomes: s.mostrarnomes, accento: s.accento, fala: s.fala, textonome: s.textonome,
+    bordacam: s.bordacam, rborda: s.rborda, raio: s.raio, sombra: s.sombra, pulso: s.pulso,
+    anel: s.anel, transparente: s.transparente, 'oculta-navbar': s.ocultaNavbar,
+    'oculta-sidebar': s.ocultaSidebar, 'oculta-controles': s.ocultaControles,
+    'oculta-chat': s.ocultaChat, gridbbb: s.gridbbb, simulafala: s.simulafala };
+  Object.keys(mapa).forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!mapa[id]; else el.value = mapa[id];
+  });
+  document.querySelectorAll('.temas button').forEach(function (b) {
+    b.classList.toggle('ativo', b.dataset.tema === s.tema);
+  });
+}
+
+function mostrarValores(s) {
+  const suf = { colunas: ' colunas', gap: 'px', fweight: '', opacidade: '%',
+                rborda: 'px', raio: 'px', sombra: 'px', dock: (s.dock ? 'px' : ' (auto)') };
+  ['colunas', 'gap', 'dock', 'fweight', 'opacidade', 'rborda', 'raio', 'sombra'].forEach(function (k) {
+    const el = document.getElementById('v-' + k);
+    if (el) el.textContent = s[k] + (suf[k] || '');
+  });
+}
+
+function render() {
+  const s = lerEstado();
+  document.getElementById('saida').value = gerar(s, '', false);
+  mostrarValores(s);
+  pintarPreview(s);
+  try { localStorage.setItem('rnp-obs-css-bbb', JSON.stringify(s)); } catch (e) {}
+}
+
+document.querySelectorAll('select, input').forEach(function (el) {
+  el.addEventListener('input', render);
+  el.addEventListener('change', render);
+});
+
+document.querySelectorAll('.temas button').forEach(function (b) {
+  b.onclick = function () {
+    const t = Object.assign({}, BASE, TEMAS[b.dataset.tema], { tema: b.dataset.tema });
+    t.ocultaNavbar = (t.oculos || {}).navbar !== false;
+    t.ocultaSidebar = (t.oculos || {}).sidebar !== false;
+    t.ocultaControles = (t.oculos || {}).controles === true;
+    t.ocultaChat = (t.oculos || {}).chat === true;
+    escreverEstado(t); render();
+  };
+});
+
+document.getElementById('copiar').onclick = async function () {
+  const t = document.getElementById('saida');
+  t.select(); t.setSelectionRange(0, t.value.length);
+  try { await navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand('copy'); }
+  const btn = document.getElementById('copiar'), antes = btn.textContent;
+  btn.textContent = 'Copiado ✓';
+  setTimeout(function () { btn.textContent = antes; }, 1600);
+};
+
+document.getElementById('baixar').onclick = function () {
+  const blob = new Blob([document.getElementById('saida').value], { type: 'text/css' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rnp-obs-bbb-' + lerEstado().tema + '.css';
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+let inicial = BASE;
+try {
+  const salvo = JSON.parse(localStorage.getItem('rnp-obs-css-bbb') || 'null');
+  if (salvo) inicial = Object.assign({}, BASE, salvo);
+} catch (e) {}
+escreverEstado(inicial);
+render();
+</script>
+</body>
+</html>

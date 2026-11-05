@@ -568,6 +568,14 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     color: var(--text-muted);
 }
 
+.lan-url-box {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: var(--radius);
+    background: var(--surface-inset);
+    border: 1px solid var(--ok);
+}
+
 /* Rack de áudio e listas: superfícies aninhadas em tokens. */
 .audio-mixer-rack, .chat-manager-list, .poll-progress-bg {
     background: var(--surface-inset);

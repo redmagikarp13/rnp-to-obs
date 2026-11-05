@@ -768,6 +768,26 @@ class MediaRoutesTests(unittest.TestCase):
             self.assertTrue(server.BridgeState().webrtc_only,
                             'RNP_WEBRTC_ONLY=1 continua ligando o modo WebRTC.')
 
+    def test_api_connect_e_config_save_rejeitam_room_url_nao_http(self):
+        for bad_url in ('file:///C:/Windows/win.ini', 'javascript:alert(1)', 'ftp://example.com/room'):
+            res_conn = self.client.post('/api/connect', json={'room_url': bad_url, 'user_name': 'Teste'})
+            self.assertEqual(res_conn.status_code, 400, f'/api/connect aceitou URL insegura: {bad_url}')
+            res_save = self.client.post('/api/config/save', json={'room_url': bad_url})
+            self.assertEqual(res_save.status_code, 400, f'/api/config/save aceitou URL insegura: {bad_url}')
+
+    def test_rotas_mutaveis_rejeitam_origin_externo(self):
+        headers = {'Origin': 'https://evil.example', 'Host': 'localhost:3333'}
+        for rota, payload in (
+            ('/api/connect', {'room_url': 'https://conferenciaweb.rnp.br/sala', 'user_name': 'Bot'}),
+            ('/api/disconnect', {}),
+            ('/api/config/save', {'user_name': 'X'}),
+            ('/api/config/reset', {}),
+            ('/api/poll/show', {}),
+            ('/api/server/stop', {}),
+        ):
+            res = self.client.post(rota, json=payload, headers=headers)
+            self.assertEqual(res.status_code, 403, f'{rota} deveria bloquear Origin externo.')
+
 
 if __name__ == '__main__':
     unittest.main()

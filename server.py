@@ -8,6 +8,7 @@ import sys
 import time
 import urllib.parse
 import unicodedata
+from collections import deque
 from typing import Dict, List, Optional, Set
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse, RedirectResponse, StreamingResponse
@@ -16,7 +17,7 @@ import uvicorn
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Frame
 import pytchat
 import emoji
-from media_bridge import MEDIA_SOURCE_JS, ensure_media_adapter, register_media_routes
+from media_bridge import MEDIA_SOURCE_JS, ensure_media_adapter, register_media_routes, require_same_origin
 
 class SafeLogWriter:
     def __init__(self, filepath=None):
@@ -75,17 +76,48 @@ def emojize_text(text: str) -> str:
     except Exception:
         return text
 
-CONFIG_FILE = os.environ.get('RNP_CONFIG_FILE', os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"))
+def _resolve_config_path() -> str:
+    """Config ao lado do executável; se o diretório não for gravável (ex.: instalado
+    em Program Files sem admin), cai para %APPDATA%/RNP_to_OBS/config.json."""
+    explicit = os.environ.get('RNP_CONFIG_FILE')
+    if explicit:
+        return explicit
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    try:
+        probe = local + '.wtest'
+        with open(probe, 'w') as f:
+            f.write('')
+        os.remove(probe)
+        return local
+    except OSError:
+        pass
+    appdata = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'RNP_to_OBS')
+    os.makedirs(appdata, exist_ok=True)
+    return os.path.join(appdata, 'config.json')
+
+_DEFAULT_CONFIG_FILE = _resolve_config_path()
+CONFIG_FILE = _DEFAULT_CONFIG_FILE
 
 app = FastAPI(title="RNP & YouTube to OBS Bridge Server")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _is_valid_http_url(url: str) -> bool:
+    """Aceita apenas URLs http(s) com host válido (evita file://, chrome://, javascript:)."""
+    if not isinstance(url, str) or not url.strip():
+        return False
+    try:
+        parsed = urllib.parse.urlparse(url.strip())
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
 
 CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'esticado')
 
@@ -206,8 +238,76 @@ DEFAULT_CONFIG = {
     "chat_max_messages": 6,
     "show_chat_avatars": True,
     "custom_camera_names": {},
-    "libras_camera_ids": []
+    "libras_camera_ids": [],
+    # Acesso LAN: quando True, o servidor escuta em 0.0.0.0 (todas as interfaces)
+    # para outras máquinas da rede abrirem /tv, /stage, /control etc. Padrão False
+    # (só localhost) por segurança. Muda o bind no boot: exige reiniciar o app.
+    "lan_access": False
 }
+
+# Caches de rede: o bind é fixo no boot; os IPs LAN mudam raramente (DHCP).
+_BIND_HOST_CACHE = None
+_LAN_IPS_CACHE = {'ts': 0.0, 'ips': []}
+
+def _lan_ip_candidates() -> list:
+    """IPs IPv4 locais (sem loopback) ordenados, para exibir a URL LAN no dock.
+    Não abre socket de verdade além do necessário para descobrir o IP padrão.
+    Resultado cacheado por 30 s: o /api/status é consultado a cada 1 s e o IP só
+    muda raramente (DHCP)."""
+    import socket
+    import time
+    now = time.monotonic()
+    if now - _LAN_IPS_CACHE['ts'] < 30.0 and _LAN_IPS_CACHE['ips']:
+        return _LAN_IPS_CACHE['ips']
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith('127.') and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    # Descobrir o IP da interface de saída padrão (mais confiável em multi-homed).
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))  # não envia pacote; só resolve a rota
+        primary = s.getsockname()[0]
+        s.close()
+        if primary and not primary.startswith('127.'):
+            ips = [primary] + [ip for ip in ips if ip != primary]
+    except Exception:
+        pass
+    _LAN_IPS_CACHE['ts'] = now
+    _LAN_IPS_CACHE['ips'] = ips
+    return ips
+
+def resolve_bind_host() -> str:
+    """Host de bind do uvicorn. RNP_HOST explícito sempre vence; senão lan_access
+    no config.json liga em 0.0.0.0 (acessível pela rede); padrão seguro 127.0.0.1.
+    Cacheado: o bind é definido no boot e não muda em tempo de execução."""
+    global _BIND_HOST_CACHE
+    if _BIND_HOST_CACHE is not None:
+        return _BIND_HOST_CACHE
+    env_host = os.environ.get('RNP_HOST')
+    if env_host:
+        _BIND_HOST_CACHE = env_host
+        return _BIND_HOST_CACHE
+    try:
+        if load_disk_config().get('lan_access'):
+            _BIND_HOST_CACHE = '0.0.0.0'
+            return _BIND_HOST_CACHE
+    except Exception:
+        pass
+    _BIND_HOST_CACHE = '127.0.0.1'
+    return _BIND_HOST_CACHE
+
+def resolve_bind_port() -> int:
+    try:
+        port = int(os.environ.get('RNP_PORT', '3333'))
+        return port if 0 < port < 65536 else 3333
+    except (TypeError, ValueError):
+        return 3333
 
 def load_disk_config() -> dict:
     if os.path.exists(CONFIG_FILE):
@@ -221,9 +321,25 @@ def load_disk_config() -> dict:
                 return cfg
         except Exception as e:
             print(f"[Config] Erro ao carregar config.json: {e}")
+    # CONFIG_FILE não existe (ex.: 1ª execução instalado em Program Files, onde o
+    # config gravável cai em %APPDATA%). Semeia a partir do config.json EMPACOTADO
+    # (legível mesmo em Program Files) para herdar os padrões de distribuição — em
+    # vez de cair em DEFAULT_CONFIG, que tem lan_access=False e deixava o /tv
+    # inacessível de outras máquinas numa instalação nova.
+    bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    if CONFIG_FILE == _DEFAULT_CONFIG_FILE and os.path.abspath(bundled) != os.path.abspath(CONFIG_FILE) and os.path.exists(bundled):
+        try:
+            with open(bundled, "r", encoding="utf-8") as f:
+                cfg = DEFAULT_CONFIG.copy()
+                cfg.update(json.load(f))
+                cfg["control_theme"] = normalize_theme(cfg.get("control_theme"))
+                print(f"[Config] Roaming ausente; semeado do config empacotado (lan_access={cfg.get('lan_access')}).")
+                return cfg
+        except Exception as e:
+            print(f"[Config] Erro ao semear do config empacotado: {e}")
     return DEFAULT_CONFIG.copy()
 
-def save_disk_config(cfg: dict):
+def save_disk_config(cfg: dict, best_effort: bool = False):
     try:
         with open(CONFIG_FILE + '.tmp', "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=4, ensure_ascii=False)
@@ -233,7 +349,8 @@ def save_disk_config(cfg: dict):
         print(f"[Config] Configurações salvas com sucesso em {CONFIG_FILE}")
     except Exception as e:
         print(f"[Config] Erro ao salvar config.json: {e}")
-        raise
+        if not best_effort:
+            raise
 
 def extract_youtube_video_id(url_or_id: str) -> str:
     if not url_or_id:
@@ -248,6 +365,82 @@ def extract_youtube_video_id(url_or_id: str) -> str:
 
 def normalized_name(name: str) -> str:
     return ' '.join(unicodedata.normalize('NFC', name).casefold().split())
+
+
+# --------------------------------------------------------------------------
+# Diagnóstico de cadência (Plano A e B de docs/AUDIO_ESTABILIDADE_2026-11.md)
+# --------------------------------------------------------------------------
+# O stutter é constante e aparece ao mesmo tempo no dock e no /stage. A dúvida
+# deixada pelo note não é "se existe gap", e sim em QUAL fronteira ele nasce.
+# Estas métricas cobrem cada uma delas na ordem do fluxo:
+#   worklet (captura) → guarda bufferedAmount → /ws/pcm_in → event-loop →
+#   fila por cliente → player (/control e /stage).
+# Anel de tamanho fixo e percentil calculado apenas na leitura: o diagnóstico não
+# pode virar carga no event-loop que ele está medindo.
+# Fica acima de BridgeState porque `state = BridgeState()` roda em import.
+DIAG_JANELA = 512          # ~22 s de chunks de 42,7 ms (2048/48000)
+DIAG_LIMITE_GAP_MS = 60.0  # intervalo maior que ~1,4 ciclo de worklet = audível
+
+
+class Cadencia:
+    """Anel fixo de intervalos (ms) entre eventos, com contadores acumulados."""
+
+    def __init__(self, maxlen: int = DIAG_JANELA):
+        self.buf = deque(maxlen=maxlen)
+        self.t_ultimo = 0.0
+        self.t_primeiro = 0.0
+        self.total = 0
+        self.gaps = 0
+
+    def registrar(self, agora: float):
+        """Recebe time.monotonic() de cada evento e contabiliza o intervalo."""
+        if not self.t_primeiro:
+            self.t_primeiro = agora
+        if self.t_ultimo:
+            d = (agora - self.t_ultimo) * 1000.0
+            self.buf.append(d)
+            self.total += 1
+            if d > DIAG_LIMITE_GAP_MS:
+                self.gaps += 1
+        self.t_ultimo = agora
+
+    def resumo(self) -> dict:
+        if not self.buf:
+            return {}
+        v = sorted(self.buf)
+        n = len(v)
+        janela = (self.t_ultimo - self.t_primeiro) or 1.0
+        return {
+            "amostras": self.total,
+            # Distribuição e gap contam APENAS a janela do anel: 'gaps_gt_60ms' ao lado
+            # de um 'max_ms' menor que 60 seria contradictorio e levaria a conclusao
+            # errada. O acumulado do historico inteiro vai em campo proprio.
+            "gaps_gt_60ms": sum(1 for x in v if x > DIAG_LIMITE_GAP_MS),
+            "gaps_acumulado": self.gaps,
+            "taxa_hz": round(self.total / janela, 1),
+            "min_ms": round(v[0], 1),
+            "mediana_ms": round(v[n // 2], 1),
+            "p95_ms": round(v[min(n - 1, int(n * 0.95))], 1),
+            "max_ms": round(v[-1], 1),
+        }
+
+    def registrar_valor(self, ms: float):
+        """Registra um valor direto (não um intervalo), para grandezas como o atraso
+        do event-loop, onde o que importa é a distribuição do próprio número."""
+        agora = time.monotonic()
+        if not self.t_primeiro:
+            self.t_primeiro = agora
+        self.buf.append(ms)
+        self.total += 1
+        if ms > DIAG_LIMITE_GAP_MS:
+            self.gaps += 1
+        self.t_ultimo = agora
+
+
+def _novo_stats_cliente() -> dict:
+    """Contadores por ouvinte: cadência de saída, descartes drop-oldest e profundidade
+    máxima da fila. Um cliente travado precisa ser visível separadamente dos demais."""
+    return {'cadencia': Cadencia(), 'enviados': 0, 'drops': 0, 'fila_max': 0}
 
 
 class BridgeState:
@@ -297,6 +490,30 @@ class BridgeState:
         self.latest_presentation_frame: Optional[bytes] = None
         self.pcm_clients: Set[WebSocket] = set()
         self.peaks_clients: Set[WebSocket] = set()
+        # Filas por cliente (bounded) para o broadcast de áudio/picos. Cada cliente
+        # tem um sender próprio: um cliente travado (janela minimizada → página
+        # WebView2 suspensa que para de drenar o socket) enche a própria fila e
+        # descarta os dados mais antigos SEM bloquear o loop de recepção nem os
+        # demais clientes (antes o gather esperava por todos → backpressure travava
+        # o áudio do OBS inteiro enquanto o painel estivesse minimizado).
+        self.pcm_queues: Dict[WebSocket, asyncio.Queue] = {}
+        self.peaks_queues: Dict[WebSocket, asyncio.Queue] = {}
+        # Diagnosis de cadência por fronteira do áudio (ver Cadencia mais abaixo).
+        # 'pcm_chegada' mede o intervalo entre chunks AS SIM QUE O SERVIDOR OS VE;
+        # 'pcm_clientes_stats' mede a saida por ouvinte; 'loop_lag' e o unicos
+        # ponto comum entre dock e /stage, entao e ele que decide se o gargalo e o
+        # proprio servidor. 'capture_stats' chega pela WebSocket de picos (o que o
+        # worklet produziu e o que a guarda bufferedAmount jogou fora);
+        # 'playback_stats' chega por POST de cada player (rearmas = underrun).
+        self.pcm_clientes_stats: Dict[WebSocket, dict] = {}
+        self.peaks_clientes_stats: Dict[WebSocket, dict] = {}
+        self.pcm_chegada = Cadencia()
+        self.loop_lag = Cadencia(maxlen=200)
+        self.capture_stats: dict = {}
+        self.playback_stats: Dict[str, dict] = {}
+        # Ultima excecao que derrubou o socket de captura: o pipeline degrada sem
+        # deixar rastro sem isso.
+        self.pcm_erro: Optional[str] = None
         self.last_speaker_map: Dict[str, bool] = {}
         self.audio_channels: List[dict] = []
         self.audio_controls: Dict[str, dict] = {}
@@ -316,6 +533,9 @@ class BridgeState:
         self.libras_size: str = cfg.get("libras_size", "equal")
         self.show_camera_names: bool = cfg.get("show_camera_names", True)
         self.camera_name_style: str = cfg.get("camera_name_style", "glass")
+        # Acesso LAN (bind 0.0.0.0). Só afeta o host de escuta no boot; o estado
+        # guarda o valor para o dock refletir e o /api/config devolver.
+        self.lan_access: bool = bool(cfg.get("lan_access", False))
         _fmt = cfg.get("camera_format", "original")
         self.camera_format: str = _fmt if _fmt in CAMERA_FORMATS else "original"
         _limiar = parse_speak_threshold(cfg.get("speak_peak_threshold"))
@@ -466,7 +686,8 @@ class BridgeState:
             "chat_max_messages": self.chat_max_messages,
             "show_chat_avatars": self.show_chat_avatars,
             "custom_camera_names": self.custom_camera_names,
-            "libras_disabled_names": self.libras_disabled_names
+            "libras_disabled_names": self.libras_disabled_names,
+            "lan_access": self.lan_access
         }
 
 state = BridgeState()
@@ -506,7 +727,7 @@ async def start_youtube_chat(url_or_id: str):
         state.youtube_task.cancel()
 
     state.youtube_url = url_or_id.strip()
-    save_disk_config(state.export_config())
+    save_disk_config(state.export_config(), best_effort=True)
     state.youtube_task = asyncio.create_task(youtube_chat_loop(vid))
 
 async def stop_youtube_chat():
@@ -551,12 +772,8 @@ async def youtube_chat_loop(video_id: str):
                     for part in c.messageEx:
                         if isinstance(part, str):
                             parts.append(emojize_text(part))
-                        elif isinstance(part, dict):
-                            if 'url' in part and part['url']:
-                                alt = part.get('txt', 'emoji')
-                                parts.append(f'<img class="yt-custom-emoji" src="{part["url"]}" alt="{alt}" style="height:1.2em; vertical-align:middle; display:inline-block; margin:0 2px;">')
-                            elif 'txt' in part:
-                                parts.append(emojize_text(part['txt']))
+                        elif isinstance(part, dict) and 'txt' in part:
+                            parts.append(emojize_text(str(part['txt'])))
                     msg_text = "".join(parts)
                 else:
                     raw_msg = c.message if hasattr(c, 'message') else ""
@@ -631,7 +848,7 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
     state.user_name = user_name.strip() if user_name.strip() else "OBS Studio"
     state.user_email = user_email.strip() if user_email.strip() else "obs@obs.com"
 
-    save_disk_config(state.export_config())
+    save_disk_config(state.export_config(), best_effort=True)
 
     log("Iniciando Chromium headless...")
 
@@ -650,8 +867,7 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
             '--enable-features=WebRtcHWDecoding,WebRtcHWEncoding,CanvasOopRasterization',
             '--disable-frame-rate-limit',
             '--ignore-gpu-blocklist',
-            '--use-gl=angle',
-            '--use-angle=d3d11',
+            *(['--use-gl=angle', '--use-angle=d3d11'] if sys.platform == 'win32' else []),
             # --- Performance & Memória ---
             '--disable-dev-shm-usage',
             '--disable-background-timer-throttling',
@@ -771,9 +987,11 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         log("Conectado ao BigBlueButton!")
 
         # 5. Fechar modal Somente Ouvir
+        # Timeout reduzido de 20s para 8s: salas com auto-join (ex.: vila-velha)
+        # não exibem o dialog, e esperar 20s à toa atrasa a conexão em ~12s.
         try:
             listen_btn = target_frame.locator('[aria-label="Somente ouvir"], [aria-label="Listen only"], button:has-text("Somente ouvir"), [data-test="listenOnlyBtn"]')
-            await listen_btn.wait_for(state="visible", timeout=20000)
+            await listen_btn.wait_for(state="visible", timeout=8000)
             await listen_btn.click()
             log("Modo ouvinte ativado.")
         except Exception:
@@ -808,6 +1026,17 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         if state.keep_alive_task and not state.keep_alive_task.done():
             state.keep_alive_task.cancel()
         state.keep_alive_task = asyncio.create_task(keep_alive_loop())
+
+        # Monitor de latencia do event-loop: nasce junto da conexao para a janela de
+        # amostracao comecar zero no mesmo instante em que o audio comeca a fluir.
+        if not hasattr(state, 'loop_lag_task') or state.loop_lag_task.done():
+            state.loop_lag_task = asyncio.create_task(loop_lag_monitor())
+
+        # Zera os contadores a cada conexao para o diagnostico refletir SO esta sessao.
+        state.pcm_chegada = Cadencia()
+        state.loop_lag = Cadencia(maxlen=200)
+        state.capture_stats = {}
+        state.playback_stats = {}
 
         if state.youtube_auto_connect and state.youtube_url:
             asyncio.create_task(start_youtube_chat(state.youtube_url))
@@ -861,6 +1090,43 @@ async def stop_connection():
     state.latest_presentation_frame = None
     state.poll_data = None
     log("Desconectado.")
+
+# Batida de 50 ms cujo excedente e o tempo em que o event-loop nao conseguirou
+# rodar tarefa nenhuma. E a unica medida que explica, sozinha, um stutter CONSTANTE
+# e SIMULTANEO no dock e no /stage: o loop e o unicos ponto compartilhado pelos dois
+# ouvintes, entao se ele atrasa, ambos atrasam juntos e a cadencia de chegada deles
+# fica em rajadas mesmo com o navegador de captura perfeito.
+LOOP_BATIDA_S = 0.05
+
+
+async def loop_lag_monitor():
+    while True:
+        t0 = time.monotonic()
+        await asyncio.sleep(LOOP_BATIDA_S)
+        state.loop_lag.registrar_valor((time.monotonic() - t0 - LOOP_BATIDA_S) * 1000.0)
+
+
+def _diag_snapshot() -> dict:
+    """Retrato do caminho do áudio por fronteira, para ler no /api/status.
+    leitura_barata: ordena no maximo 512 floats por anel, 1x por poll de 1 s."""
+    ouvintes = []
+    for st in state.pcm_clientes_stats.values():
+        ouvintes.append({
+            'enviados': st['enviados'],
+            'drops_oldest': st['drops'],
+            'fila_max': st['fila_max'],
+            **(st['cadencia'].resumo() or {}),
+        })
+    return {
+        'esperado_hz': round(48000 / 2048, 1),
+        'erro_pcm_in': state.pcm_erro,
+        'chegada_pcm_in': state.pcm_chegada.resumo(),
+        'event_loop_atraso_ms': state.loop_lag.resumo(),
+        'captura': state.capture_stats,
+        'ouvintes': ouvintes,
+        'playback': state.playback_stats,
+    }
+
 
 async def keep_alive_loop():
     while state.connected and state.page:
@@ -932,9 +1198,72 @@ async def keep_alive_loop():
 # (JPEG) continua em 0.05 s porque o mosaico de frames depende dessa cadência.
 SYNC_INTERVAL_WEBRTC = 0.5
 
+# Timeout do evaluate() principal do sync_loop (câmeras/áudio/stats). Se a main
+# thread do BBB travar, o evaluate penduraria para sempre e congelaria o loop
+# inteiro (chips de fala, fps, chat, enquete). Com timeout a volta é abortada e a
+# próxima tenta de novo — degrada graciosamente em vez de travar.
+SYNC_EVAL_TIMEOUT = 8.0
+
+# --------------------------------------------------------------------------
+# Broadcast de áudio/picos por fila (não-bloqueante)
+# --------------------------------------------------------------------------
+# Cada cliente tem uma fila bounded e um sender próprio. O loop de recepção só faz
+# put_nowait (nunca bloqueia); um cliente que para de drenar (ex.: painel WebView2
+# minimizado/suspenso) enche a própria fila e descarta os chunks mais antigos para
+# se manter "ao vivo", sem travar o áudio dos demais clientes (OBS). Antes o
+# broadcast usava asyncio.gather aguardando todos os send_* → um cliente travado
+# causava backpressure no WebSocket da sala e o áudio picotava/parava por inteiro.
+PCM_QUEUE_MAX = 64     # ~2-3 s de áudio (chunks de ~40-60 ms) antes de descartar
+PEAKS_QUEUE_MAX = 32   # picos são leves (JSON dos medidores); janela menor
+
+# (As primitivas de diagnóstico — Cadencia, DIAG_* — ficam acima de BridgeState.)
+
+
+def _enqueue_latest(queue: asyncio.Queue, item, stats: Optional[dict] = None):
+    """Coloca na fila sem bloquear; se estiver cheia, descarta o item mais antigo.
+    Cada descarte é contado (Plano B do note): sem este número, 'o cliente perdeu
+    áudio' e 'o cliente está ao vivo' são indistinguíveis no /api/status."""
+    try:
+        queue.put_nowait(item)
+    except asyncio.QueueFull:
+        if stats is not None:
+            stats['drops'] += 1
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+        try:
+            queue.put_nowait(item)
+        except asyncio.QueueFull:
+            pass
+    if stats is not None and queue.qsize() > stats['fila_max']:
+        stats['fila_max'] = queue.qsize()
+
+
+async def _client_sender(websocket: WebSocket, queue: asyncio.Queue, stats: Optional[dict] = None):
+    """Drena a fila do cliente e envia: ('bin', bytes) → PCM; ('txt', str) → speakers.
+    Roda isolado por cliente; se o send bloquear (cliente travado), só esta tarefa
+    espera — o loop de recepção e os outros clientes seguem livres.
+    Mede a cadência de SAIDA: é o que aquele cliente de fato enxerga, e é o que
+    separa 'chegou irregular do navegador' de 'saiu irregular do servidor'."""
+    try:
+        while True:
+            kind, payload = await queue.get()
+            if kind == 'bin':
+                await websocket.send_bytes(payload)
+            else:
+                await websocket.send_text(payload)
+            if stats is not None:
+                stats['enviados'] += 1
+                stats['cadencia'].registrar(time.monotonic())
+    except Exception:
+        pass
+
 
 async def sync_loop():
     last_slide_check = 0.0
+    last_slide_sig = None
+    last_slide_shot = 0.0
     last_chat_check = 0.0
     last_poll_check = 0.0
     while state.connected and state.page:
@@ -945,7 +1274,7 @@ async def sync_loop():
             await ensure_media_adapter(target_frame)
 
             # 1. Capturar todas as Webcams com aceleracao, canvas persistente e deteccao de audio/fala
-            cam_data = await target_frame.evaluate('''(captureJpeg) => {
+            cam_data = await asyncio.wait_for(target_frame.evaluate('''(captureJpeg) => {
                 if (!window._camCanvasMap) window._camCanvasMap = {};
                 const list = [];
                 const seenVideos = new Set();
@@ -1151,7 +1480,7 @@ async def sync_loop():
                 }
                 return {cameras: list, audio: window.RnpMedia.audioInfo(), youtube: window.RnpMedia.youtubeState(),
                     connection_stats: window.RnpConnection?.snapshot() || null};
-            }''', not state.webrtc_only)
+            }''', not state.webrtc_only), timeout=SYNC_EVAL_TIMEOUT)
 
             state.audio_channels = cam_data['audio']
             state.youtube = cam_data.get('youtube')
@@ -1189,11 +1518,10 @@ async def sync_loop():
             if speaker_map != state.last_speaker_map and state.pcm_clients:
                 state.last_speaker_map = speaker_map
                 msg_txt = json.dumps({"type": "speakers", "speakers": speaker_map})
-                for client in list(state.pcm_clients):
-                    try:
-                        asyncio.create_task(client.send_text(msg_txt))
-                    except Exception:
-                        pass
+                # Enfileira (não-bloqueante) no sender de cada cliente PCM; um cliente
+                # travado não segura o sync_loop.
+                for ws_cli, q in list(state.pcm_queues.items()):
+                    _enqueue_latest(q, ('txt', msg_txt), state.pcm_clientes_stats.get(ws_cli))
 
             # 2. Capturar Apresentação (Screenshare rápido via Canvas)
             screen_data = await target_frame.evaluate('''(captureJpeg) => {
@@ -1214,27 +1542,38 @@ async def sync_loop():
                     ctx.drawImage(vid, 0, 0, w, h);
                     return { mode: 'screenshare', frame: canvas.toDataURL('image/jpeg', 0.80).slice(23) };
                 }
+                const pres = document.querySelector('#presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"]');
+                if (pres && pres.offsetWidth > 0 && pres.offsetHeight > 0) {
+                    const img = pres.querySelector('image, img');
+                    const src = img ? (img.getAttribute('href') || img.getAttribute('xlink:href') || img.src || '') : '';
+                    const sig = `${pres.offsetWidth}x${pres.offsetHeight}:${src}:${pres.querySelectorAll('g,path,text,shape,line,rect,circle,polyline,polygon').length}:${(pres.textContent || '').length}`;
+                    return { mode: 'slides', sig };
+                }
                 return null;
             }''', not state.webrtc_only)
 
-            if screen_data:
+            if screen_data and screen_data.get('mode') == 'screenshare':
                 state.latest_presentation_frame = base64.b64decode(screen_data['frame']) if screen_data['frame'] else None
                 state.screenshare_active = True
                 state.presentation_mode = "Tela Compartilhada (2.5K/1080p)"
             else:
                 now = time.time()
+                slide_sig = screen_data.get('sig') if screen_data and screen_data.get('mode') == 'slides' else None
+                slide_changed = (slide_sig is not None and slide_sig != last_slide_sig) or state.latest_presentation_frame is None
                 if now - last_slide_check >= 1.0:
                     last_slide_check = now
                     ext_video_loc = target_frame.locator('[data-test="videoPlayer"], div[class*="videoPlayer"], [data-test="externalVideoPlayer"], #external-video-player, div[class*="externalVideo"]')
                     if await ext_video_loc.count() > 0 and await ext_video_loc.first.is_visible():
-                        try:
-                            vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=80)
-                            state.latest_presentation_frame = vid_bytes
-                            state.screenshare_active = True
-                            state.presentation_mode = "Vídeo do YouTube (RNP)"
-                        except Exception:
-                            pass
-                    else:
+                        if not state.webrtc_only or state.latest_presentation_frame is None or (now - last_slide_shot >= 3.0):
+                            try:
+                                vid_bytes = await ext_video_loc.first.screenshot(type="jpeg", quality=80)
+                                state.latest_presentation_frame = vid_bytes
+                                last_slide_shot = now
+                            except Exception:
+                                pass
+                        state.screenshare_active = True
+                        state.presentation_mode = "Vídeo do YouTube (RNP)"
+                    elif slide_Changed_or_due := (slide_changed or (now - last_slide_shot >= 5.0)):
                         pres_loc = target_frame.locator('#presentationContainer, [data-test="presentationContainer"], [data-test="presentationArea"], [class*="presentationWrapper"]')
                         if await pres_loc.count() > 0 and await pres_loc.first.is_visible():
                             try:
@@ -1242,18 +1581,21 @@ async def sync_loop():
                                 state.latest_presentation_frame = slide_bytes
                                 state.screenshare_active = False
                                 state.presentation_mode = "Slides / Apresentação"
+                                last_slide_sig = slide_sig
+                                last_slide_shot = now
                             except Exception:
                                 pass
 
             now_tick = time.time()
 
-            # 3. Capturar Chat da RNP (a cada ~0.5s para economizar CPU)
-            if now_tick - last_chat_check >= 0.5:
+            # 3. Capturar Chat da RNP (a cada ~1.0s; era 0.5s — alivia a main thread
+            # do BBB, que é serializada com os evaluate() do /api/media)
+            if now_tick - last_chat_check >= 1.0:
                 last_chat_check = now_tick
                 await extract_rnp_chat(target_frame)
 
-            # 4. Capturar Enquete (a cada ~1.0s)
-            if now_tick - last_poll_check >= 1.0:
+            # 4. Capturar Enquete (a cada ~2.0s)
+            if now_tick - last_poll_check >= 2.0:
                 last_poll_check = now_tick
                 await extract_rnp_poll(target_frame)
 
@@ -1698,30 +2040,47 @@ async def extract_rnp_poll(target_frame):
 # --------------------------------------------------------------------------
 @app.websocket("/ws/pcm_in")
 async def ws_pcm_in(websocket: WebSocket):
+    # Recebe o PCM Float32 do adaptador na sala e enfileira para cada ouvinte.
+    # put_nowait nunca bloqueia: se um ouvinte parar de drenar (painel minimizado),
+    # a fila dele descarta o mais antigo e o loop de recepção segue sem backpressure
+    # no WebSocket da sala (que, se travasse, faria o navegador descartar chunks e o
+    # áudio de TODOS — inclusive do OBS — picotar/parar enquanto a janela estivesse
+    # minimizada).
     await websocket.accept()
     try:
         while True:
             data = await websocket.receive_bytes()
-            disconnected = []
-            for client in list(state.pcm_clients):
-                try:
-                    await client.send_bytes(data)
-                except Exception:
-                    disconnected.append(client)
-            for d in disconnected:
-                state.pcm_clients.discard(d)
-    except (WebSocketDisconnect, Exception):
+            state.pcm_chegada.registrar(time.monotonic())
+            for ws_cli, q in list(state.pcm_queues.items()):
+                _enqueue_latest(q, ('bin', data), state.pcm_clientes_stats.get(ws_cli))
+    except WebSocketDisconnect:
         pass
+    except Exception as e:
+        # Registrar em vez de engolir: com 'except Exception: pass' a queda do
+        # /ws/pcm_in ficava invisivel, e o sintoma (audio a 0,5 Hz por reconexao de
+        # 2 s do startPcm) nao apontava para lugar nenhum.
+        state.pcm_erro = f'{type(e).__name__}: {e}'
+        print(f"[PCM] /ws/pcm_in encerrou: {state.pcm_erro}", flush=True)
 
 @app.websocket("/ws/pcm_out")
 async def ws_pcm_out(websocket: WebSocket):
     await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=PCM_QUEUE_MAX)
+    stats = _novo_stats_cliente()
     state.pcm_clients.add(websocket)
+    state.pcm_queues[websocket] = queue
+    state.pcm_clientes_stats[websocket] = stats
+    sender = asyncio.create_task(_client_sender(websocket, queue, stats))
     try:
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        sender.cancel()
         state.pcm_clients.discard(websocket)
+        state.pcm_queues.pop(websocket, None)
+        state.pcm_clientes_stats.pop(websocket, None)
 
 @app.websocket("/ws/peaks_in")
 async def ws_peaks_in(websocket: WebSocket):
@@ -1734,23 +2093,44 @@ async def ws_peaks_in(websocket: WebSocket):
     try:
         while True:
             msg = await websocket.receive_text()
-            for client in list(state.peaks_clients):
+            # O proprio navegador de captura aproveita este canal para reportar a
+            # cadencia de GERACAO dos chunks (Plano A do note) sob a chave '_pcm'.
+            # Ela e removida antes do fan-out: a mesa so deve ver os medidores.
+            if '"_pcm"' in msg:
                 try:
-                    await client.send_text(msg)
+                    pacote = json.loads(msg)
+                    estado_pcm = pacote.pop('_pcm', None)
+                    if estado_pcm is not None:
+                        state.capture_stats = estado_pcm
+                    if not pacote:
+                        continue
+                    msg = json.dumps(pacote)
                 except Exception:
-                    state.peaks_clients.discard(client)
+                    pass
+            for ws_cli, q in list(state.peaks_queues.items()):
+                _enqueue_latest(q, ('txt', msg), state.peaks_clientes_stats.get(ws_cli))
     except (WebSocketDisconnect, Exception):
         pass
 
 @app.websocket("/ws/peaks_out")
 async def ws_peaks_out(websocket: WebSocket):
     await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=PEAKS_QUEUE_MAX)
+    stats = _novo_stats_cliente()
     state.peaks_clients.add(websocket)
+    state.peaks_queues[websocket] = queue
+    state.peaks_clientes_stats[websocket] = stats
+    sender = asyncio.create_task(_client_sender(websocket, queue, stats))
     try:
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        sender.cancel()
         state.peaks_clients.discard(websocket)
+        state.peaks_queues.pop(websocket, None)
+        state.peaks_clientes_stats.pop(websocket, None)
 
 # --------------------------------------------------------------------------
 # API REST
@@ -1772,7 +2152,8 @@ async def get_app_icon_png():
     return Response(status_code=204)
 
 @app.post("/api/restart")
-async def api_restart():
+async def api_restart(req: Request):
+    require_same_origin(req)
     # Reinício forçado da ponte: derruba o estado, cancela as tarefas SEM esperar
     # preso por uma task travada, fecha o navegador no melhor esforço e reconecta
     # com a config salva. Recupera uma ponte engasgada onde o 'Conectar' comum
@@ -1816,7 +2197,14 @@ async def api_restart():
 
 
 @app.post("/api/server/stop")
-async def api_server_stop():
+async def api_server_stop(req: Request):
+    require_same_origin(req)
+    client_host = (req.client.host if req.client else '') or ''
+    if client_host not in ('127.0.0.1', '::1', 'localhost', 'testclient'):
+        return JSONResponse(
+            {"status": "error", "message": "Encerramento do servidor permitido apenas localmente."},
+            status_code=403,
+        )
     async def _delayed_stop():
         await asyncio.sleep(0.5)
         await stop_connection()
@@ -1826,33 +2214,43 @@ async def api_server_stop():
 
 @app.post("/api/connect")
 async def api_connect(req: Request):
+    require_same_origin(req)
     data = await req.json()
-    room_url = data.get("room_url", state.room_url)
+    room_url = str(data.get("room_url", state.room_url) or "").strip()
+    if not _is_valid_http_url(room_url):
+        return JSONResponse(
+            {"status": "error", "message": "room_url deve ser uma URL http:// ou https:// válida."},
+            status_code=400,
+        )
     user_name = data.get("user_name", state.user_name)
     user_email = data.get("user_email", state.user_email)
     await start_connection(room_url, user_name, user_email)
     return JSONResponse({"status": "connecting", "message": "Iniciando conexão com a sala..."})
 
 @app.post("/api/disconnect")
-async def api_disconnect():
+async def api_disconnect(req: Request):
+    require_same_origin(req)
     await cancel_connection()
     await stop_connection()
     return JSONResponse({"status": "disconnected"})
 
 @app.post("/api/youtube/connect")
 async def api_youtube_connect(req: Request):
+    require_same_origin(req)
     data = await req.json()
     yt_url = data.get("youtube_url", "")
     await start_youtube_chat(yt_url)
     return JSONResponse({"status": "ok", "youtube_status": state.youtube_status})
 
 @app.post("/api/youtube/disconnect")
-async def api_youtube_disconnect():
+async def api_youtube_disconnect(req: Request):
+    require_same_origin(req)
     await stop_youtube_chat()
     return JSONResponse({"status": "disconnected", "youtube_status": state.youtube_status})
 
 @app.post("/api/chat/highlight")
 async def api_chat_highlight(req: Request):
+    require_same_origin(req)
     data = await req.json()
     msg = data.get("message")
     if msg and isinstance(msg, dict) and "text" in msg:
@@ -1861,20 +2259,23 @@ async def api_chat_highlight(req: Request):
     return JSONResponse({"status": "ok", "featured_message": state.featured_message})
 
 @app.post("/api/poll/show")
-async def api_poll_show():
+async def api_poll_show(req: Request):
+    require_same_origin(req)
     state.poll_force_visible = True
     state.poll_dismissed = False
     state.poll_nonce += 1
     return JSONResponse({"status": "shown", "poll_nonce": state.poll_nonce})
 
 @app.post("/api/poll/hide")
-async def api_poll_hide():
+async def api_poll_hide(req: Request):
+    require_same_origin(req)
     state.poll_force_visible = False
     state.poll_dismissed = True
     return JSONResponse({"status": "hidden"})
 
 @app.post("/api/poll/clear")
-async def api_poll_clear():
+async def api_poll_clear(req: Request):
+    require_same_origin(req)
     state.poll_data = None
     state.last_active_poll = None
     state.published_poll_timestamp = 0
@@ -1884,7 +2285,8 @@ async def api_poll_clear():
     return JSONResponse({"status": "cleared"})
 
 @app.post("/api/poll/simulate")
-async def api_poll_simulate():
+async def api_poll_simulate(req: Request):
+    require_same_origin(req)
     state.poll_data = {
         "question": "Exemplo: Você está gostando da transmissão ao vivo?",
         "options": [
@@ -1916,6 +2318,7 @@ async def api_poll():
 
 @app.post("/api/poll/config")
 async def api_poll_config(req: Request):
+    require_same_origin(req)
     data = await req.json()
     if "poll_display_mode" in data:
         state.poll_display_mode = data["poll_display_mode"]
@@ -1948,6 +2351,7 @@ async def api_debug_screenshot():
 
 @app.post("/api/grid/config")
 async def api_grid_config(req: Request):
+    require_same_origin(req)
     data = await req.json()
     # Valida antes de mutar qualquer campo: um valor inválido não pode deixar metade
     # do payload aplicada e a outra metade salva em disco.
@@ -2029,13 +2433,15 @@ async def api_grid_config(req: Request):
     return JSONResponse({"status": "ok", "libras_camera_ids": state.libras_camera_ids, "libras_saved_names": state.libras_saved_names})
 
 @app.post("/api/libras/toggle_auto")
-async def api_libras_toggle_auto():
+async def api_libras_toggle_auto(req: Request):
+    require_same_origin(req)
     state.libras_auto_detect = not state.libras_auto_detect
     save_disk_config(state.export_config())
     return JSONResponse({"status": "ok", "libras_auto_detect": state.libras_auto_detect})
 
 @app.post("/api/libras/clear_saved")
-async def api_libras_clear_saved():
+async def api_libras_clear_saved(req: Request):
+    require_same_origin(req)
     state.libras_saved_names = []
     state.libras_camera_ids = []
     state.libras_disabled_camera_ids = set()
@@ -2047,6 +2453,7 @@ async def api_libras_clear_saved():
 
 @app.post("/api/chat/config")
 async def api_chat_config(req: Request):
+    require_same_origin(req)
     data = await req.json()
     if "chat_style" in data:
         state.chat_style = data["chat_style"]
@@ -2062,6 +2469,7 @@ async def api_chat_config(req: Request):
 
 @app.post("/api/theme/set")
 async def api_theme_set(req: Request):
+    require_same_origin(req)
     data = await req.json()
     theme = data.get("theme")
     if theme is None:
@@ -2076,11 +2484,19 @@ async def api_theme_set(req: Request):
 
 @app.post("/api/config/save")
 async def api_config_save(req: Request):
+    require_same_origin(req)
     data = await req.json()
     erro = erro_enum(data)
     if erro:
         return JSONResponse({"status": "error", "message": erro}, status_code=400)
-    if "room_url" in data: state.room_url = data["room_url"].strip()
+    if "room_url" in data:
+        r_url = str(data["room_url"] or "").strip()
+        if r_url and not _is_valid_http_url(r_url):
+            return JSONResponse(
+                {"status": "error", "message": "room_url deve ser uma URL http:// ou https:// válida."},
+                status_code=400,
+            )
+        state.room_url = r_url
     if "user_name" in data: state.user_name = data["user_name"].strip()
     if "user_email" in data: state.user_email = data["user_email"].strip()
     if "youtube_url" in data: state.youtube_url = data["youtube_url"].strip()
@@ -2101,12 +2517,21 @@ async def api_config_save(req: Request):
     if "show_chat_avatars" in data: state.show_chat_avatars = bool(data["show_chat_avatars"])
     if "custom_camera_names" in data: state.custom_camera_names = data["custom_camera_names"]
     if "libras_camera_ids" in data: state.set_libras_cameras(data["libras_camera_ids"])
+    # lan_access muda o host de bind, que só é lido no boot do uvicorn. Salvamos o
+    # valor e avisamos o dock que precisa reiniciar o app para valer.
+    restart_needed = False
+    if "lan_access" in data:
+        novo_lan = bool(data["lan_access"])
+        if novo_lan != state.lan_access:
+            restart_needed = True
+        state.lan_access = novo_lan
 
     save_disk_config(state.export_config())
-    return JSONResponse({"status": "saved", "config": state.export_config()})
+    return JSONResponse({"status": "saved", "restart_needed": restart_needed, "config": state.export_config()})
 
 @app.post("/api/config/reset")
-async def api_config_reset():
+async def api_config_reset(req: Request):
+    require_same_origin(req)
     cfg = DEFAULT_CONFIG.copy()
     state.room_url = cfg["room_url"]
     state.user_name = cfg["user_name"]
@@ -2137,6 +2562,20 @@ async def api_config_reset():
 async def api_config_get():
     return JSONResponse(state.export_config(), headers={"Cache-Control": "no-store, no-cache"})
 
+@app.post("/api/pcm_playback")
+async def api_pcm_playback(req: Request):
+    """Cada player (/control e /stage) reporta a propria cadencia de chegada e,
+    sobretudo, quantas vezes o agendamento teve de re-armar: re-armar e underrun
+    audivel. Sem isso, 'chegou irregular' e 'picotou no player' sao indistingiveis.
+    Custa 1 POST a cada 2 s por aba; nao entra no caminho do audio."""
+    try:
+        dados = await req.json()
+        cliente = str(dados.get('client') or '?')[:40]
+        state.playback_stats[cliente] = dados
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        return JSONResponse({"status": "erro", "detalhe": str(e)}, status_code=400)
+
 @app.get("/api/status")
 async def api_status():
     # is_focused é recalculado aqui (não só no reconcile) para o dock e a /tv
@@ -2149,6 +2588,10 @@ async def api_status():
             "connecting": state.connecting,
             "status_message": state.status_message,
             "connection_quality": state.connection_quality(),
+            "pcm_diag": _diag_snapshot(),
+            "lan_access": state.lan_access,
+            "bind_host": resolve_bind_host(),
+            "lan_ips": _lan_ip_candidates(),
             "room_url": state.room_url,
             "user_name": state.user_name,
             "user_email": state.user_email,
@@ -2224,13 +2667,64 @@ PCM_AUDIO_SCRIPT = """
         let audioCtx = null;
         let nextStartTime = 0;
         let monitorGain = null;
+        let pageHidden = false;
+        // --- Diagnostico da ponta de reproducao (Plano A, lado do ouvinte) ---
+        // 'rearmar_colado' conta quantas vezes o agendamento caiu em underrun e
+        // precisou re-arma o colchao: cada um e um gap AUdivel naquele player. e a
+        // unica conta que separa 'chegou irregular do servidor' de 'aqui picotou'.
+        // 'play_ratio' compara o avanco do AudioContext com o relogio de parede:
+        // desvio estavel = drift de clock entre captura e reproducao (§6.3.5 do note),
+        // que é precisamente o perfil de um stutter CONSTANTE e igual em todos.
+        const PB = {chunks: 0, rearmar_colado: 0, rearmar_adiantado: 0,
+                    chegadas: [], gaps: 0, t_ultimo: 0,
+                    ctx_i: 0, w_i: 0, ctx_f: 0, w_f: 0};
+        window._rnpPlayback = PB;
+        function relatarPlayback() {
+            const agora = performance.now();
+            const v = PB.chegadas.slice().sort((a, b) => a - b), n = v.length;
+            const dados = {client: location.pathname, chunks: PB.chunks,
+                           rearmar_colado: PB.rearmar_colado,
+                           rearmar_adiantado: PB.rearmar_adiantado,
+                           gaps_gt_60ms: PB.gaps};
+            if (n) {
+                dados.mediana_ms = +v[n >> 1].toFixed(1);
+                dados.p95_ms = +v[Math.min(n - 1, Math.floor(n * 0.95))].toFixed(1);
+                dados.max_ms = +v[n - 1].toFixed(1);
+                dados.amostras = n;
+            }
+            const spanCtx = PB.ctx_f - PB.ctx_i, spanParede = PB.w_f - PB.w_i;
+            if (spanCtx > 0 && spanParede > 0) dados.play_ratio = +(spanCtx / spanParede).toFixed(4);
+            if (audioCtx) dados.lead_ms = Math.round((nextStartTime - audioCtx.currentTime) * 1000);
+            // Janela movel: cada relato traz os ultimos 2 s, para a serie temporal
+            // aparecer no /api/status em vez de uma media acumulada que esconde rajadas.
+            PB.chegadas.length = 0; PB.gaps = 0;
+            PB.rearmar_colado = 0; PB.rearmar_adiantado = 0;
+            try {
+                fetch('/api/pcm_playback', {method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(dados)});
+            } catch (e) {}
+        }
+        // Roda tambem sem chunks: se a chegada parar, o silencio precisa aparecer.
+        setInterval(relatarPlayback, 2000);
+        // Colchão de reprodução (jitter buffer): mantemos os chunks agendados ~TARGET_LEAD
+        // à frente do relógio de áudio para absorver o jitter de chegada (rede LAN,
+        // event-loop do servidor, rajadas do WebSocket). Sem isto, qualquer chunk que
+        // chega um pouco atrasado cola no currentTime e gera um gap/underrun audível
+        // (stutter). 0,12 s equilibra suavidade e latência (chunks de ~42,7 ms).
+        const TARGET_LEAD = 0.12;
 
-        // Janela oculta não reproduz monitor local: suspende o grafo de áudio em vez
-        // de deixar o WebAudio consumindo CPU em segundo plano.
+        // O áudio NÃO pode parar quando a janela é minimizada/fica inativa: o monitor
+        // local (dock /control) e o master (/stage no OBS) precisam tocar continuamente.
+        // Por isso NÃO suspendemos mais o grafo de áudio ao ocultar. Apenas, ao voltar
+        // para o primeiro plano, reconectamos ao vivo (nextStartTime=0) para não
+        // reproduzir em rajada chunks que possam ter chegado atrasados no período oculto.
         document.addEventListener('visibilitychange', () => {
-            if (!audioCtx) return;
-            if (document.hidden) audioCtx.suspend();
-            else audioCtx.resume();
+            pageHidden = document.hidden;
+            if (!document.hidden && audioCtx) {
+                nextStartTime = 0;
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            }
         });
 
         function getAudioContext() {
@@ -2261,7 +2755,21 @@ PCM_AUDIO_SCRIPT = """
                     } catch(e) {}
                     return;
                 }
+                // Áudio toca mesmo com a janela oculta/minimizada (o monitor do dock e
+                // o master do /stage não podem parar). O backlog é contido pelas redes
+                // de segurança abaixo, que reconectam nextStartTime ao vivo se derivar.
                 const ctx = getAudioContext();
+                const agoraPb = performance.now();
+                if (PB.t_ultimo) {
+                    const d = agoraPb - PB.t_ultimo;
+                    PB.chegadas.push(d);
+                    if (PB.chegadas.length > 4096) PB.chegadas.shift();
+                    if (d > 60) PB.gaps++;
+                } else {
+                    PB.ctx_i = ctx.currentTime; PB.w_i = agoraPb / 1000;
+                }
+                PB.t_ultimo = agoraPb; PB.ctx_f = ctx.currentTime; PB.w_f = agoraPb / 1000;
+                PB.chunks++;
                 const float32Data = new Float32Array(event.data);
                 const audioBuffer = ctx.createBuffer(1, float32Data.length, 48000);
                 audioBuffer.copyToChannel(float32Data, 0);
@@ -2271,9 +2779,22 @@ PCM_AUDIO_SCRIPT = """
                 bufferSource.connect(monitorGain);
 
                 const currentTime = ctx.currentTime;
-                if (nextStartTime < currentTime) {
-                    nextStartTime = currentTime;
+                // Mantém o colchão: se estamos quase colados no relógio (início, ou um
+                // chunk atrasou), re-arma TARGET_LEAD à frente em vez de colar no
+                // currentTime — assim o próximo trecho já entra com folga e não picota.
+                if (nextStartTime < currentTime + 0.02) {
+                    PB.rearmar_colado++;
+                    nextStartTime = currentTime + TARGET_LEAD;
                 }
+                // Rede de segurança: se nextStartTime disparou muito à frente (ex.: após
+                // resume sem reset, ou burst de chunks), reconecta ao vivo preservando o colchão.
+                if (nextStartTime - currentTime > 0.5) {
+                    PB.rearmar_adiantado++;
+                    nextStartTime = currentTime + TARGET_LEAD;
+                }
+                bufferSource.onended = () => {
+                    try { bufferSource.disconnect(); } catch (e) {}
+                };
                 bufferSource.start(nextStartTime);
                 nextStartTime += audioBuffer.duration;
 
@@ -2734,6 +3255,13 @@ async def get_control_panel():
 
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
 
+    # Acesso LAN: estado do toggle + URLs prontas para outra máquina da rede.
+    chk_lan_access = "checked" if state.lan_access else ""
+    _lan_ips = _lan_ip_candidates()
+    _lan_port = resolve_bind_port()
+    lan_url_tv = f"http://{_lan_ips[0]}:{_lan_port}/tv" if _lan_ips else ""
+    lan_url_control = f"http://{_lan_ips[0]}:{_lan_port}/control" if _lan_ips else ""
+
     html_content = f"""
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -3124,6 +3652,29 @@ async def get_control_panel():
                  os áudios individuais ficam no rack de áudio abaixo, com link próprio. -->
         </div>
     </div>
+        <div class="card" id="lanAccessCard" style="padding: 12px 14px; margin-top: 8px">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap">
+                <div style="display: flex; align-items: center; gap: 8px">
+                    <span style="font-size: 16px">🌐</span>
+                    <div>
+                        <strong style="font-size: 12.5px">Acesso por outra máquina (LAN)</strong>
+                        <div style="font-size: 11px; opacity: 0.85">Abra /tv, /stage, /control etc. em outro computador da mesma rede (TV, notebook, celular).</div>
+                    </div>
+                </div>
+                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 700">
+                    <input type="checkbox" id="chkLanAccess" {chk_lan_access} onchange="toggleLanAccess(this.checked)" style="width: 16px; height: 16px; cursor: pointer">
+                    <span id="lblLanAccess">{'Ligado' if state.lan_access else 'Desligado'}</span>
+                </label>
+            </div>
+            <div id="lanUrlBox" class="lan-url-box" style="display: {'block' if state.lan_access else 'none'}">
+                <div style="font-size: 11px; font-weight: 800; margin-bottom: 6px">📺 Use estes links na outra máquina:</div>
+                <div style="display: flex; flex-direction: column; gap: 4px; font-family: monospace; font-size: 11.5px">
+                    <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 6px 10px" onclick="copyLanUrl('/tv', this)">📺 Tela de Participantes (TV) — <span id="lanUrlTv">{lan_url_tv}</span></button>
+                    <button class="btn-copy" style="justify-content: flex-start; text-align: left; padding: 6px 10px" onclick="copyLanUrl('/control', this)">🎛️ Painel de Controle — <span id="lanUrlControl">{lan_url_control}</span></button>
+                </div>
+                <div style="font-size: 10.5px; opacity: 0.85; margin-top: 8px; line-height: 1.4" id="lanHint">💡 Se não abrir, libere a porta {_lan_port} no Firewall do Windows desta máquina (veja o aviso ao lado). Trocar este ajuste exige <strong>reiniciar o app</strong>.</div>
+            </div>
+        </div>
         <div class="card dock-notice">
             {'<p >Modo WebRTC: use /stage para câmeras, Libras e compartilhamento de tela. O master de áudio também sai pelo /stage (marque "Controlar áudio via OBS" e desligue "Shutdown source when not visible"). Slides estáticos mantêm captura pontual; previews JPEG de câmeras e grid legado permanecem desativados.</p>' if state.webrtc_only else ''}
         </div>
@@ -3755,9 +4306,18 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             loadYtApi();
             if (!ytPlayer && window.__ytReady && window.YT && window.YT.Player) ytPlayer = new RnpYouTube(ytHost, {{}});
         }}
+        function escHtml(s) {{
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }}
         function cameraMarkup(id) {{
-            if (useWebRTC) return `<video id="stage_cam_${{id}}" data-source-id="${{id}}" autoplay muted playsinline></video>`;
-            return `<img id="stage_cam_${{id}}" src="/raw_frame/camera/${{encodeURIComponent(id)}}">`;
+            const sid = escHtml(id);
+            if (useWebRTC) return `<video id="stage_cam_${{sid}}" data-source-id="${{sid}}" autoplay muted playsinline></video>`;
+            return `<img id="stage_cam_${{sid}}" src="/raw_frame/camera/${{encodeURIComponent(id)}}">`;
         }}
         const urlOverridePreset = "{preset or ''}";
         const urlOverrideLibrasSize = "{libras_size or ''}";
@@ -3839,7 +4399,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             w.className = 'stage-cam-wrap' + (isLibras ? ' is-libras-box' : '');
                             w.innerHTML = cameraMarkup(c.id)
                                 + (isLibras ? '<div class="libras-badge-overlay">🤟 Libras</div>' : '')
-                                + (showNames ? `<div class="name-tag style-${{nameStyle}}">${{c.name}}</div>` : '');
+                                + (showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(c.name)}}</div>` : '');
                             return w;
                         }};
                         if (activePreset === 'camera-libras') {{
@@ -3892,7 +4452,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         wrapSpeaker.style.flex = '0 0 calc(50% - 4px)';
                         wrapSpeaker.innerHTML = `
                             ${{cameraMarkup(mainSpeaker.id)}}
-                            ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{mainSpeaker.name}}</div>` : ''}}
+                            ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(mainSpeaker.name)}}</div>` : ''}}
                         `;
                         camsCont.appendChild(wrapSpeaker);
 
@@ -3903,7 +4463,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         wrapLibras.innerHTML = `
                             ${{cameraMarkup(activeLibras.id)}}
                             <div class="libras-badge-overlay">🤟 Libras</div>
-                            ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
+                            ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(activeLibras.name)}}</div>` : ''}}
                         `;
                         camsCont.appendChild(wrapLibras);
 
@@ -3929,7 +4489,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 wrap.className = 'stage-cam-wrap';
                                 wrap.innerHTML = `
                                     ${{cameraMarkup(c.id)}}
-                                    ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{c.name}}</div>` : ''}}
+                                    ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(c.name)}}</div>` : ''}}
                                 `;
                                 camsCont.appendChild(wrap);
                             }});
@@ -3946,7 +4506,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             wrapLibras.innerHTML = `
                                 ${{cameraMarkup(activeLibras.id)}}
                                 <div class="libras-badge-overlay">🤟 Libras</div>
-                                ${{showNames ? `<div class="name-tag style-${{nameStyle}}">${{activeLibras.name}}</div>` : ''}}
+                                ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(activeLibras.name)}}</div>` : ''}}
                             `;
                             camsCont.appendChild(wrapLibras);
                             container.appendChild(camsCont);
@@ -3983,7 +4543,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             librasFloating.innerHTML = `
                                 ${{cameraMarkup(activeLibras.id)}}
                                 <div class="libras-badge-overlay">🤟 Libras</div>
-                                ${{showNames ? `<div class="name-tag style-${{nameStyle}}" style="font-size:11px; padding:3px 8px; bottom:6px; left:6px;">${{activeLibras.name}}</div>` : ''}}
+                                ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}" style="font-size:11px; padding:3px 8px; bottom:6px; left:6px;">${{escHtml(activeLibras.name)}}</div>` : ''}}
                             `;
                             container.appendChild(librasFloating);
                         }}
@@ -4533,6 +5093,15 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
             }} catch (e) {{}}
         }}
 
+        function escHtml(s) {{
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }}
+
         function renderCard(poll, isPublished, duration, theme) {{
             let optsHtml = '';
             (poll.options || []).forEach(opt => {{
@@ -4541,7 +5110,7 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
                     <div class="poll-bar">
                         <div class="poll-fill" style="width: ${{pct}}%;"></div>
                         <div class="poll-content">
-                            <span>${{opt.text}}</span>
+                            <span>${{escHtml(opt.text)}}</span>
                             <span style="font-weight: 800;">${{opt.votes ? opt.votes + ' (' + pct + '%)' : pct + '%'}}</span>
                         </div>
                     </div>
@@ -4552,12 +5121,12 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
             const showTimer = (duration > 0 && isPublished);
 
             container.innerHTML = `
-                <div class="poll-box theme-${{theme}}" id="pollBoxEl">
+                <div class="poll-box theme-${{escHtml(theme)}}" id="pollBoxEl">
                     <div class="poll-header-row">
                         <div class="poll-tag">${{tagLabel}}</div>
                         ${{showTimer ? `<div class="poll-timer-badge" id="pollTimerBadge">⏱️ <span id="timerSecs">${{duration}}</span>s</div>` : ''}}
                     </div>
-                    <div class="poll-q">${{poll.question}}</div>
+                    <div class="poll-q">${{escHtml(poll.question)}}</div>
                     <div class="poll-opts">${{optsHtml}}</div>
                     ${{showTimer ? `<div class="poll-countdown-bar" id="pollCountdownBar" style="transition: width ${{duration}}s linear; width: 100%;"></div>` : ''}}
                 </div>
@@ -4948,10 +5517,15 @@ async def get_cameras_grid_overlay(
                         if (showNames) {{
                             const tag = document.createElement('div');
                             tag.className = 'name-tag style-' + nameStyle;
-                            tag.innerHTML = `
-                                <span>${{cam.name || 'Câmera ' + cam.id}}</span>
-                                ${{isLibras ? '<span class="badge-libras">🤟 LIBRAS</span>' : ''}}
-                            `;
+                            const labelSpan = document.createElement('span');
+                            labelSpan.textContent = cam.name || ('Câmera ' + cam.id);
+                            tag.appendChild(labelSpan);
+                            if (isLibras) {{
+                                const badge = document.createElement('span');
+                                badge.className = 'badge-libras';
+                                badge.textContent = '🤟 LIBRAS';
+                                tag.appendChild(badge);
+                            }}
                             card.appendChild(tag);
                         }}
 
@@ -5177,6 +5751,21 @@ async def get_chat_overlay(
         const overrideAvatar = {avatar if avatar is not None else 'null'};
         let currentSig = '';
 
+        function escHtml(s) {{
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }}
+        function safeAvatarUrl(u) {{
+            if (!u || typeof u !== 'string') return '';
+            const s = u.trim();
+            if (/^(https?:\\/\\/|data:image\\/|\\/)/i.test(s)) return escHtml(s);
+            return '';
+        }}
+
         async function updateChat() {{
             try {{
                 const res = await fetch('/api/chat?t=' + Date.now());
@@ -5197,11 +5786,12 @@ async def get_chat_overlay(
 
                     recent.forEach(m => {{
                         const isYt = (m.source === 'youtube');
-                        const initial = (m.user ? m.user.charAt(0).toUpperCase() : '?');
+                        const initial = escHtml(m.user ? m.user.charAt(0).toUpperCase() : '?');
+                        const av = safeAvatarUrl(m.avatar);
                         const avatarHtml = showAvatars ? `
                             <div class="chat-mini-avatar">
-                                ${{m.avatar ? `<img src="${{m.avatar}}" referrerpolicy="no-referrer" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : ''}}
-                                <div class="mini-avatar-fallback ${{isYt ? 'yt' : 'rnp'}}" style="${{m.avatar ? 'display:none;' : ''}}">${{initial}}</div>
+                                ${{av ? `<img src="${{av}}" referrerpolicy="no-referrer" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : ''}}
+                                <div class="mini-avatar-fallback ${{isYt ? 'yt' : 'rnp'}}" style="${{av ? 'display:none;' : ''}}">${{initial}}</div>
                             </div>
                         ` : '';
 
@@ -5212,11 +5802,11 @@ async def get_chat_overlay(
                                 <div style="display:flex; align-items:center; gap:8px;">
                                     ${{avatarHtml}}
                                     <span class="source-badge ${{isYt ? 'badge-yt' : 'badge-rnp'}}">${{isYt ? 'YouTube' : 'RNP'}}</span>
-                                    <span class="msg-user">${{m.user || 'Participante'}}</span>
+                                    <span class="msg-user">${{escHtml(m.user || 'Participante')}}</span>
                                 </div>
-                                <span class="msg-time">${{m.time || ''}}</span>
+                                <span class="msg-time">${{escHtml(m.time || '')}}</span>
                             </div>
-                            <div class="msg-text">${{m.text || ''}}</div>
+                            <div class="msg-text">${{escHtml(m.text || '')}}</div>
                         `;
                         container.appendChild(card);
                     }});
@@ -5371,6 +5961,21 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
         let currentSig = '';
         let isVisible = false;
 
+        function escHtml(s) {{
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }}
+        function safeAvatarUrl(u) {{
+            if (!u || typeof u !== 'string') return '';
+            const s = u.trim();
+            if (/^(https?:\\/\\/|data:image\\/|\\/)/i.test(s)) return escHtml(s);
+            return '';
+        }}
+
         async function updateFeatured() {{
             try {{
                 const res = await fetch('/api/chat?t=' + Date.now());
@@ -5401,14 +6006,15 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                 if (sig !== currentSig) {{
                     currentSig = sig;
                     const isYt = (feat.source === 'youtube');
-                    const initial = (feat.user ? feat.user.charAt(0).toUpperCase() : '?');
+                    const initial = escHtml(feat.user ? feat.user.charAt(0).toUpperCase() : '?');
+                    const av = safeAvatarUrl(feat.avatar);
 
                     let avatarHtml = '';
                     if (showAvatars) {{
                         avatarHtml = `
                             <div class="feat-avatar-wrap" style="border-color: ${{isYt ? '#ef4444' : '#0284c7'}}; box-shadow: 0 0 16px ${{isYt ? 'rgba(239,68,68,0.5)' : 'rgba(2,132,199,0.5)'}};">
-                                ${{feat.avatar ? `<img src="${{feat.avatar}}" referrerpolicy="no-referrer" class="feat-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : ''}}
-                                <div class="feat-avatar-fallback" style="${{feat.avatar ? 'display:none;' : ''}}; background:${{isYt ? 'linear-gradient(135deg, #ef4444, #f87171)' : 'linear-gradient(135deg, #0284c7, #38bdf8)'}};">${{initial}}</div>
+                                ${{av ? `<img src="${{av}}" referrerpolicy="no-referrer" class="feat-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : ''}}
+                                <div class="feat-avatar-fallback" style="${{av ? 'display:none;' : ''}}; background:${{isYt ? 'linear-gradient(135deg, #ef4444, #f87171)' : 'linear-gradient(135deg, #0284c7, #38bdf8)'}};">${{initial}}</div>
                             </div>
                         `;
                     }} else {{
@@ -5421,9 +6027,9 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                             <div class="feat-content">
                                 <div class="feat-header">
                                     <span class="source-tag ${{isYt ? 'tag-yt' : 'tag-rnp'}}">${{isYt ? 'YouTube' : 'RNP'}}</span>
-                                    <span class="feat-user">${{feat.user || 'Participante'}}</span>
+                                    <span class="feat-user">${{escHtml(feat.user || 'Participante')}}</span>
                                 </div>
-                                <div class="feat-text">${{feat.text}}</div>
+                                <div class="feat-text">${{escHtml(feat.text)}}</div>
                             </div>
                         </div>
                     `;
@@ -5585,5 +6191,10 @@ async def stream_presentation():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get('RNP_PORT', '3333')), log_level="warning")
+    _host = resolve_bind_host()
+    _port = resolve_bind_port()
+    if _host == "0.0.0.0":
+        _ips = _lan_ip_candidates()
+        print(f"[Bridge] Acesso LAN ativo. Outras máquinas: http://{(_ips[0] if _ips else '<IP>') }:{_port}/tv", flush=True)
+    uvicorn.run(app, host=_host, port=_port, log_level="warning")
 
