@@ -91,13 +91,37 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 
 ## 🔊 Arquitetura de Áudio (PCM WebRTC)
 
-- Captura o elemento `<audio>` da conferência via **Web Audio API** na página da sala
-  (`startPcm` → `/ws/pcm_in`), com analisador por canal.
-- Transmite por WebSocket binário (`/ws/pcm_out`) em **Float32 48.000 Hz**.
-- Latência sub-50ms e zero compressão adicional.
-- **Master:** é reproduzido pelo `/stage` (`PCM_AUDIO_SCRIPT`). Não há segundo player
-  em `/audio` — dois masters duplicavam o consumo no OBS e causavam eco.
+- Captura as trilhas `<audio>/<video>` da conferência via **Web Audio API** na página da sala
+  (`startPcm` em `web/media-source.js` → `/ws/pcm_in`), com analisador por canal.
+- **Web Worker + `MessageChannel` (anti-stutter):** o `AudioWorkletProcessor` (`PcmCapture`, blocos de 2048 amostras ≈ 42,7 ms) transfere cada chunk por `MessagePort` diretamente para um **Web Worker dedicado** (`WORKER_SRC`), que mantém o WebSocket `/ws/pcm_in`. Assim, travamentos periódicos da *main thread* do BBB (React/SVG/DOM) não represam o envio de áudio.
+- Transmite por WebSocket binário (`/ws/pcm_out`) em **Float32 48.000 Hz** usando filas não-bloqueantes por cliente (`_enqueue_latest`, `PCM_QUEUE_MAX=64`, drop-oldest) e jitter buffer de `TARGET_LEAD = 0.12s` no player (`PCM_AUDIO_SCRIPT`, com `bufferSource.onended -> disconnect()`).
+- **Master:** é reproduzido pelo `/stage` (`PCM_AUDIO_SCRIPT`) e pelo monitor local do `/control`. Não há segundo player em `/audio` — dois masters duplicavam o consumo no OBS e causavam eco.
 - **No OBS:** na fonte `/stage`, marque "Controlar áudio via OBS" e **desligue**
   "Shutdown source when not visible", senão o som some em cenas sem o palco.
 - A captura continua ativa mesmo sem ninguém ouvindo: é dela que vêm os picos usados
   na detecção de fala (`is_speaking` / chips de voz), com *peak-hold* τ=300 ms.
+
+---
+
+## 🌐 Modo LAN, Segurança e Portabilidade
+
+- **`lan_access` (`config.json` / barra do `/control`):** quando habilitado, o servidor faz bind em `0.0.0.0:3333` (requer reinício do app ao alternar) e exibe o box `#lanUrlBox` (`.lan-url-box`) com o link `http://<IP>:3333/tv` para abrir a tela de retorno em outras máquinas da rede.
+- **Proteções ativas:**
+  - Todas as rotas `POST` mutáveis exigem `require_same_origin(req)` (`media_bridge.py`).
+  - `/api/server/stop` aceita apenas clientes loopback (`127.0.0.1`, `::1`, `localhost`).
+  - `/api/connect` e `/api/config/save` validam `room_url` (`http://` ou `https://`).
+  - Nomes de câmeras, mensagens de chat e opções de enquete passam por `escHtml` no `/control` (`web/dock.js`) e em todos os overlays (`server.py`).
+- **Portabilidade:** `RNP_PORT` (padrão `3333`) é respeitado em `server.py`, `app.py` e `dock_window.py`.
+
+---
+
+## 🎨 Gerador de CSS para BBB Direto na Browser Source (`tools/gerador_css_obs.html`)
+
+- Ferramenta standalone para quando o operador abre `https://conferenciaweb.rnp.br/sala/<slug>` diretamente numa Browser Source do OBS (fallback sem a ponte), consolidando os seletores de `css_custom_discord.css` e `css_custom_v0.1.css`.
+- **5 Modos de Cena (`#modosCena`):**
+  1. `cameras-slides`: oculta o chat/sidebar e exibe apenas Câmeras + Slides/Projeção.
+  2. `completo`: exibe Chat Público estilizado + Slides/Projeção + Câmeras.
+  3. `so-cameras`: oculta chat e apresentação e expande o `#cameraDock` em `100vw x 100vh` em grade.
+  4. `so-slides`: oculta chat e câmeras e expande a área de apresentação/compartilhamento/vídeo em `100vw x 100vh`.
+  5. `so-chat`: oculta câmeras e slides e expande o chat estilizado em `100vw x 100vh`.
+- **Próximo passo planejado:** integrar o editor de CSS como Dock dentro do OBS (`http://localhost:3333/css-editor`) com aplicação em tempo real no OBS.

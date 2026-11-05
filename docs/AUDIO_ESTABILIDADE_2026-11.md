@@ -361,19 +361,22 @@ Passos (PowerShell; usar `;` e não `&&`):
 | Loop de sincronização | `server.py` → `sync_loop` (`SYNC_EVAL_TIMEOUT`, `SYNC_INTERVAL_WEBRTC`, intervalos de chat/enquete) |
 | `/api/media` single-flight | `media_bridge.py` → `media_sources`, `ensure_media_adapter`, `_MEDIA_CACHE`, `_MEDIA_EVAL_TIMEOUT` |
 | Janela/WebView2 | `dock_window.py` → `_aplicar_args_webview2`, `WEBVIEW2_KEEP_ALIVE_ARGS`, `abrir_janela_pywebview` |
-| LAN/bind | `server.py` → `resolve_bind_host`, `resolve_bind_port`, `_lan_ip_candidates`, `_resolve_config_path`, `load_disk_config` |
+| LAN/bind & Segurança | `server.py` → `resolve_bind_host`, `resolve_bind_port`, `_lan_ip_candidates`, `_resolve_config_path`, `load_disk_config`, `_is_valid_http_url`; `media_bridge.py` → `require_same_origin` |
 | Watchdog/2 processos | `app.py` → `_zelo_do_servidor`, `start_server`, `_spawn_servidor` (`--server`) |
+| Gerador de CSS p/ BBB | `tools/gerador_css_obs.html` (5 modos: `cameras-slides`, `completo`, `so-cameras`, `so-slides`, `so-chat`), `css_custom_discord.css`, `css_custom_v0.1.css` |
 
 ---
 
 ## 9. Decisões e trade-offs registrados
 
-- **Jitter buffer de 120 ms**: priorizou suavidade sobre latência mínima. Como o stutter é
-  local/cabeado, é **mitigação**, não cura — revisitar após §6.
+- **Web Worker + `MessageChannel` na captura PCM (2026-11-05)**: desacopla o envio de chunks do `AudioWorklet` da *main thread* da sala BBB, eliminando o represamento de áudio durante picos de renderização React/SVG.
+- **Jitter buffer de 120 ms**: priorizou suavidade sobre latência mínima (~170 ms total).
 - **Filas por cliente com drop-oldest**: um cliente travado perde os dados **mais antigos**
   (fica "ao vivo") em vez de travar os demais. Para áudio em tempo real, drop-oldest é o
   comportamento correto (não acumular latência).
 - **LAN via config + restart**: bind é definido no boot (cacheado). O toggle no dock exige
+  reiniciar o app para valer.
+- **Gerador de CSS (`tools/gerador_css_obs.html`, 2026-11-05)**: corrigidos os 5 bugs de seletores (`:has()` por item, `::before`/`::after` por item, separação entre etiqueta do card e selo fixo do topo, `html/body/main` transparentes e limpeza completa de `#ActionsBar`/whiteboard/toasts) e adicionados os 5 modos de cena (`cameras-slides`, `completo`, `so-cameras`, `so-slides`, `so-chat`). Próxima etapa planejada: editor de CSS em tempo real dentro do OBS (via Dock).
   reiniciar o app — documentar/avisar no painel.
 - **Headless na captura**: mantém a captura invisível, mas é o **principal suspeito** do
   stutter local (§6.2). Testar headed pode ser necessário.
