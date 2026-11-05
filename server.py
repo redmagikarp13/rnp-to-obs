@@ -3656,7 +3656,7 @@ async def get_control_panel():
                     <input type="range" id="rngMonitorVol" min="0" max="1" step="0.05" value="1" style="width: 85px; cursor: pointer" oninput="updateMonitorVol(this.value)">
                 </div>
             </div>
-            <div style="font-size: 11px">
+            <div class="audio-obs-tip" style="font-size: 11px">
                 💡 <em>Dica OBS: Cole a URL em uma Fonte de Navegador e marque "Controlar áudio via OBS" nas propriedades.</em>
             </div>
         </div>
@@ -4193,7 +4193,7 @@ async def get_control_panel():
             <div class="grid-opt-group" style="width: 100%; justify-content: space-between">
                 <label style="margin: 0; font-size: 12px; font-weight: 700">🎯 Exibir no OBS:</label>
                 <select id="selPollDisplayMode" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
-                    <option value="results_only" {sel_pm_results}>📊 Somente Resultados Finais (Recomendado)</option>
+                    <option value="results_only" {sel_pm_results}>📊 Só Resultados Finais (Padrão)</option>
                     <option value="always" {sel_pm_always}>🗳️ Votação Ao Vivo + Resultados</option>
                     <option value="hidden" {sel_pm_hidden}>❌ Ocultar no OBS</option>
                 </select>

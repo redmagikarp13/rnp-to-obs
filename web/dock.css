@@ -441,8 +441,9 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
     .btn { padding: 7px 12px !important; font-size: 12px !important; }
     .actions { gap: 6px !important; }
     .grid-options-bar { padding: 8px !important; gap: 8px !important; flex-direction: column !important; align-items: stretch !important; }
-    .grid-opt-group { width: 100% !important; justify-content: space-between !important; }
-    .grid-opt-group select { flex: 1 !important; max-width: 60% !important; }
+    .grid-opt-group { width: 100% !important; justify-content: space-between !important; gap: 6px !important; }
+    .grid-opt-group label { min-width: 0; }
+    .grid-opt-group select { flex: 1 1 160px !important; max-width: 100% !important; min-width: 0 !important; width: 100% !important; font-size: 11.5px !important; padding: 5px 6px !important; }
     .obs-grid-preview-box { height: 160px !important; margin-bottom: 10px !important; }
     .chat-preview-container { height: 170px !important; }
     .preview-grid { grid-template-columns: 1fr !important; gap: 8px !important; }
@@ -562,10 +563,28 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
 .badge.disconnected { background: var(--danger); color: #ffffff; }
 .badge.connecting { background: var(--warn); color: #1a1a1a; }
 
-.log-box, .mod-box, .thumb-box, .source-tag {
+.log-box, .mod-box, .thumb-box, .source-tag, .grid-options-bar {
     background: var(--surface-inset);
     border: 1px solid var(--border);
     color: var(--text-muted);
+}
+.mod-title {
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.mod-title > span:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.mod-title strong {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mod-title > span:not(:first-child) {
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .lan-url-box {
@@ -891,25 +910,88 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-statusbar { padding: 6px 8px; gap: 5px; }
     .dock-statusbar h1 { font-size: 13px; }
     #shieldBadge, .dock-statusbar-fps { display: none !important; }
-    .dock-bloco[data-bloco="mixer"] .audio-channel-strip { flex: 1 1 130px; width: auto; min-width: 120px; }
-    .dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { flex: 1 1 160px; min-width: 140px; }
+    .dock-bar-right {
+        width: 100%;
+        margin-left: 0;
+        gap: 4px;
+        justify-content: space-between;
+    }
+    .dock-bar-config {
+        width: 100%;
+        display: flex;
+        gap: 4px;
+    }
+    .dock-bar-config .btn {
+        flex: 1;
+        padding: 4px 6px !important;
+        font-size: 11px !important;
+    }
+    #btnBarRestart, .dock-bar-right > .btn-danger {
+        flex: 1;
+        padding: 5px 8px !important;
+        font-size: 11.5px !important;
+        white-space: nowrap;
+    }
+    .dock-connect-wrap { flex: 1; }
+    #btnConnectMenu {
+        width: 100%;
+        padding: 5px 8px !important;
+        font-size: 11.5px !important;
+        white-space: nowrap;
+    }
+    .cam-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+    }
+    .cam-controls .btn-ctrl {
+        min-width: 0;
+        width: 100%;
+        white-space: nowrap;
+        padding: 6px 6px !important;
+        font-size: 11px !important;
+    }
+    .preset-buttons-grid .btn-ctrl {
+        min-height: 36px;
+        padding: 5px 6px !important;
+        font-size: 11px !important;
+        line-height: 1.2;
+    }
+    .poll-header > div:first-child {
+        flex-wrap: wrap;
+    }
+    .audio-monitor-controls-bar > div:first-child {
+        flex-wrap: wrap;
+        width: 100%;
+        justify-content: space-between;
+    }
+    #btnMuteMonitor {
+        white-space: nowrap;
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+    .dock-bloco[data-bloco="mixer"] .audio-channel-strip { flex: 1 1 120px; width: auto; min-width: 115px; }
+    .dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { flex: 1 1 120px; min-width: 115px; }
 }
 
 /* Pills do monitor de fontes: as regras legadas vivem em outra constante de CSS que
    o /control não recebe, então o monitor fica sem ponto de estado. Tokenizado aqui. */
-.source-health-pill { display: flex; align-items: center; gap: 6px; }
+.source-health-pill { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .pill-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .pill-dot.connected { background: var(--ok); }
 .pill-dot.disconnected { background: var(--text-disabled); }
 .pill-dot.connecting { background: var(--warn); }
 .pill-dot.alert { background: var(--danger); }
-.pill-info { display: flex; flex-direction: column; line-height: 1.15; }
+.pill-info { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
 .pill-name {
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .4px;
     color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .pill-state { font-size: 10px; color: var(--text); }
 
@@ -965,20 +1047,26 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     .dock-monitor-fixed .monitor-title-text { display: none; }
     .dock-monitor-fixed .monitor-head { display: none; }
     .dock-monitor-fixed .pill-state { display: none; }
-    .dock-monitor-fixed .sources-health-grid { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 4px; }
+    .dock-monitor-fixed .sources-health-grid { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 5px 8px; }
     .dock-monitor-fixed .source-health-pill {
-        padding: 3px 6px;
+        padding: 3px 4px;
         display: flex;
         flex-direction: row;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
+        min-width: 0;
+        overflow: hidden;
     }
-    .dock-monitor-fixed .pill-dot { width: 9px; height: 9px; flex-shrink: 0; }
+    .dock-monitor-fixed .pill-dot { width: 8px; height: 8px; flex-shrink: 0; }
     .dock-monitor-fixed .card { padding: 8px 10px; }
     .dock-bloco[data-bloco="mixer"] .mixer-info { display: none; }
     .dock-bloco[data-bloco="mixer"] .meter-scale-vertical { display: none; }
-    .dock-bloco[data-bloco="mixer"] .vu-track-vertical { height: 48px; }
-    .dock-bloco[data-bloco="mixer"] .audio-mixer-rack { max-height: 190px; overflow-x: auto; overflow-y: hidden; }
-    .dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { height: 150px; min-height: 0; }
+    .dock-bloco[data-bloco="mixer"] .vu-track-vertical { height: 52px; }
+    .dock-bloco[data-bloco="mixer"] .channel-meter-box { height: 56px; margin: 4px 0; }
+    .dock-bloco[data-bloco="mixer"] .audio-mixer-rack { flex-wrap: wrap; padding: 10px; gap: 8px; }
+    .dock-bloco[data-bloco="mixer"] .audio-mixer-rack > div:first-of-type:not(.audio-channel-strip) { flex: 1 1 100%; }
+    .dock-bloco[data-bloco="mixer"] .audio-mixer-rack > div:not(.audio-channel-strip):not(#individualChannelsContainer) { flex: 1 1 100%; order: -1; margin-bottom: 2px !important; }
+    .dock-bloco[data-bloco="mixer"] #noIndividualChannelsPlaceholder { min-height: 0; padding: 10px 8px; }
+    .dock-bloco[data-bloco="mixer"] .audio-obs-tip,
     .dock-bloco[data-bloco="mixer"] em { display: none; }
 }

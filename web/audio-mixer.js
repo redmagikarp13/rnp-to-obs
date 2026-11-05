@@ -52,7 +52,7 @@
             const response = await fetch('/api/media', {cache: 'no-store', signal: AbortSignal.timeout(5000)});
             if (!response.ok) throw new Error('Mídia temporariamente indisponível.');
             const data = await response.json();
-            const channels = data.sources.filter(c => c.kind === 'audio' && c.individual);
+            const channels = (data.sources || []).filter(c => c.kind === 'audio' && c.individual);
             for (const [id, state] of rows) {
                 if (!channels.some(c => c.id === id)) {state.row.remove(); rows.delete(id);}
             }

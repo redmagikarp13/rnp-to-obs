@@ -846,6 +846,11 @@ class MediaRoutesTests(unittest.TestCase):
         dc = self.client.get('/assets/dock.css').text
         self.assertIn('.medidores-desligados', dc)
         self.assertIn('.energia-cmd', dc)
+        self.assertIn('minmax(110px, 1fr)', dc,
+                      'Monitor de fontes estreito deve usar colunas de pelo menos 110px para não sobrepor APRESENTAÇÃO.')
+        self.assertNotIn('minmax(72px, 1fr)', dc)
+        self.assertNotIn('max-width: 60% !important', dc,
+                         'Selects no dock estreito não devem ser truncados em 60% da largura.')
 
     def test_extract_rnp_chat_e_poll_nao_bloqueiam_nem_reprocessam_mensagens_inalteradas(self):
         class FakeFrame:

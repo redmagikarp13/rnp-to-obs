@@ -1068,8 +1068,7 @@
 
             if (!poll || !poll.is_active) {
                 if (statusTitle) {
-                    statusTitle.innerText = '📊 Enquete da Sala RNP';
-                    statusTitle.style.color = '#10b981';
+                    statusTitle.innerText = 'Enquete da Sala RNP';
                 }
                 if (badgeStatus) {
                     badgeStatus.className = 'badge disconnected';
@@ -1085,11 +1084,9 @@
             const isPublished = (poll.published || poll.status === 'published' || poll.status === 'results');
             if (statusTitle) {
                 if (isPublished) {
-                    statusTitle.innerText = '📊 Resultados Finais (' + (poll.total_votes || 0) + ' votos)';
-                    statusTitle.style.color = '#10b981';
+                    statusTitle.innerText = 'Resultados Finais (' + (poll.total_votes || 0) + ' votos)';
                 } else {
-                    statusTitle.innerText = '🗳️ Enquete em Votação na Sala';
-                    statusTitle.style.color = '#eab308';
+                    statusTitle.innerText = 'Enquete em Votação na Sala';
                 }
             }
             if (badgeStatus) {
