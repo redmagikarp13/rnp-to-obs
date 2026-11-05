@@ -834,6 +834,7 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertIn('let previewOff = { cameras: true, presentation: true, stage: true };', dj)
         self.assertIn("if (savedMuted !== '0') {", dj)
         self.assertIn('function copiarComando(', dj)
+        self.assertNotIn('thumbCam_', dj, 'Card de câmera sincronizada não deve renderizar miniatura redundante.')
 
         am = self.client.get('/assets/audio-mixer.js').text
         self.assertIn("let metersOff = localStorage.getItem(METERS_KEY) !== '0';", am)

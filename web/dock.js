@@ -844,10 +844,6 @@
                                 <span style="font-size: 10.5px">● ${Number(c.width) || 0}x${Number(c.height) || 0}</span>
                                 <span class="cam-fps" style="font-size: 10.5px">${Math.round(c.fps || 0)} FPS</span>
                             </div>
-                            <div class="thumb-box">
-                                <img src="/raw_frame/camera/${encodeURIComponent(cid)}?t=${Date.now()}" id="thumbCam_${escHtml(cid)}" onerror="this.style.opacity=0.3" onload="this.style.opacity=1">
-                                ${isLibras ? '<div class="libras-badge-overlay">🤟 Libras</div>' : ''}
-                            </div>
                             
                             <div class="cam-controls">
                                 <button class="btn-ctrl ${isFocus ? 'active-focus' : ''}" onclick="toggleFocus('${safeCidAttr}')">
