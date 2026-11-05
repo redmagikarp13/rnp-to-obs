@@ -896,6 +896,44 @@ class MediaRoutesTests(unittest.TestCase):
         asyncio.run(server.extract_rnp_poll(poll_frame))
         self.assertEqual(self.state.poll_data['status'], 'published')
 
+    def test_filtro_de_fonte_do_chat_separa_feed_obs_sem_ocultar_lista_do_dock(self):
+        html = self.client.get('/control').text
+        for btn_id in ('btnChatSrc_all', 'btnChatSrc_rnp', 'btnChatSrc_youtube'):
+            self.assertIn(f'id="{btn_id}"', html, f'Botão de filtro {btn_id} ausente no /control.')
+
+        self.state.chat_messages = [
+            {'id': 'm1', 'source': 'rnp', 'user': 'Maria', 'text': 'Msg RNP', 'time': '19:00', 'avatar': ''},
+            {'id': 'm2', 'source': 'youtube', 'user': 'João', 'text': 'Msg YT', 'time': '19:01', 'avatar': ''},
+        ]
+
+        # Padrão: mesclado ('all')
+        res_all = self.client.get('/api/chat').json()
+        self.assertEqual(res_all['chat_source_filter'], 'all')
+        self.assertEqual([m['id'] for m in res_all['messages']], ['m1', 'm2'])
+
+        # Mudar para 'rnp': /api/chat devolve só RNP, mas /api/status (lista do dock p/ destacar) mantém ambas
+        r = self.client.post('/api/chat/config', json={'chat_source_filter': 'rnp'})
+        self.assertEqual(r.status_code, 200)
+        res_rnp = self.client.get('/api/chat').json()
+        self.assertEqual(res_rnp['chat_source_filter'], 'rnp')
+        self.assertEqual([m['id'] for m in res_rnp['messages']], ['m1'])
+        st = self.client.get('/api/status').json()
+        self.assertEqual([m['id'] for m in st['chat_messages']], ['m1', 'm2'])
+
+        # Mudar para 'youtube': /api/chat devolve só YouTube, /api/status mantém ambas
+        r = self.client.post('/api/chat/config', json={'chat_source_filter': 'youtube'})
+        self.assertEqual(r.status_code, 200)
+        res_yt = self.client.get('/api/chat').json()
+        self.assertEqual(res_yt['chat_source_filter'], 'youtube')
+        self.assertEqual([m['id'] for m in res_yt['messages']], ['m2'])
+        st = self.client.get('/api/status').json()
+        self.assertEqual([m['id'] for m in st['chat_messages']], ['m1', 'm2'])
+
+        # Valor inválido deve retornar 400 sem corromper o estado
+        r_bad = self.client.post('/api/chat/config', json={'chat_source_filter': 'invalido'})
+        self.assertEqual(r_bad.status_code, 400)
+        self.assertEqual(self.state.chat_source_filter, 'youtube')
+
 
 if __name__ == '__main__':
     unittest.main()

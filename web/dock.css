@@ -957,6 +957,12 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
         font-size: 11px !important;
         line-height: 1.2;
     }
+    .chat-source-filter-group .btn-ctrl {
+        min-width: 0;
+        white-space: nowrap;
+        padding: 5px 4px !important;
+        font-size: 11px !important;
+    }
     .poll-header > div:first-child {
         flex-wrap: wrap;
     }

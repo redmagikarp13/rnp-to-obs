@@ -16,6 +16,7 @@
         let activeLibrasSize = "equal";
         let isLocalMuted = false;
         let activeStagePreset = "side-by-side";
+        let activeChatSourceFilter = "all";
 
         let masterPeakHold = 0;
         let masterPeakHoldTimer = null;
@@ -335,6 +336,7 @@
                 chat_style: document.getElementById('selChatTheme').value,
                 chat_font_size: document.getElementById('selChatSize').value,
                 chat_max_messages: parseInt(document.getElementById('selChatMax').value),
+                chat_source_filter: activeChatSourceFilter,
                 libras_camera_ids: librasCamIds
             };
 
@@ -362,8 +364,10 @@
                 document.getElementById('selChatMax').value = cfg.chat_max_messages || 6;
                 activeStagePreset = cfg.stage_preset || 'side-by-side';
                 activeLibrasSize = cfg.libras_size || 'equal';
+                activeChatSourceFilter = cfg.chat_source_filter || 'all';
                 librasCamIds = (cfg.libras_camera_ids || []).map(String);
                 updatePresetButtonsUI(activeStagePreset);
+                updateChatSourceButtonsUI(activeChatSourceFilter);
                 showSaveNotice();
             } catch (e) {}
         }
@@ -379,6 +383,26 @@
             activeStagePreset = presetName;
             updatePresetButtonsUI(presetName);
             await postSave('/api/grid/config', { stage_preset: presetName, libras_size: activeLibrasSize });
+        }
+
+        async function setChatSourceFilter(filterVal) {
+            activeChatSourceFilter = filterVal;
+            updateChatSourceButtonsUI(filterVal);
+            await postSave('/api/chat/config', { chat_source_filter: filterVal });
+        }
+
+        function updateChatSourceButtonsUI(filterVal) {
+            const filters = ['all', 'rnp', 'youtube'];
+            filters.forEach(f => {
+                const btn = document.getElementById('btnChatSrc_' + f);
+                if (btn) {
+                    if (f === filterVal) {
+                        btn.className = 'btn-ctrl active-preset';
+                    } else {
+                        btn.className = 'btn-ctrl';
+                    }
+                }
+            });
         }
 
         async function updateLibrasSizeConfig() {
@@ -794,6 +818,11 @@
                     if (elStyle) elStyle.value = data.poll_style;
                 }
 
+                if (data.chat_source_filter) {
+                    activeChatSourceFilter = data.chat_source_filter;
+                    updateChatSourceButtonsUI(activeChatSourceFilter);
+                }
+
                 if (data.connected && !(window.RnpDock && window.RnpDock.previewOff
                         && window.RnpDock.previewOff.presentation)) {
                     document.getElementById('thumbScreen').src = '/raw_frame/presentation?t=' + Date.now();
@@ -891,7 +920,7 @@
             await fetch('/api/chat/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_style, chat_font_size, chat_max_messages, show_chat_avatars })
+                body: JSON.stringify({ chat_style, chat_font_size, chat_max_messages, show_chat_avatars, chat_source_filter: activeChatSourceFilter })
             });
             showSaveNotice();
         }

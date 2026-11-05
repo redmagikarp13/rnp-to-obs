@@ -131,11 +131,13 @@ CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow')
 GRID_LAYOUT_MODES = ('auto', 'row', 'column', 'grid')
 STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right',
                  'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras')
+CHAT_SOURCE_FILTERS = ('all', 'rnp', 'youtube')
 _ENUM_CAMPOS = {
     'libras_size': LIBRAS_SIZES,
     'camera_name_style': CAMERA_NAME_STYLES,
     'grid_layout_mode': GRID_LAYOUT_MODES,
     'stage_preset': STAGE_PRESETS,
+    'chat_source_filter': CHAT_SOURCE_FILTERS,
 }
 
 
@@ -239,6 +241,7 @@ DEFAULT_CONFIG = {
     "chat_font_size": "medium",
     "chat_max_messages": 6,
     "show_chat_avatars": True,
+    "chat_source_filter": "all",
     "custom_camera_names": {},
     "libras_camera_ids": [],
     # Acesso LAN: quando True, o servidor escuta em 0.0.0.0 (todas as interfaces)
@@ -561,6 +564,8 @@ class BridgeState:
         self.chat_font_size: str = cfg.get("chat_font_size", "medium")
         self.chat_max_messages: int = cfg.get("chat_max_messages", 6)
         self.show_chat_avatars: bool = cfg.get("show_chat_avatars", True)
+        _chat_src = cfg.get("chat_source_filter", "all")
+        self.chat_source_filter: str = _chat_src if _chat_src in CHAT_SOURCE_FILTERS else "all"
         
         # Blindagem Anti-Inatividade
         self.inactivity_bypassed_count: int = 0
@@ -689,6 +694,7 @@ class BridgeState:
             "chat_font_size": self.chat_font_size,
             "chat_max_messages": self.chat_max_messages,
             "show_chat_avatars": self.show_chat_avatars,
+            "chat_source_filter": self.chat_source_filter,
             "custom_camera_names": self.custom_camera_names,
             "libras_disabled_names": self.libras_disabled_names,
             "lan_access": self.lan_access
@@ -2551,6 +2557,9 @@ async def api_libras_clear_saved(req: Request):
 async def api_chat_config(req: Request):
     require_same_origin(req)
     data = await req.json()
+    erro = erro_enum(data)
+    if erro:
+        return JSONResponse({"status": "error", "message": erro}, status_code=400)
     if "chat_style" in data:
         state.chat_style = data["chat_style"]
     if "chat_font_size" in data:
@@ -2559,9 +2568,15 @@ async def api_chat_config(req: Request):
         state.chat_max_messages = int(data["chat_max_messages"])
     if "show_chat_avatars" in data:
         state.show_chat_avatars = bool(data["show_chat_avatars"])
+    if "chat_source_filter" in data:
+        state.chat_source_filter = data["chat_source_filter"]
     
     save_disk_config(state.export_config())
-    return JSONResponse({"status": "ok", "show_chat_avatars": state.show_chat_avatars})
+    return JSONResponse({
+        "status": "ok",
+        "show_chat_avatars": state.show_chat_avatars,
+        "chat_source_filter": state.chat_source_filter,
+    })
 
 @app.post("/api/theme/set")
 async def api_theme_set(req: Request):
@@ -2611,6 +2626,7 @@ async def api_config_save(req: Request):
     if "chat_font_size" in data: state.chat_font_size = data["chat_font_size"]
     if "chat_max_messages" in data: state.chat_max_messages = int(data["chat_max_messages"])
     if "show_chat_avatars" in data: state.show_chat_avatars = bool(data["show_chat_avatars"])
+    if "chat_source_filter" in data: state.chat_source_filter = data["chat_source_filter"]
     if "custom_camera_names" in data: state.custom_camera_names = data["custom_camera_names"]
     if "libras_camera_ids" in data: state.set_libras_cameras(data["libras_camera_ids"])
     # lan_access muda o host de bind, que só é lido no boot do uvicorn. Salvamos o
@@ -2649,6 +2665,7 @@ async def api_config_reset(req: Request):
     state.chat_font_size = cfg["chat_font_size"]
     state.chat_max_messages = cfg["chat_max_messages"]
     state.show_chat_avatars = cfg.get("show_chat_avatars", True)
+    state.chat_source_filter = cfg.get("chat_source_filter", "all")
     state.custom_camera_names = {}
     state.libras_camera_ids = []
     save_disk_config(cfg)
@@ -2718,6 +2735,7 @@ async def api_status():
             "chat_font_size": state.chat_font_size,
             "chat_max_messages": state.chat_max_messages,
             "show_chat_avatars": state.show_chat_avatars,
+            "chat_source_filter": state.chat_source_filter,
             "featured_message": state.featured_message,
             "poll": state.poll_data,
             "poll_display_mode": state.poll_display_mode,
@@ -2739,14 +2757,22 @@ async def api_status():
     )
 
 @app.get("/api/chat")
-async def api_chat():
+async def api_chat(source: Optional[str] = None):
+    eff_source = source if source in CHAT_SOURCE_FILTERS else state.chat_source_filter
+    if eff_source == "rnp":
+        msgs = [m for m in state.chat_messages if m.get("source") != "youtube"]
+    elif eff_source == "youtube":
+        msgs = [m for m in state.chat_messages if m.get("source") == "youtube"]
+    else:
+        msgs = state.chat_messages
     return JSONResponse({
-        "messages": state.chat_messages,
+        "messages": msgs,
         "featured_message": state.featured_message,
         "chat_style": state.chat_style,
         "chat_font_size": state.chat_font_size,
         "chat_max_messages": state.chat_max_messages,
-        "show_chat_avatars": state.show_chat_avatars
+        "show_chat_avatars": state.show_chat_avatars,
+        "chat_source_filter": eff_source
     }, headers={"Cache-Control": "no-store, no-cache"})
 
 # --------------------------------------------------------------------------
@@ -3350,6 +3376,9 @@ async def get_control_panel():
     dock_order_csv = ",".join(state.dock_block_order)
 
     chk_chat_avatars = "checked" if state.show_chat_avatars else ""
+    cls_chat_src_all = "active-preset" if state.chat_source_filter == "all" else ""
+    cls_chat_src_rnp = "active-preset" if state.chat_source_filter == "rnp" else ""
+    cls_chat_src_yt = "active-preset" if state.chat_source_filter == "youtube" else ""
 
     # Acesso LAN: estado do toggle + URLs prontas para outra máquina da rede.
     chk_lan_access = "checked" if state.lan_access else ""
@@ -4040,6 +4069,15 @@ async def get_control_panel():
         </div>
 
         <div class="grid-options-bar">
+            <div class="grid-opt-group" style="width: 100%; flex-direction: column; align-items: stretch; gap: 5px; margin-bottom: 4px">
+                <label style="margin: 0; font-size: 12px; font-weight: 700">📡 Exibir no /chat (OBS):</label>
+                <div class="chat-source-filter-group" style="display: flex; gap: 4px; width: 100%">
+                    <button type="button" id="btnChatSrc_all" class="btn-ctrl {cls_chat_src_all}" style="flex: 1; padding: 5px 6px; font-size: 11px" onclick="setChatSourceFilter('all')" title="Mostrar mensagens da RNP e do YouTube mescladas no /chat">🔀 Mesclado</button>
+                    <button type="button" id="btnChatSrc_rnp" class="btn-ctrl {cls_chat_src_rnp}" style="flex: 1; padding: 5px 6px; font-size: 11px" onclick="setChatSourceFilter('rnp')" title="Mostrar apenas mensagens da RNP no /chat (o YouTube continua na lista abaixo para destacar)">💬 Só RNP</button>
+                    <button type="button" id="btnChatSrc_youtube" class="btn-ctrl {cls_chat_src_yt}" style="flex: 1; padding: 5px 6px; font-size: 11px" onclick="setChatSourceFilter('youtube')" title="Mostrar apenas mensagens do YouTube no /chat (a RNP continua na lista abaixo para destacar)">🔴 Só YouTube</button>
+                </div>
+            </div>
+
             <div class="grid-opt-group">
                 <label style="margin: 0; font-size: 12px">Tema:</label>
                 <select id="selChatTheme" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateChatConfig()">
@@ -5813,7 +5851,8 @@ async def get_chat_overlay(
     style: Optional[str] = None,
     size: Optional[str] = None,
     max_msgs: Optional[int] = None,
-    avatar: Optional[int] = None
+    avatar: Optional[int] = None,
+    source: Optional[str] = None
 ):
     return HTMLResponse(f"""
 <!DOCTYPE html>
@@ -5987,6 +6026,7 @@ async def get_chat_overlay(
         const overrideSize = "{size or ''}";
         const overrideMax = {max_msgs if max_msgs is not None else 'null'};
         const overrideAvatar = {avatar if avatar is not None else 'null'};
+        const overrideSource = "{source or ''}";
         let currentSig = '';
 
         function escHtml(s) {{
@@ -6006,16 +6046,18 @@ async def get_chat_overlay(
 
         async function updateChat() {{
             try {{
-                const res = await fetch('/api/chat?t=' + Date.now());
+                const qSrc = overrideSource ? ('&source=' + encodeURIComponent(overrideSource)) : '';
+                const res = await fetch('/api/chat?t=' + Date.now() + qSrc);
                 const data = await res.json();
                 const msgs = data.messages || [];
                 const theme = overrideStyle || data.chat_style || 'glass';
                 const size = overrideSize || data.chat_font_size || 'medium';
                 const maxCount = (overrideMax !== null) ? overrideMax : (data.chat_max_messages || 6);
                 const showAvatars = (overrideAvatar !== null) ? !!overrideAvatar : (data.show_chat_avatars !== undefined ? data.show_chat_avatars : true);
+                const srcFilter = overrideSource || data.chat_source_filter || 'all';
 
                 const recent = msgs.slice(-maxCount);
-                const sig = recent.map(m => (m.id || '') + '_' + m.user + '_' + m.time + '_' + (m.avatar || '')).join(';') + '::' + theme + '::' + size + '::' + maxCount + '::' + showAvatars;
+                const sig = recent.map(m => (m.id || '') + '_' + m.user + '_' + m.time + '_' + (m.avatar || '')).join(';') + '::' + theme + '::' + size + '::' + maxCount + '::' + showAvatars + '::' + srcFilter;
 
                 if (sig !== currentSig) {{
                     currentSig = sig;
@@ -6434,5 +6476,5 @@ if __name__ == "__main__":
     if _host == "0.0.0.0":
         _ips = _lan_ip_candidates()
         print(f"[Bridge] Acesso LAN ativo. Outras máquinas: http://{(_ips[0] if _ips else '<IP>') }:{_port}/tv", flush=True)
-    uvicorn.run(app, host=_host, port=_port, log_level="warning")
+    uvicorn.run(app, host=_host, port=_port, log_level="warning", http="h11")
 

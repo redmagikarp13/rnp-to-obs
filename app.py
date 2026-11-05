@@ -68,7 +68,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--server":
     if _host == "0.0.0.0":
         _ips = _lan_ip_candidates()
         print(f"[Bridge] Acesso LAN ativo. Outras máquinas: http://{(_ips[0] if _ips else '<IP>')}:{_port}/tv", flush=True)
-    uvicorn.run(fastapi_app, host=_host, port=_port, log_level="warning")
+    uvicorn.run(fastapi_app, host=_host, port=_port, log_level="warning", http="h11")
     sys.exit(0)
 
 
