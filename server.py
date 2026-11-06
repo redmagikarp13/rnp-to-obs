@@ -3567,7 +3567,7 @@ async def get_control_panel():
                 Qualidade da mídia recebida da RNP. Aguardando estatísticas WebRTC.
             </span>
         </span>
-        <label class="dock-statusbar-theme" for="selControlTheme">Estilo
+        <label class="dock-statusbar-theme" for="selControlTheme">Tema:
             <select id="selControlTheme" onchange="changeControlTheme(this.value)">
                 <option value="broadcast" {sel_th_broadcast}>Broadcast</option>
                 <option value="ifes" {sel_th_ifes}>Ifes</option>
@@ -5211,43 +5211,45 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         ytPlayer.apply(null);
                     }}
                 }}
-                const sf = container.querySelector('.slide-frame');
-                if (sf && activePreset !== 'slide-only') {{
-                    const sv = sf.querySelector('video');
-                    const si = sf.querySelector('img');
-                    let sw = 0, sh = 0;
-                    if (sv && sv.videoWidth && sv.videoHeight) {{
-                        sw = sv.videoWidth; sh = sv.videoHeight;
-                    }} else if (si && si.naturalWidth && si.naturalHeight) {{
-                        sw = si.naturalWidth; sh = si.naturalHeight;
-                    }} else if (ytActive) {{
-                        sw = 16; sh = 9;
+                try {{
+                    const sf = container.querySelector('.slide-frame');
+                    if (sf && !container.classList.contains('preset-slide-only')) {{
+                        const sv = sf.querySelector('video');
+                        const si = sf.querySelector('img');
+                        let sw = 0, sh = 0;
+                        if (sv && sv.videoWidth && sv.videoHeight) {{
+                            sw = sv.videoWidth; sh = sv.videoHeight;
+                        }} else if (si && si.naturalWidth && si.naturalHeight) {{
+                            sw = si.naturalWidth; sh = si.naturalHeight;
+                        }} else if (stageYt && stageYt.present && stageYt.video_id) {{
+                            sw = 16; sh = 9;
+                        }}
+                        if (sw && sh) {{
+                            sf.style.aspectRatio = sw + ' / ' + sh;
+                        }} else {{
+                            sf.style.aspectRatio = '16 / 9';
+                        }}
                     }}
-                    if (sw && sh) {{
-                        sf.style.aspectRatio = sw + ' / ' + sh;
-                    }} else {{
-                        sf.style.aspectRatio = '16 / 9';
-                    }}
-                }}
-                container.querySelectorAll('.stage-cam-wrap').forEach(w => {{
-                    w.dataset.camfmt = camFmt;
-                    const m = w.querySelector('video, img');
-                    const nw = m && (m.videoWidth || m.naturalWidth || 0);
-                    const nh = m && (m.videoHeight || m.naturalHeight || 0);
-                    if (camFmt === 'retrato') {{
-                        w.style.aspectRatio = '9 / 16';
-                    }} else if (camFmt === 'paisagem') {{
-                        w.style.aspectRatio = '16 / 9';
-                    }} else if (camFmt === 'quadrada') {{
-                        w.style.aspectRatio = '1 / 1';
-                    }} else if (camFmt === 'original' && nw && nh) {{
-                        w.style.aspectRatio = nw + ' / ' + nh;
-                    }} else if (nw && nh) {{
-                        w.style.aspectRatio = nw + ' / ' + nh;
-                    }} else {{
-                        w.style.aspectRatio = '16 / 9';
-                    }}
-                }});
+                    container.querySelectorAll('.stage-cam-wrap').forEach(w => {{
+                        w.dataset.camfmt = camFmt;
+                        const m = w.querySelector('video, img');
+                        const nw = m && (m.videoWidth || m.naturalWidth || 0);
+                        const nh = m && (m.videoHeight || m.naturalHeight || 0);
+                        if (camFmt === 'retrato') {{
+                            w.style.aspectRatio = '9 / 16';
+                        }} else if (camFmt === 'paisagem') {{
+                            w.style.aspectRatio = '16 / 9';
+                        }} else if (camFmt === 'quadrada') {{
+                            w.style.aspectRatio = '1 / 1';
+                        }} else if (camFmt === 'original' && nw && nh) {{
+                            w.style.aspectRatio = nw + ' / ' + nh;
+                        }} else if (nw && nh) {{
+                            w.style.aspectRatio = nw + ' / ' + nh;
+                        }} else {{
+                            w.style.aspectRatio = '16 / 9';
+                        }}
+                    }});
+                }} catch (sizeErr) {{}}
                 stageMedia?.reconcile();
                 stageBusy = false;
             }}
