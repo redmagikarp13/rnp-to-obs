@@ -147,10 +147,14 @@ def start_server():
 
 def _precisa_reanimar(proc, encerrando, iniciado_pelo_app) -> bool:
     """Só reanima se: não estamos encerrando de propósito, o app foi quem iniciou o
-    servidor, e o processo que rastreamos morreu (poll() devolve código de saída)."""
-    if encerrando or not iniciado_pelo_app:
+    servidor, e o processo que rastreamos morreu com erro (exit code != 0).
+    Código 0 indica encerramento intencional (/api/server/stop), que não deve reanimar."""
+    if encerrando or not iniciado_pelo_app or proc is None:
         return False
-    return proc is not None and proc.poll() is not None
+    poll = proc.poll()
+    if poll is None:
+        return False
+    return poll != 0
 
 
 def _reanimar_servidor():
@@ -190,20 +194,26 @@ def _zelo_do_servidor():
     """Vigia o processo do servidor enquanto a janela do painel está aberta; se ele
     morre (crash, queda), religa automaticamente. Não religa quando o usuário fecha o
     app de propósito (ENCERRANDO) nem mexe num servidor que já rodava (não é nosso).
-    Usa backoff exponencial com teto: se o servidor cai em loop no boot, as tentativas
-    espaçam cada vez mais (até 60s) em vez de queimar CPU re-spawnando a cada 3s."""
-    global SERVER_PROC
+    Se o servidor encerra intencionalmente (código 0 via /api/server/stop), fecha a
+    janela e finaliza o app."""
+    global SERVER_PROC, ENCERRANDO
     falhas = 0
     espera = _WATCHDOG_BASE
     while not ENCERRANDO:
         _dorme(espera)
         if ENCERRANDO:
             break
+        poll = SERVER_PROC.poll() if SERVER_PROC else None
+        if poll == 0:
+            print("[Watchdog] Servidor finalizado intencionalmente (código 0). Fechando janela...", flush=True)
+            ENCERRANDO = True
+            dock_window.fechar_janela_ativa()
+            break
         if not _precisa_reanimar(SERVER_PROC, ENCERRANDO, SERVIDOR_INICIADO_PELO_APP):
             # Servidor vivo: descarta histórico de quedas rápidas.
             falhas, espera = 0, _WATCHDOG_BASE
             continue
-        print(f"[Watchdog] Servidor caiu (código {SERVER_PROC.poll()}); reanimando...", flush=True)
+        print(f"[Watchdog] Servidor caiu com código {poll}; reanimando...", flush=True)
         novo = _reanimar_servidor()
         if novo is None:
             falhas, espera = _decidir_espera(False, falhas)

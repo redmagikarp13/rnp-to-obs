@@ -55,6 +55,41 @@ def _aplicar_args_webview2():
     )
 
 
+_JANELA_ATIVA = None
+_BROWSER_PROC = None
+
+
+class _AppApi:
+    def __init__(self, get_window_fn):
+        self._get_window = get_window_fn
+
+    def close_window(self):
+        """Chamado pelo JavaScript (/control) quando o operador clica em Parar."""
+        win = self._get_window() if self._get_window else None
+        if win:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+
+def fechar_janela_ativa():
+    """Fecha a janela nativa ou o processo de navegador aberto pelo dock."""
+    global _JANELA_ATIVA, _BROWSER_PROC
+    if _JANELA_ATIVA:
+        try:
+            _JANELA_ATIVA.destroy()
+        except Exception:
+            pass
+        _JANELA_ATIVA = None
+    if _BROWSER_PROC:
+        try:
+            _BROWSER_PROC.terminate()
+        except Exception:
+            pass
+        _BROWSER_PROC = None
+
+
 def profile_dir() -> str:
     """Mesmo perfil de antes: o dock guarda prefs no localStorage (aba ativa,
     previews desligados), então a janela nativa precisa apontar para o mesmo
@@ -70,15 +105,25 @@ def abrir_janela_pywebview(url=SERVER_URL, ao_fechar=None):
     O ícone da janela é o do executável quando empacotado (pywebview não recebe
     icon por janela); em desenvolvimento herda o ícone do pythonw.
     """
+    global _JANELA_ATIVA
     import webview
     _aplicar_args_webview2()
+    api = _AppApi(lambda: _JANELA_ATIVA)
     janela = webview.create_window(
         title=JANELA_TITULO, url=url,
         width=JANELA_SIZE[0], height=JANELA_SIZE[1],
         min_size=JANELA_MIN,
+        js_api=api,
     )
-    if ao_fechar:
-        janela.events.closed += ao_fechar
+    _JANELA_ATIVA = janela
+
+    def _ao_fechar_interno():
+        global _JANELA_ATIVA
+        _JANELA_ATIVA = None
+        if ao_fechar:
+            ao_fechar()
+
+    janela.events.closed += _ao_fechar_interno
     # private_mode=False + storage_path: persiste o localStorage do dock.
     webview.start(private_mode=False, storage_path=profile_dir())
 
@@ -105,6 +150,7 @@ def find_browser_app() -> str:
 
 def abrir_janela_navegador(url=SERVER_URL, ao_fechar=None):
     """Caminho legado (Edge/Chrome --app=): fallback quando não há backend nativo."""
+    global _BROWSER_PROC
     browser = find_browser_app()
     os.makedirs(profile_dir(), exist_ok=True)
     if not browser:
@@ -124,7 +170,9 @@ def abrir_janela_navegador(url=SERVER_URL, ao_fechar=None):
         # local para — o mesmo motivo que ja foi resolvido na rota nativa.
         *KEEP_ALIVE_FLAGS,
     ])
+    _BROWSER_PROC = proc
     proc.wait()
+    _BROWSER_PROC = None
     if ao_fechar:
         ao_fechar()
 

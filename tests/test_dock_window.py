@@ -21,6 +21,10 @@ class _Window:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.events = types.SimpleNamespace(closed=_Event())
+        self.destroyed = False
+
+    def destroy(self):
+        self.destroyed = True
 
 
 class _Webview:
@@ -61,6 +65,20 @@ class DockWindowTests(unittest.TestCase):
                         'O storage deve ir para o perfil existente do painel.')
         self.assertEqual(len(stub.janelas[0].events.closed.subs), 1,
                          'O fechamento da janela precisa avisar o lançador.')
+        self.assertIsNotNone(kw.get('js_api'), 'Precisa fornecer js_api para o /control poder fechar a janela.')
+
+    def test_fechar_janela_ativa_destroi_janela(self):
+        janela = _Window()
+        dock_window._JANELA_ATIVA = janela
+        dock_window.fechar_janela_ativa()
+        self.assertTrue(janela.destroyed, 'fechar_janela_ativa deve chamar destroy() na janela ativa.')
+        self.assertIsNone(dock_window._JANELA_ATIVA)
+
+    def test_js_api_close_window_chama_destroy(self):
+        janela = _Window()
+        api = dock_window._AppApi(lambda: janela)
+        api.close_window()
+        self.assertTrue(janela.destroyed, 'close_window na js_api deve chamar destroy().')
 
     def test_fallback_para_navegador_quando_pywebview_falha(self):
         # Máquina sem WebView2/backend não pode ficar sem painel: cai no caminho

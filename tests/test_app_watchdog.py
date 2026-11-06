@@ -32,6 +32,11 @@ class WatchdogTests(unittest.TestCase):
     def test_nao_reanima_sem_processo_rastreado(self):
         self.assertFalse(app._precisa_reanimar(None, encerrando=False, iniciado_pelo_app=True))
 
+    def test_nao_reanima_quando_saida_intencional_codigo_zero(self):
+        # Encerramento pelo /control (POST /api/server/stop) sai com os._exit(0):
+        # o watchdog não deve reanimar um servidor que foi mandado parar.
+        self.assertFalse(app._precisa_reanimar(_Proc(0), encerrando=False, iniciado_pelo_app=True))
+
     def test_backoff_cresce_exponencialmente_e_satura_no_teto(self):
         # Sem backoff, um servidor que falha no boot causa respawn infinito a cada 3s.
         # A espera deve dobrar por queda rapida consecutiva e parar no teto.

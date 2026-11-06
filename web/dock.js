@@ -1081,9 +1081,18 @@
             try {
                 await fetch('/api/server/stop', { method: 'POST' });
             } catch (e) {}
+
+            // Se estiver na janela nativa pywebview, fecha a janela imediatamente
+            if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.close_window === 'function') {
+                try {
+                    await window.pywebview.api.close_window();
+                    return;
+                } catch (e) {}
+            }
+
             setTimeout(() => {
                 window.close();
-            }, 600);
+            }, 500);
         }
 
         function renderPoll(poll) {
