@@ -250,11 +250,11 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(self.state.stage_preset, 'cameras-only')
 
     def test_voice_indicator_config_e_estilos_no_palco(self):
-        # 1. Configurar via /api/grid/config
-        r = self.client.post('/api/grid/config', json={'show_voice_indicator': False, 'camera_name_style': 'glow'})
+        # 1. Configurar via /api/grid/config com estilo ifes
+        r = self.client.post('/api/grid/config', json={'show_voice_indicator': False, 'camera_name_style': 'ifes'})
         self.assertEqual(r.status_code, 200)
         self.assertFalse(self.state.show_voice_indicator)
-        self.assertEqual(self.state.camera_name_style, 'glow')
+        self.assertEqual(self.state.camera_name_style, 'ifes')
         self.assertFalse(self.client.get('/api/status').json()['show_voice_indicator'])
 
         # 2. Reativar
@@ -262,16 +262,25 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(self.state.show_voice_indicator)
 
-        # 3. HTML do /stage possui estilos dinâmicos para .voice-chip
+        # 3. HTML do /stage e /cameras/grid possuem todos os 9 estilos dinâmicos para .voice-chip e o container
         stage_html = self.client.get('/stage').text
-        self.assertIn('.voice-chip.style-glass', stage_html)
-        self.assertIn('.voice-chip.style-pill', stage_html)
-        self.assertIn('.voice-chip.style-minimal', stage_html)
-        self.assertIn('.voice-chip.style-glow', stage_html)
+        for st in ('glass', 'pill', 'minimal', 'glow', 'ifes', 'broadcast', 'cyber', 'gradient', 'frosted'):
+            self.assertIn(f'.voice-chip.style-{st}', stage_html)
+            self.assertIn(f'.name-tag.style-{st}', stage_html)
+        self.assertIn('id="voiceChips"', stage_html)
+        self.assertIn('slide-container', stage_html)
 
-        # 4. HTML do /control possui o checkbox de controle
+        grid_html = self.client.get('/cameras/grid').text
+        for st in ('glass', 'pill', 'minimal', 'glow', 'ifes', 'broadcast', 'cyber', 'gradient', 'frosted'):
+            self.assertIn(f'.voice-chip.style-{st}', grid_html)
+            self.assertIn(f'.name-tag.style-{st}', grid_html)
+        self.assertIn('id="voiceChips"', grid_html)
+
+        # 4. HTML do /control possui o checkbox de controle e as opções de estilo
         ctrl_html = self.client.get('/control').text
         self.assertIn('chkShowVoiceIndicator', ctrl_html)
+        self.assertIn('value="ifes"', ctrl_html)
+        self.assertIn('value="broadcast"', ctrl_html)
 
     def test_config_save_rejeita_enum_invalido(self):
         self.state.grid_layout_mode = 'auto'

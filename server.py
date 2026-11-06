@@ -127,7 +127,7 @@ CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'estica
 # Sources (presets de palco, tamanho de Libras, estilo de nome, layout do grid), então
 # um valor fora da lista não pode ser gravado nem devolvido ao navegador.
 LIBRAS_SIZES = ('equal', 'huge', 'large', 'medium')
-CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow')
+CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow', 'ifes', 'broadcast', 'cyber', 'gradient', 'frosted')
 GRID_LAYOUT_MODES = ('auto', 'row', 'column', 'grid')
 STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right',
                  'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras')
@@ -2962,12 +2962,18 @@ PCM_AUDIO_SCRIPT = """
 # --------------------------------------------------------------------------
 CAM_FORMAT_CSS = """
         /* Formatos de câmera (data-camfmt no wrapper): proporção e ajuste da imagem. */
-        [data-camfmt="original"] > video, [data-camfmt="original"] > img { object-fit: contain !important; }
         [data-camfmt="esticado"] > video, [data-camfmt="esticado"] > img { object-fit: fill !important; }
+        [data-camfmt="original"] > video, [data-camfmt="original"] > img,
         [data-camfmt="auto"] > video, [data-camfmt="auto"] > img,
         [data-camfmt="retrato"] > video, [data-camfmt="retrato"] > img,
         [data-camfmt="paisagem"] > video, [data-camfmt="paisagem"] > img,
-        [data-camfmt="quadrada"] > video, [data-camfmt="quadrada"] > img { object-fit: cover !important; }
+        [data-camfmt="quadrada"] > video, [data-camfmt="quadrada"] > img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            border-radius: inherit !important;
+            display: block;
+        }
         .stage-cam-wrap[data-camfmt="retrato"], .cam-card[data-camfmt="retrato"] {
             aspect-ratio: 9 / 16; flex: 0 1 auto; margin: auto; max-width: 100%; max-height: 100%;
         }
@@ -2977,10 +2983,8 @@ CAM_FORMAT_CSS = """
         .stage-cam-wrap[data-camfmt="quadrada"], .cam-card[data-camfmt="quadrada"] {
             aspect-ratio: 1 / 1; flex: 0 1 auto; margin: auto; max-width: 100%; max-height: 100%;
         }
-        /* "original": a moldura abraça o conteúdo e fica sem fundo preto,
-           mas MANTÉM borda e drop shadow da base contornando o vídeo. */
-        .stage-cam-wrap[data-camfmt="original"], .cam-card[data-camfmt="original"], .libras-card[data-camfmt="original"] {
-            background: transparent !important;
+        /* A moldura abraça o conteúdo com precisão pixel-perfect */
+        .stage-cam-wrap, .cam-card, .libras-card {
             flex: 0 1 auto;
             margin: auto;
             max-width: 100%;
@@ -3091,6 +3095,137 @@ NAME_TAG_CSS = """
     text-shadow: 0 1px 3px rgba(0,0,0,0.5);
     box-shadow: 0 4px 16px rgba(14, 165, 233, 0.5);
     z-index: 10;
+}
+
+.name-tag.style-ifes {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
+    border: 1.5px solid rgba(74, 222, 128, 0.7);
+    padding: 5px 13px;
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 12.5px;
+    font-weight: 800;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 12px rgba(34, 197, 94, 0.35);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    z-index: 10;
+}
+.name-tag.style-ifes::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #c8102e;
+    border-radius: 2px;
+    box-shadow: 0 0 5px rgba(200, 16, 46, 0.9);
+}
+
+.name-tag.style-broadcast {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: linear-gradient(90deg, #090e17 0%, #1e293b 100%);
+    border-left: 4px solid #ef4444;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 4px 12px;
+    border-radius: 4px;
+    color: #f8fafc;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 10;
+}
+.name-tag.style-broadcast::before {
+    content: '●';
+    color: #ef4444;
+    font-size: 10px;
+}
+
+.name-tag.style-cyber {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(10, 14, 26, 0.95);
+    border: 1.5px solid #06b6d4;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    padding: 5px 14px;
+    color: #67e8f9;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    box-shadow: 0 0 14px rgba(6, 182, 212, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 10;
+}
+.name-tag.style-cyber::before {
+    content: '▲';
+    font-size: 9px;
+    color: #f43f5e;
+}
+
+.name-tag.style-gradient {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%);
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 800;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 16px rgba(236, 72, 153, 0.45);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 10;
+}
+.name-tag.style-gradient::before {
+    content: '★';
+    font-size: 10px;
+    color: #fef08a;
+}
+
+.name-tag.style-frosted {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    padding: 5px 12px;
+    border-radius: 8px;
+    color: #0f172a;
+    font-size: 12.5px;
+    font-weight: 800;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 10;
+}
+.name-tag.style-frosted::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: #0284c7;
+    border-radius: 50%;
 }
 
 .libras-badge-overlay {
@@ -3322,6 +3457,11 @@ async def get_control_panel():
     sel_pill = "selected" if state.camera_name_style == "pill" else ""
     sel_min = "selected" if state.camera_name_style == "minimal" else ""
     sel_glow = "selected" if state.camera_name_style == "glow" else ""
+    sel_ifes = "selected" if state.camera_name_style == "ifes" else ""
+    sel_broadcast = "selected" if state.camera_name_style == "broadcast" else ""
+    sel_cyber = "selected" if state.camera_name_style == "cyber" else ""
+    sel_gradient = "selected" if state.camera_name_style == "gradient" else ""
+    sel_frosted = "selected" if state.camera_name_style == "frosted" else ""
 
     sel_layout_auto = "selected" if state.grid_layout_mode == "auto" else ""
     sel_layout_row = "selected" if state.grid_layout_mode == "row" else ""
@@ -4014,10 +4154,15 @@ async def get_control_panel():
             <div class="grid-opt-group">
                 <label style="margin: 0; font-size: 12px">Estilo:</label>
                 <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
+                    <option value="ifes" {sel_ifes}>★ Ifes Oficial</option>
+                    <option value="broadcast" {sel_broadcast}>📺 TV Broadcast (GC)</option>
                     <option value="glass" {sel_glass}>Glass (Vidro)</option>
                     <option value="pill" {sel_pill}>Pill (Pílula)</option>
-                    <option value="minimal" {sel_min}>Minimal Dark</option>
                     <option value="glow" {sel_glow}>Neon Glow</option>
+                    <option value="cyber" {sel_cyber}>Cyberpunk Sci-Fi</option>
+                    <option value="gradient" {sel_gradient}>Vibrant Sunset</option>
+                    <option value="frosted" {sel_frosted}>Frosted Clean (Claro)</option>
+                    <option value="minimal" {sel_min}>Minimal Dark</option>
                 </select>
             </div>
 
@@ -4350,21 +4495,38 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }}
 
-        .slide-frame {{
-            position: relative;
-            background: transparent !important;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-            border: 1px solid rgba(255,255,255,0.08);
+        .slide-container {{
             display: flex;
             align-items: center;
             justify-content: center;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+        }}
+
+        .slide-frame {{
+            position: relative;
+            background: #090d16;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+            border: 1.5px solid rgba(255,255,255,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            margin: auto;
+            transition: aspect-ratio 0.2s ease;
         }}
         .slide-frame img, .slide-frame video {{
             width: 100% !important;
             height: 100% !important;
-            object-fit: contain !important;
+            object-fit: cover !important;
+            display: block;
+            border-radius: inherit;
         }}
 
         /* O player nativo do YouTube vira um iframe (flex item) com tamanho próprio;
@@ -4381,28 +4543,41 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .cameras-column {{
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
             overflow-y: auto;
+            min-width: 0;
+            min-height: 0;
         }}
 
         .cameras-row {{
             display: flex;
             flex-direction: row;
-            gap: 8px;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
             overflow-x: auto;
+            min-width: 0;
+            min-height: 0;
         }}
 
         .stage-cam-wrap {{
             position: relative;
-            background: #050811;
+            background: #090d16;
             border-radius: 10px;
             overflow: hidden;
             box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1.5px solid rgba(255,255,255,0.12);
             display: flex;
             align-items: center;
             justify-content: center;
-            flex: 1;
+            flex: 0 1 auto;
+            margin: auto;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
             min-height: 0;
             min-width: 0;
         }}
@@ -4414,6 +4589,8 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
+            border-radius: inherit;
+            display: block;
         }}
 
         /* JANELA FLUTUANTE DE LIBRAS */
@@ -4439,6 +4616,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .preset-side-by-side {{
             flex-direction: row !important;
         }}
+        .preset-side-by-side .slide-container,
         .preset-side-by-side .slide-frame {{
             flex: 6.8 !important;
             height: 100% !important;
@@ -4452,6 +4630,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .preset-bottom-bar {{
             flex-direction: column !important;
         }}
+        .preset-bottom-bar .slide-container,
         .preset-bottom-bar .slide-frame {{
             flex: 7.2 !important;
             width: 100% !important;
@@ -4466,7 +4645,13 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             position: relative !important;
             padding: 0 !important;
         }}
+        .preset-pip-bottom-right .slide-container,
         .preset-pip-bottom-right .slide-frame {{
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 0 !important;
+            border: none !important;
+        }}
             width: 100% !important;
             height: 100% !important;
             border-radius: 0 !important;
@@ -4494,6 +4679,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             position: relative !important;
             padding: 0 !important;
         }}
+        .preset-pip-top-right .slide-container,
         .preset-pip-top-right .slide-frame {{
             width: 100% !important;
             height: 100% !important;
@@ -4521,6 +4707,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .preset-split-50-50 {{
             flex-direction: row !important;
         }}
+        .preset-split-50-50 .slide-container,
         .preset-split-50-50 .slide-frame {{
             flex: 1 !important;
             height: 100% !important;
@@ -4531,6 +4718,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         }}
 
         /* 6. PRESET: SLIDE ONLY */
+        .preset-slide-only .slide-container,
         .preset-slide-only .slide-frame {{
             width: 100% !important;
             height: 100% !important;
@@ -4553,6 +4741,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             height: 100% !important;
         }}
 
+        {NAME_TAG_CSS}
         {NAME_TAG_CSS}
         {CAM_FORMAT_CSS}
         {SPEAKING_CSS}
@@ -4635,6 +4824,56 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             border-radius: 6px;
             box-shadow: 0 0 16px rgba(34, 197, 94, 0.7);
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        }}
+
+        /* 5. Estilo Ifes */
+        .voice-chip.style-ifes {{
+            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
+            border: 1.5px solid #22c55e;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 14px rgba(34, 197, 94, 0.45);
+        }}
+
+        /* 6. Estilo Broadcast */
+        .voice-chip.style-broadcast {{
+            background: linear-gradient(90deg, #090e17 0%, #1e293b 100%);
+            border-left: 4px solid #ef4444;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-right: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+        }}
+
+        /* 7. Estilo Cyber */
+        .voice-chip.style-cyber {{
+            background: rgba(10, 14, 26, 0.95);
+            border: 1.5px solid #06b6d4;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+            color: #67e8f9;
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);
+        }}
+
+        /* 8. Estilo Gradient */
+        .voice-chip.style-gradient {{
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 24px;
+            color: #ffffff;
+            box-shadow: 0 6px 20px rgba(236, 72, 153, 0.5);
+        }}
+
+        /* 9. Estilo Frosted */
+        .voice-chip.style-frosted {{
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            color: #0f172a;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
         }}
     </style>
     <script src="/assets/stage-media.js"></script>
@@ -4727,6 +4966,8 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     container.innerHTML = '';
 
                     // 1. Container do Slide / Apresentação
+                    const slideCont = document.createElement('div');
+                    slideCont.className = 'slide-container';
                     const slideFrame = document.createElement('div');
                     slideFrame.className = 'slide-frame';
                     if (screenVideo) {{
@@ -4737,6 +4978,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     }} else if (!useWebRTC || data.has_presentation) {{
                         slideFrame.innerHTML = '<img id="stage_slide_img" src="/raw_frame/presentation">';
                     }}
+                    slideCont.appendChild(slideFrame);
 
                     // Identificar Câmeras de Libras e Outras Câmeras Reais
                     const librasCams = cams.filter(c => c.is_libras || librasIds.includes(String(c.id)));
@@ -4791,12 +5033,12 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         slideFrame.style.height = '100%';
                         slideFrame.style.borderRadius = '0';
                         slideFrame.style.border = 'none';
-                        container.appendChild(slideFrame);
+                        container.appendChild(slideCont);
                         return;
                     }}
 
                     container.className = 'preset-' + activePreset;
-                    container.appendChild(slideFrame);
+                    container.appendChild(slideCont);
 
                     // CASO 2: TEM LIBRAS E TEM PALESTRANTE COM MODO IGUAL (equal)
                     if (currentLibrasSize === 'equal' && librasCams.length > 0 && speakerCams.length > 0) {{
@@ -4969,12 +5211,42 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         ytPlayer.apply(null);
                     }}
                 }}
+                const sf = container.querySelector('.slide-frame');
+                if (sf && activePreset !== 'slide-only') {{
+                    const sv = sf.querySelector('video');
+                    const si = sf.querySelector('img');
+                    let sw = 0, sh = 0;
+                    if (sv && sv.videoWidth && sv.videoHeight) {{
+                        sw = sv.videoWidth; sh = sv.videoHeight;
+                    }} else if (si && si.naturalWidth && si.naturalHeight) {{
+                        sw = si.naturalWidth; sh = si.naturalHeight;
+                    }} else if (ytActive) {{
+                        sw = 16; sh = 9;
+                    }}
+                    if (sw && sh) {{
+                        sf.style.aspectRatio = sw + ' / ' + sh;
+                    }} else {{
+                        sf.style.aspectRatio = '16 / 9';
+                    }}
+                }}
                 container.querySelectorAll('.stage-cam-wrap').forEach(w => {{
                     w.dataset.camfmt = camFmt;
                     const m = w.querySelector('video, img');
                     const nw = m && (m.videoWidth || m.naturalWidth || 0);
                     const nh = m && (m.videoHeight || m.naturalHeight || 0);
-                    w.style.aspectRatio = (camFmt === 'original' && nw && nh) ? (nw + ' / ' + nh) : '';
+                    if (camFmt === 'retrato') {{
+                        w.style.aspectRatio = '9 / 16';
+                    }} else if (camFmt === 'paisagem') {{
+                        w.style.aspectRatio = '16 / 9';
+                    }} else if (camFmt === 'quadrada') {{
+                        w.style.aspectRatio = '1 / 1';
+                    }} else if (camFmt === 'original' && nw && nh) {{
+                        w.style.aspectRatio = nw + ' / ' + nh;
+                    }} else if (nw && nh) {{
+                        w.style.aspectRatio = nw + ' / ' + nh;
+                    }} else {{
+                        w.style.aspectRatio = '16 / 9';
+                    }}
                 }});
                 stageMedia?.reconcile();
                 stageBusy = false;
@@ -5033,6 +5305,7 @@ async def get_libras_overlay(cam_id: Optional[str] = None, camfmt: Optional[str]
 
         .stage-media-status {{ position: absolute; inset: 40% 8% auto; color: #cbd5e1; font: 14px sans-serif; text-align: center; pointer-events: none; }}
 
+        {NAME_TAG_CSS}
         {NAME_TAG_CSS}
         {CAM_FORMAT_CSS}
         {SPEAKING_CSS}
@@ -5689,18 +5962,23 @@ async def get_cameras_grid_overlay(
             display: grid;
             gap: 12px;
             align-items: center;
+            justify-items: center;
             justify-content: center;
             transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }}
 
         .cam-card {{
             position: relative;
-            width: 100%;
-            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            margin: auto;
             border-radius: 12px;
             overflow: hidden;
             background: #090d16;
             box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            border: 1.5px solid rgba(255,255,255,0.12);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -5708,10 +5986,11 @@ async def get_cameras_grid_overlay(
         }}
 
         .cam-card img, .cam-card video {{
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            border-radius: 12px;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            border-radius: inherit;
+            display: block;
         }}
 
         .cam-card.is-libras {{
@@ -5795,12 +6074,136 @@ async def get_cameras_grid_overlay(
             align-items: center;
             gap: 10px;
         }}
+        #voiceChips {{
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 300;
+            pointer-events: none;
+            overflow: visible;
+        }}
+        .voice-chip {{
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: #ffffff;
+            font: 700 13px/1.2 sans-serif;
+            padding: 6px 14px;
+            overflow: visible;
+            transition: all 0.2s ease;
+        }}
+        .voice-chip::before {{
+            content: '🎙';
+            font-size: 13px;
+        }}
+        .voice-chip::after {{
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 8px #22c55e;
+            animation: pulseLive 1.2s infinite;
+            margin-left: 2px;
+        }}
+
+        /* 1. Estilo Glass (Vidro) */
+        .voice-chip.style-glass {{
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(34, 197, 94, 0.7);
+            border-radius: 8px;
+            box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.4), 0 0 14px rgba(34, 197, 94, 0.45);
+        }}
+
+        /* 2. Estilo Pill (Pílula) */
+        .voice-chip.style-pill {{
+            background: #0f172a;
+            border: 2px solid #22c55e;
+            border-radius: 24px;
+            box-shadow: 0 0 14px rgba(34, 197, 94, 0.45);
+        }}
+
+        /* 3. Estilo Minimal Dark */
+        .voice-chip.style-minimal {{
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(34, 197, 94, 0.8);
+            border-radius: 4px;
+            padding: 4px 10px;
+            color: #f1f5f9;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+        }}
+
+        /* 4. Estilo Neon Glow */
+        .voice-chip.style-glow {{
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.95), rgba(99, 102, 241, 0.95));
+            border: 1.5px solid #22c55e;
+            border-radius: 6px;
+            box-shadow: 0 0 16px rgba(34, 197, 94, 0.7);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        }}
+
+        /* 5. Estilo Ifes */
+        .voice-chip.style-ifes {{
+            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
+            border: 1.5px solid #22c55e;
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 14px rgba(34, 197, 94, 0.45);
+        }}
+
+        /* 6. Estilo Broadcast */
+        .voice-chip.style-broadcast {{
+            background: linear-gradient(90deg, #090e17 0%, #1e293b 100%);
+            border-left: 4px solid #ef4444;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            border-right: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+        }}
+
+        /* 7. Estilo Cyber */
+        .voice-chip.style-cyber {{
+            background: rgba(10, 14, 26, 0.95);
+            border: 1.5px solid #06b6d4;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+            color: #67e8f9;
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);
+        }}
+
+        /* 8. Estilo Gradient */
+        .voice-chip.style-gradient {{
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 24px;
+            color: #ffffff;
+            box-shadow: 0 6px 20px rgba(236, 72, 153, 0.5);
+        }}
+
+        /* 9. Estilo Frosted */
+        .voice-chip.style-frosted {{
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            color: #0f172a;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        }}
+        {NAME_TAG_CSS}
         {CAM_FORMAT_CSS}
         {SPEAKING_CSS}
     </style>
 </head>
 <body>
     <div class="grid-container" id="gridContainer"></div>
+    <div id="voiceChips"></div>
 
     <script src="/assets/stage-media.js"></script>
     <script>
@@ -5840,6 +6243,31 @@ async def get_cameras_grid_overlay(
                 const camFmt = overrideCamFmt || data.camera_format || 'original';
                 const focusedIds = (data.focused_camera_ids || (data.focused_camera_id != null ? [data.focused_camera_id] : [])).map(String);
                 const librasIds = (data.libras_camera_ids || []).map(String);
+
+                // Chips de voz para quem fala SEM câmera (topo central, sempre visível).
+                const chipBox = document.getElementById('voiceChips');
+                const showVoice = (data.show_voice_indicator !== false);
+                if (chipBox) {{
+                    if (!showVoice) {{
+                        chipBox.style.display = 'none';
+                        chipBox.innerHTML = '';
+                        chipBox.dataset.sig = '';
+                    }} else {{
+                        chipBox.style.display = 'flex';
+                        const names = (data.voice_speakers || []).map(v => v.name || 'Participante');
+                        const chipSig = nameStyle + '::' + names.join('|');
+                        if (chipBox.dataset.sig !== chipSig) {{
+                            chipBox.dataset.sig = chipSig;
+                            chipBox.innerHTML = '';
+                            names.forEach(n => {{
+                                const d = document.createElement('div');
+                                d.className = 'voice-chip style-' + nameStyle;
+                                d.textContent = n;
+                                chipBox.appendChild(d);
+                            }});
+                        }}
+                    }}
+                }}
 
                 if (cams.length === 0) {{
                     if (currentSig !== 'empty') {{
@@ -5914,7 +6342,19 @@ async def get_cameras_grid_overlay(
                     const m = c.querySelector('video, img');
                     const nw = m && (m.videoWidth || m.naturalWidth || 0);
                     const nh = m && (m.videoHeight || m.naturalHeight || 0);
-                    c.style.aspectRatio = (camFmt === 'original' && nw && nh) ? (nw + ' / ' + nh) : '';
+                    if (camFmt === 'retrato') {{
+                        c.style.aspectRatio = '9 / 16';
+                    }} else if (camFmt === 'paisagem') {{
+                        c.style.aspectRatio = '16 / 9';
+                    }} else if (camFmt === 'quadrada') {{
+                        c.style.aspectRatio = '1 / 1';
+                    }} else if (camFmt === 'original' && nw && nh) {{
+                        c.style.aspectRatio = nw + ' / ' + nh;
+                    }} else if (nw && nh) {{
+                        c.style.aspectRatio = nw + ' / ' + nh;
+                    }} else {{
+                        c.style.aspectRatio = '16 / 9';
+                    }}
                 }});
 
                 // Sinaliza quem fala na name-tag existente (sem duplicar identificação).
