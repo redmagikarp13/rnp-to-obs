@@ -2441,6 +2441,12 @@ async def api_poll_config(req: Request):
     if "poll_style" in data:
         state.poll_style = data["poll_style"]
     
+    if any(k in data for k in ("poll_style", "poll_display_mode", "poll_display_duration")):
+        state.poll_nonce += 1
+        if state.poll_display_mode != "hidden":
+            state.poll_dismissed = False
+            state.poll_force_visible = True
+    
     save_disk_config(state.export_config())
     return JSONResponse({"status": "ok"})
 
@@ -3490,16 +3496,24 @@ async def get_control_panel():
     sel_pd_60 = "selected" if state.poll_display_duration == 60 else ""
     sel_pd_inf = "selected" if state.poll_display_duration == 0 else ""
 
+    sel_pstyle_ifes = "selected" if state.poll_style == "ifes" else ""
     sel_pstyle_neon = "selected" if state.poll_style == "neon" else ""
     sel_pstyle_glass = "selected" if state.poll_style == "glass" else ""
+    sel_pstyle_bcast = "selected" if state.poll_style == "broadcast" else ""
     sel_pstyle_bubbles = "selected" if state.poll_style == "bubbles" else ""
     sel_pstyle_cyber = "selected" if state.poll_style == "cyber" else ""
+    sel_pstyle_grad = "selected" if state.poll_style == "gradient" else ""
+    sel_pstyle_frost = "selected" if state.poll_style == "frosted" else ""
     sel_pstyle_min = "selected" if state.poll_style == "minimal" else ""
 
+    sel_chat_ifes = "selected" if state.chat_style == "ifes" else ""
     sel_chat_glass = "selected" if state.chat_style == "glass" else ""
     sel_chat_streamer = "selected" if state.chat_style == "streamer" else ""
     sel_chat_bcast = "selected" if state.chat_style == "broadcast" else ""
     sel_chat_neon = "selected" if state.chat_style == "neon" else ""
+    sel_chat_cyber = "selected" if state.chat_style == "cyber" else ""
+    sel_chat_gradient = "selected" if state.chat_style == "gradient" else ""
+    sel_chat_frosted = "selected" if state.chat_style == "frosted" else ""
     sel_chat_min = "selected" if state.chat_style == "minimal" else ""
     sel_chat_bubbles = "selected" if state.chat_style == "bubbles" else ""
 
@@ -4242,12 +4256,16 @@ async def get_control_panel():
             <div class="grid-opt-group">
                 <label style="margin: 0; font-size: 12px">Tema:</label>
                 <select id="selChatTheme" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateChatConfig()">
+                    <option value="ifes" {sel_chat_ifes}>★ Ifes Oficial</option>
+                    <option value="broadcast" {sel_chat_bcast}>🎬 Broadcast News</option>
                     <option value="glass" {sel_chat_glass}>💎 StreamYard Glass</option>
                     <option value="streamer" {sel_chat_streamer}>🔴 Streamer Avatar</option>
-                    <option value="broadcast" {sel_chat_bcast}>🎬 Broadcast News</option>
                     <option value="neon" {sel_chat_neon}>⚡ Neon Glow</option>
-                    <option value="minimal" {sel_chat_min}>📄 Minimal Legenda</option>
+                    <option value="cyber" {sel_chat_cyber}>🦾 Cyberpunk HUD</option>
+                    <option value="gradient" {sel_chat_gradient}>🌈 Gradient Sunset</option>
+                    <option value="frosted" {sel_chat_frosted}>❄️ Frosted Glass</option>
                     <option value="bubbles" {sel_chat_bubbles}>💬 Discord Bubbles</option>
+                    <option value="minimal" {sel_chat_min}>📄 Minimal Legenda</option>
                 </select>
             </div>
 
@@ -4410,10 +4428,14 @@ async def get_control_panel():
             <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
                 <label style="margin: 0; font-size: 12px; font-weight: 600">🎨 Estilo da Enquete:</label>
                 <select id="selPollStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
+                    <option value="ifes" {sel_pstyle_ifes}>★ Ifes Oficial</option>
+                    <option value="broadcast" {sel_pstyle_bcast}>📺 TV Broadcast</option>
                     <option value="neon" {sel_pstyle_neon}>⚡ Neon Glow</option>
                     <option value="glass" {sel_pstyle_glass}>💎 Glassmorphism</option>
                     <option value="bubbles" {sel_pstyle_bubbles}>💬 Discord Bubbles</option>
                     <option value="cyber" {sel_pstyle_cyber}>🎬 Cyberpunk Broadcast</option>
+                    <option value="gradient" {sel_pstyle_grad}>🌈 Gradient Vibrant</option>
+                    <option value="frosted" {sel_pstyle_frost}>❄️ Frosted Light</option>
                     <option value="minimal" {sel_pstyle_min}>📄 Minimal Slate</option>
                 </select>
             </div>
@@ -5561,6 +5583,99 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
             background: #94a3b8;
         }}
 
+        /* ★ TEMA 6: IFES OFICIAL */
+        .poll-box.theme-ifes {{
+            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
+            border: 2px solid #22c55e;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8), 0 0 24px rgba(34, 197, 94, 0.45);
+            border-radius: 12px;
+        }}
+        .poll-box.theme-ifes .poll-tag {{
+            background: rgba(34, 197, 94, 0.25);
+            border: 1px solid #22c55e;
+            color: #86efac;
+        }}
+        .poll-box.theme-ifes .poll-fill {{
+            background: linear-gradient(90deg, rgba(34, 197, 94, 0.35), rgba(74, 222, 128, 0.5));
+            border-right: 3px solid #22c55e;
+        }}
+        .poll-box.theme-ifes .poll-countdown-bar {{
+            background: #22c55e;
+        }}
+
+        /* 📺 TEMA 7: BROADCAST TV */
+        .poll-box.theme-broadcast {{
+            background: #09090b;
+            border: 1px solid #27272a;
+            border-left: 5px solid #ef4444;
+            border-radius: 4px;
+        }}
+        .poll-box.theme-broadcast .poll-tag {{
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #ef4444;
+        }}
+        .poll-box.theme-broadcast .poll-fill {{
+            background: rgba(239, 68, 68, 0.4);
+            border-right: 3px solid #ef4444;
+        }}
+        .poll-box.theme-broadcast .poll-countdown-bar {{
+            background: #ef4444;
+        }}
+
+        /* 🌈 TEMA 8: GRADIENT */
+        .poll-box.theme-gradient {{
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%);
+            border: 1.5px solid rgba(255, 255, 255, 0.35);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8), 0 0 24px rgba(236, 72, 153, 0.4);
+        }}
+        .poll-box.theme-gradient .poll-tag {{
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            color: #fef08a;
+        }}
+        .poll-box.theme-gradient .poll-fill {{
+            background: rgba(255, 255, 255, 0.3);
+            border-right: 3px solid #fef08a;
+        }}
+        .poll-box.theme-gradient .poll-countdown-bar {{
+            background: #fef08a;
+        }}
+
+        /* ❄️ TEMA 9: FROSTED */
+        .poll-box.theme-frosted {{
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            color: #0f172a;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }}
+        .poll-box.theme-frosted .poll-tag {{
+            background: rgba(2, 132, 199, 0.15);
+            border: 1px solid #0284c7;
+            color: #0284c7;
+        }}
+        .poll-box.theme-frosted .poll-q {{
+            color: #0f172a;
+        }}
+        .poll-box.theme-frosted .poll-bar {{
+            background: rgba(241, 245, 249, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }}
+        .poll-box.theme-frosted .poll-content {{
+            color: #0f172a;
+        }}
+        .poll-box.theme-frosted .poll-fill {{
+            background: rgba(2, 132, 199, 0.25);
+            border-right: 3px solid #0284c7;
+        }}
+        .poll-box.theme-frosted .poll-countdown-bar {{
+            background: #0284c7;
+        }}
+
         .poll-header-row {{
             display: flex;
             align-items: center;
@@ -5710,9 +5825,12 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
                     isDismissed = false;
                 }}
 
-                // Se o operador clicou no Dock em "Mostrar no OBS Agora" (novo nonce gerado)
-                if (nonce !== lastProcessedNonce && forceVisible) {{
+                // Se o operador alterou a enquete ou clicou no Dock (novo nonce gerado)
+                if (nonce !== lastProcessedNonce) {{
                     lastProcessedNonce = nonce;
+                    if (forceVisible || !dismissed) isDismissed = false;
+                }}
+                if (!dismissed && mode === 'always') {{
                     isDismissed = false;
                 }}
 
@@ -6527,6 +6645,44 @@ async def get_chat_overlay(
         .theme-bubbles .msg-user {{ color: #818cf8; font-weight: 800; }}
         .theme-bubbles .msg-text {{ color: #dbdee1; }}
 
+        .theme-ifes {{
+            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
+            border: 1.5px solid rgba(74, 222, 128, 0.7);
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 12px rgba(34, 197, 94, 0.35);
+        }}
+        .theme-ifes .msg-user {{ color: #86efac; font-weight: 800; }}
+        .theme-ifes .msg-text {{ color: #ffffff; }}
+
+        .theme-cyber {{
+            background: rgba(10, 14, 26, 0.95);
+            border: 1.5px solid #06b6d4;
+            clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+            box-shadow: 0 0 14px rgba(6, 182, 212, 0.5);
+        }}
+        .theme-cyber .msg-user {{ color: #67e8f9; font-weight: 800; }}
+        .theme-cyber .msg-text {{ color: #ffffff; }}
+
+        .theme-gradient {{
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 16px;
+            box-shadow: 0 4px 16px rgba(236, 72, 153, 0.45);
+        }}
+        .theme-gradient .msg-user {{ color: #fef08a; font-weight: 800; }}
+        .theme-gradient .msg-text {{ color: #ffffff; }}
+
+        .theme-frosted {{
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            border-radius: 8px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+        }}
+        .theme-frosted .msg-user {{ color: #0284c7; font-weight: 800; }}
+        .theme-frosted .msg-text {{ color: #0f172a; font-weight: 600; }}
+
         .source-badge {{
             font-size: 9.5px;
             font-weight: 800;
@@ -6592,7 +6748,7 @@ async def get_chat_overlay(
                 const srcFilter = overrideSource || data.chat_source_filter || 'all';
 
                 const recent = msgs.slice(-maxCount);
-                const sig = recent.map(m => (m.id || '') + '_' + m.user + '_' + m.time + '_' + (m.avatar || '')).join(';') + '::' + theme + '::' + size + '::' + maxCount + '::' + showAvatars + '::' + srcFilter;
+                const sig = recent.map(m => (m.id || '') + '_' + m.user + '_' + m.time + '_' + (m.text || '') + '_' + (m.avatar || '')).join(';') + '::' + theme + '::' + size + '::' + maxCount + '::' + showAvatars + '::' + srcFilter;
 
                 if (sig !== currentSig) {{
                     currentSig = sig;
@@ -6689,6 +6845,52 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
             animation: featSlideOut 0.3s ease-in forwards;
         }}
 
+        .featured-card.theme-ifes {{
+            background: linear-gradient(135deg, rgba(27, 131, 62, 0.96), rgba(15, 75, 34, 0.96)) !important;
+            border: 2.5px solid #22c55e !important;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px rgba(34, 197, 94, 0.45) !important;
+        }}
+        .featured-card.theme-ifes .feat-user {{ color: #86efac !important; }}
+        .featured-card.theme-ifes .feat-text {{ color: #ffffff !important; }}
+
+        .featured-card.theme-broadcast {{
+            background: #09090b !important;
+            border: 1px solid #27272a !important;
+            border-left: 6px solid #ef4444 !important;
+            border-radius: 4px !important;
+        }}
+        .featured-card.theme-broadcast .feat-user {{ color: #ef4444 !important; text-transform: uppercase !important; }}
+        .featured-card.theme-broadcast .feat-text {{ color: #fafafa !important; }}
+
+        .featured-card.theme-cyber {{
+            background: rgba(10, 14, 26, 0.96) !important;
+            border: 2px solid #06b6d4 !important;
+            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)) !important;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px rgba(6, 182, 212, 0.5) !important;
+        }}
+        .featured-card.theme-cyber .feat-user {{ color: #67e8f9 !important; }}
+        .featured-card.theme-cyber .feat-text {{ color: #ffffff !important; }}
+
+        .featured-card.theme-gradient {{
+            background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%) !important;
+            border: 2px solid rgba(255, 255, 255, 0.4) !important;
+            border-radius: 24px !important;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px rgba(236, 72, 153, 0.45) !important;
+        }}
+        .featured-card.theme-gradient .feat-user {{ color: #fef08a !important; }}
+        .featured-card.theme-gradient .feat-text {{ color: #ffffff !important; }}
+
+        .featured-card.theme-frosted {{
+            background: rgba(255, 255, 255, 0.94) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(0, 0, 0, 0.15) !important;
+            border-radius: 14px !important;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.3) !important;
+        }}
+        .featured-card.theme-frosted .feat-user {{ color: #0284c7 !important; }}
+        .featured-card.theme-frosted .feat-text {{ color: #0f172a !important; }}
+
         .feat-icon {{
             font-size: 32px;
             display: flex;
@@ -6773,6 +6975,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
     <script>
         const container = document.getElementById('featContainer');
         const overrideAvatar = {avatar if avatar is not None else 'null'};
+        const overrideStyle = "{style or ''}";
         let currentSig = '';
         let isVisible = false;
 
@@ -6797,6 +7000,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                 const data = await res.json();
                 const feat = data.featured_message;
                 const showAvatars = (overrideAvatar !== null) ? !!overrideAvatar : (data.show_chat_avatars !== undefined ? data.show_chat_avatars : true);
+                const theme = overrideStyle || data.chat_style || 'glass';
 
                 if (!feat || !feat.text) {{
                     if (isVisible) {{
@@ -6817,7 +7021,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                     return;
                 }}
 
-                const sig = (feat.id || '') + '_' + feat.user + '_' + feat.text + '_' + (feat.avatar || '') + '_' + showAvatars;
+                const sig = (feat.id || '') + '_' + feat.user + '_' + feat.text + '_' + (feat.avatar || '') + '_' + showAvatars + '::' + theme;
                 if (sig !== currentSig) {{
                     currentSig = sig;
                     const isYt = (feat.source === 'youtube');
@@ -6836,8 +7040,11 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                         avatarHtml = `<div class="feat-icon">${{isYt ? '▶️' : '💬'}}</div>`;
                     }}
 
+                    const defaultStyle = `border-color: ${{isYt ? '#ef4444' : '#eab308'}}; box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px ${{isYt ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)'}};`;
+                    const hasCustomTheme = ['ifes', 'broadcast', 'cyber', 'gradient', 'frosted'].includes(theme);
+
                     container.innerHTML = `
-                        <div class="featured-card" id="featBox" style="border-color: ${{isYt ? '#ef4444' : '#eab308'}}; box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px ${{isYt ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)'}};">
+                        <div class="featured-card theme-${{theme}}" id="featBox" style="${{hasCustomTheme ? '' : defaultStyle}}">
                             ${{avatarHtml}}
                             <div class="feat-content">
                                 <div class="feat-header">

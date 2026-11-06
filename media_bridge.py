@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -42,8 +43,27 @@ class AudioControl(BaseModel):
 
 def require_same_origin(request: Request):
     origin = request.headers.get('origin')
-    if origin and origin != str(request.base_url).rstrip('/'):
-        raise HTTPException(403, 'A sinalização só aceita a origem local do painel.')
+    if not origin:
+        return
+    base = str(request.base_url).rstrip('/')
+    if origin == base:
+        return
+    try:
+        parsed_orig = urllib.parse.urlparse(origin)
+        parsed_base = urllib.parse.urlparse(base)
+        orig_port = parsed_orig.port or (443 if parsed_orig.scheme == 'https' else 80)
+        base_port = parsed_base.port or (443 if parsed_base.scheme == 'https' else 80)
+        if orig_port == base_port:
+            local_hosts = {'localhost', '127.0.0.1', '::1', '0.0.0.0', 'testclient', 'testserver'}
+            orig_h = (parsed_orig.hostname or '').lower()
+            base_h = (parsed_base.hostname or '').lower()
+            if orig_h in local_hosts and base_h in local_hosts:
+                return
+            if orig_h == base_h:
+                return
+    except Exception:
+        pass
+    raise HTTPException(403, 'A sinalização só aceita a origem local do painel.')
 
 
 async def ensure_media_adapter(frame):

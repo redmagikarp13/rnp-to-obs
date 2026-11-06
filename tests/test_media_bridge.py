@@ -967,6 +967,48 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(r_bad.status_code, 400)
         self.assertEqual(self.state.chat_source_filter, 'youtube')
 
+    def test_require_same_origin_permits_localhost_e_loopback(self):
+        # Origem localhost contra base 127.0.0.1 (típico de CEF dock do OBS) deve ser autorizada
+        r_loopback = self.client.post('/api/chat/config',
+                                      headers={'origin': 'http://localhost'},
+                                      json={'chat_style': 'ifes'})
+        self.assertEqual(r_loopback.status_code, 200)
+
+        # Origem externa maliciosa deve ser bloqueada com 403
+        r_malicious = self.client.post('/api/chat/config',
+                                        headers={'origin': 'http://attacker.com'},
+                                        json={'chat_style': 'neon'})
+        self.assertEqual(r_malicious.status_code, 403)
+
+    def test_poll_config_e_temas_atualizam_overlay_e_destaques(self):
+        # Alterar configuração da enquete deve incrementar poll_nonce e acordar o overlay
+        nonce_before = self.state.poll_nonce
+        r = self.client.post('/api/poll/config', json={'poll_style': 'ifes', 'poll_display_duration': 30})
+        self.assertEqual(r.status_code, 200)
+        self.assertGreater(self.state.poll_nonce, nonce_before)
+        self.assertFalse(self.state.poll_dismissed)
+        self.assertTrue(self.state.poll_force_visible)
+
+        # Overlays devem conter os novos estilos
+        chat_html = self.client.get('/chat').text
+        self.assertIn('.theme-ifes', chat_html)
+        self.assertIn('.theme-cyber', chat_html)
+        self.assertIn('.theme-gradient', chat_html)
+        self.assertIn('.theme-frosted', chat_html)
+
+        poll_html = self.client.get('/poll').text
+        self.assertIn('.theme-ifes', poll_html)
+        self.assertIn('.theme-broadcast', poll_html)
+        self.assertIn('.theme-gradient', poll_html)
+        self.assertIn('.theme-frosted', poll_html)
+
+        featured_html = self.client.get('/chat/featured').text
+        self.assertIn('.featured-card.theme-ifes', featured_html)
+        self.assertIn('.featured-card.theme-broadcast', featured_html)
+        self.assertIn('.featured-card.theme-cyber', featured_html)
+        self.assertIn('.featured-card.theme-gradient', featured_html)
+        self.assertIn('.featured-card.theme-frosted', featured_html)
+
 
 if __name__ == '__main__':
     unittest.main()
