@@ -13,6 +13,7 @@
         let focusedCamIds = [];
         let pinnedCamIds = [];
         let librasCamIds = [];
+        let hiddenCamIds = [];
         let activeLibrasSize = "equal";
         let isLocalMuted = false;
         let activeStagePreset = "side-by-side";
@@ -640,6 +641,7 @@
                 focusedCamIds = (data.focused_camera_ids || (data.focused_camera_id != null ? [data.focused_camera_id] : [])).map(String);
                 pinnedCamIds = (data.pinned_camera_ids || []).map(String);
                 librasCamIds = (data.libras_camera_ids || []).map(String);
+                hiddenCamIds = (data.hidden_camera_ids || []).map(String);
 
                 const cams = data.cameras || [];
                 const librasCams = cams.filter(c => librasCamIds.includes(String(c.id)) || c.is_libras);
@@ -860,9 +862,10 @@
                         const isFocus = focusedCamIds.includes(cid);
                         const isPin = pinnedCamIds.includes(cid);
                         const isLibras = (c.is_libras || librasCamIds.includes(cid));
+                        const isHidden = (c.is_hidden || hiddenCamIds.includes(cid));
 
                         const box = document.createElement('div');
-                        box.className = 'mod-box';
+                        box.className = 'mod-box' + (isHidden ? ' is-cam-hidden' : '');
                         if (isFocus) box.style.borderColor = '#eab308';
                         if (isLibras) box.style.borderColor = '#06b6d4';
                         if (isPin && !isFocus && !isLibras) box.style.borderColor = '#10b981';
@@ -872,7 +875,8 @@
                         box.innerHTML = `
                             <div class="mod-title">
                                 <span style="display:flex; align-items:center; gap:5px">
-                                    ${isLibras ? '🤟' : (isFocus ? '🌟' : (isPin ? '📌' : '🎥'))} <strong>${escHtml(c.name)}</strong>
+                                    ${isHidden ? '👁️' : (isLibras ? '🤟' : (isFocus ? '🌟' : (isPin ? '📌' : '🎥')))} <strong>${escHtml(c.name)}</strong>
+                                    ${isHidden ? '<span style="font-size:10px; color:#ef4444; font-weight:800">[OCULTA]</span>' : ''}
                                 </span>
                                 <span style="font-size: 10.5px">● ${Number(c.width) || 0}x${Number(c.height) || 0}</span>
                                 <span class="cam-fps" style="font-size: 10.5px">${Math.round(c.fps || 0)} FPS</span>
@@ -887,6 +891,9 @@
                                 </button>
                                 <button class="btn-ctrl ${isPin ? 'active-pin' : ''}" onclick="togglePin('${safeCidAttr}')">
                                     📌 ${isPin ? 'Desfixar' : 'Fixar'}
+                                </button>
+                                <button class="btn-ctrl ${isHidden ? 'active-hidden' : ''}" onclick="toggleHide('${safeCidAttr}')">
+                                    👁️ ${isHidden ? 'Exibir' : 'Ocultar'}
                                 </button>
                                 <button class="btn-ctrl" onclick="renameCamera('${safeCidAttr}', '${safeNameAttr}')">
                                     ✏️ Renomear
@@ -943,6 +950,22 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ focused_camera_ids: newFocus })
+            });
+            fetchStatus();
+        }
+
+        async function toggleHide(camId) {
+            const targetId = String(camId);
+            let newHidden = [...hiddenCamIds];
+            if (newHidden.includes(targetId)) {
+                newHidden = newHidden.filter(id => id !== targetId);
+            } else {
+                newHidden.push(targetId);
+            }
+            await fetch('/api/grid/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hidden_camera_ids: newHidden })
             });
             fetchStatus();
         }

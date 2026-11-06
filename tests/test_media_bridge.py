@@ -1004,10 +1004,68 @@ class MediaRoutesTests(unittest.TestCase):
 
         featured_html = self.client.get('/chat/featured').text
         self.assertIn('.featured-card.theme-ifes', featured_html)
+        self.assertIn('.featured-card.theme-ifes-dark', featured_html)
         self.assertIn('.featured-card.theme-broadcast', featured_html)
         self.assertIn('.featured-card.theme-cyber', featured_html)
         self.assertIn('.featured-card.theme-gradient', featured_html)
         self.assertIn('.featured-card.theme-frosted', featured_html)
+
+    def test_hidden_cameras_and_toggle_hide(self):
+        # Injetar câmeras no BridgeState
+        self.state.reconcile_cameras([
+            {'id': 'cam_1', 'name': 'Prof. Carlos', 'frame': None},
+            {'id': 'cam_2', 'name': 'Intérprete Libras', 'frame': None}
+        ])
+        
+        # Inicialmente nenhuma câmera oculta
+        st = self.client.get('/api/status').json()
+        self.assertEqual(st.get('hidden_camera_ids'), [])
+        self.assertFalse(st['cameras'][0].get('is_hidden'))
+
+        # Toggle hide cam_1 via POST /api/camera/toggle_hide
+        r = self.client.post('/api/camera/toggle_hide', json={'cam_id': 'cam_1'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json().get('hidden_camera_ids'), ['cam_1'])
+
+        # Verifica status atualizado
+        st = self.client.get('/api/status').json()
+        self.assertEqual(st.get('hidden_camera_ids'), ['cam_1'])
+        c1 = next(c for c in st['cameras'] if c['id'] == 'cam_1')
+        self.assertTrue(c1['is_hidden'])
+
+        # Desocultar cam_1
+        r2 = self.client.post('/api/camera/toggle_hide', json={'cam_id': 'cam_1'})
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.json().get('hidden_camera_ids'), [])
+
+    def test_ifes_dark_e_slide_contain(self):
+        import server
+        self.assertIn('ifes-dark', server.CAMERA_NAME_STYLES)
+
+        # /stage deve usar object-fit contain para slides
+        stage_html = self.client.get('/stage').text
+        self.assertIn('object-fit: contain !important', stage_html)
+        self.assertIn('.theme-ifes-dark', stage_html)
+
+        # /chat deve conter theme-ifes-dark e quebra de linha
+        chat_html = self.client.get('/chat').text
+        self.assertIn('.theme-ifes-dark', chat_html)
+        self.assertIn('overflow-wrap: anywhere', chat_html)
+        self.assertIn('formatChatText', chat_html)
+
+        # /poll deve conter theme-ifes-dark
+        poll_html = self.client.get('/poll').text
+        self.assertIn('.poll-box.theme-ifes-dark', poll_html)
+
+    def test_stage_cameras_aspect_ratio_and_equalization(self):
+        # /stage deve conter equalização dinâmica e preservação estrita de proporção
+        stage_html = self.client.get('/stage').text
+        self.assertIn('equalizeStageCameras', stage_html)
+        self.assertIn('.cameras-column .stage-cam-wrap', stage_html)
+        self.assertIn('flex: 0 0 auto !important', stage_html)
+        self.assertIn('window.addEventListener(\'resize\'', stage_html)
+        self.assertIn('let activePreset = \'side-by-side\';', stage_html)
+        self.assertIn('targetRatioCss = \'1 / 1\'', stage_html)
 
 
 if __name__ == '__main__':

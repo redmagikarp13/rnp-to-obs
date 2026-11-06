@@ -602,8 +602,8 @@
     // antes de a notificação chegar ao screenshot do palco. Varre tambem o
     // shadow DOM raiz do player externo, pois la dentro o screenshot elementar
     // capturaria o overlay junto com o video.
-    const inactivityModalRe = /inactivity|atividade|inatividade|ainda est[aá]|still.?here|sess[ãa]o/i;
-    const inactivityConfirmRe = /^(verificar|confirm\w*|continuar|estou aqui|sim[,\s]*ainda estou aqui|i'?m still here|stay in meeting)$/i;
+    const inactivityModalRe = /inactivityWarning|verificação de atividade|atividade do usuário|inatividade|ainda est[aá] na sessão|still.?here/i;
+    const inactivityConfirmRe = /^(verificar|confirmar|estou aqui|sim[,\s]+ainda estou aqui|i'?m still here|stay in meeting)$/i;
     const inactivityDangerRe = /logout|sair|leave|encerrar|disconnect/i;
     const micPopupRe = /ativar seu microfone|unmute your microphone|activar su micr[oó]fono|abrir seu microfone/i;
     function hideMicPopups() {
@@ -652,16 +652,29 @@
         hideMicPopups();
         const roots = [document, document.querySelector('#videoPlayer')?.shadowRoot].filter(Boolean);
         for (const root of roots) {
-            const hosts = [...root.querySelectorAll('[data-test], .modal, [role="dialog"]')];
-            if (root === document) hosts.push(...root.querySelectorAll('#layout, #app'));
+            const hosts = [...root.querySelectorAll('[data-test*="inactivity" i], [data-test="inactivityWarningModal"], .modal, [role="dialog"], [role="alertdialog"]')];
             for (const host of hosts) {
-                if (!inactivityModalRe.test((host.getAttribute('data-test') || '') + ' ' + (host.textContent || ''))) continue;
+                // Blindagem estrita: NUNCA interagir com qualquer contêiner de enquete/votação!
+                if (host.matches('#polling-container, [data-test*="poll" i], [class*="poll" i], aside[class*="poll" i]')) continue;
+                if (host.closest('#polling-container, [data-test*="poll" i], [class*="poll" i], aside[class*="poll" i]')) continue;
+
+                const hostAttr = host.getAttribute('data-test') || '';
+                const hostTxt = host.textContent || '';
+                const combined = (hostAttr + ' ' + hostTxt).toLowerCase();
+                if (combined.includes('enquete') || combined.includes('polling') || combined.includes('opções da enquete') || combined.includes('pergunta da enquete')) continue;
+
+                if (!inactivityModalRe.test(hostAttr + ' ' + hostTxt)) continue;
+
                 const buttons = [...host.querySelectorAll('button, a.btn, [role="button"], input[type="button"], input[type="submit"]')];
                 for (const b of buttons) {
+                    // NUNCA clicar em opções ou botões de enquete!
+                    if (b.matches('[data-test*="poll" i], [class*="poll" i], [data-test="pollAnswerOption"]')) continue;
+                    if (b.closest('#polling-container, [data-test*="poll" i], [class*="poll" i], aside[class*="poll" i]')) continue;
+
                     const dt = b.getAttribute('data-test') || '';
                     const txt = (b.textContent || b.value || '').trim();
                     if (inactivityDangerRe.test(dt) || /^(sair|logout|leave|encerrar)$/i.test(txt)) continue;
-                    if (/confirm|inactivity|still/i.test(dt) || inactivityConfirmRe.test(txt)) {
+                    if (/inactivityWarningConfirmBtn|confirmInactivity/i.test(dt) || inactivityConfirmRe.test(txt)) {
                         b.click();
                         window._rnpInactivityDismissed = (window._rnpInactivityDismissed || 0) + 1;
                         break;

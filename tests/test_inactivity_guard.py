@@ -108,6 +108,40 @@ class GuardInatividadeTests(unittest.TestCase):
         self.assertEqual(res['popupDisplay'], 'none')
         self.assertNotEqual(res['presDisplay'], 'none')
 
+    def test_enquetes_e_opcoes_de_voto_nunca_sao_clicadas(self):
+        html = """<!DOCTYPE html>
+<html lang="pt-BR"><body>
+  <div id="layout">
+    <div id="presentationContainer"><p>slide de fundo</p></div>
+    <!-- Modal de Enquete ativo no BigBlueButton -->
+    <div id="polling-container" data-test="pollingContainer" role="dialog">
+      <div data-test="pollQuestion">Você concorda com a proposta desta atividade na sessão?</div>
+      <div class="poll-options">
+        <button data-test="pollAnswerOption" onclick="window._votoSim = true">Sim</button>
+        <button data-test="pollAnswerOption" onclick="window._votoNao = true">Não</button>
+        <button data-test="pollAnswerOption" onclick="window._votoContinuar = true">Continuar</button>
+        <button class="btn btn-default" onclick="window._votoVerificar = true">Verificar</button>
+      </div>
+    </div>
+  </div>
+</body></html>"""
+        async def script(page):
+            # Dá tempo para qualquer MutationObserver ou guard rodar
+            await asyncio.sleep(1.0)
+            return await page.evaluate('''() => ({
+                votoSim: !!window._votoSim,
+                votoNao: !!window._votoNao,
+                votoContinuar: !!window._votoContinuar,
+                votoVerificar: !!window._votoVerificar,
+                inactivityCount: window._rnpInactivityDismissed || 0
+            })''')
+        res = self._rodar(html, script)
+        self.assertFalse(res['votoSim'], 'O guard NUNCA pode votar "Sim" na enquete!')
+        self.assertFalse(res['votoNao'], 'O guard NUNCA pode votar "Não" na enquete!')
+        self.assertFalse(res['votoContinuar'], 'O guard NUNCA pode clicar em "Continuar" dentro da enquete!')
+        self.assertFalse(res['votoVerificar'], 'O guard NUNCA pode clicar em "Verificar" dentro de um contêiner de enquete!')
+        self.assertEqual(res['inactivityCount'], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

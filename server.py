@@ -127,7 +127,7 @@ CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'estica
 # Sources (presets de palco, tamanho de Libras, estilo de nome, layout do grid), então
 # um valor fora da lista não pode ser gravado nem devolvido ao navegador.
 LIBRAS_SIZES = ('equal', 'huge', 'large', 'medium')
-CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow', 'ifes', 'broadcast', 'cyber', 'gradient', 'frosted')
+CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow', 'ifes', 'ifes-dark', 'broadcast', 'cyber', 'gradient', 'frosted')
 GRID_LAYOUT_MODES = ('auto', 'row', 'column', 'grid')
 STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right',
                  'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras')
@@ -532,6 +532,7 @@ class BridgeState:
         # Opções de Grid, Câmeras e Libras
         self.focused_camera_ids: List[str] = []
         self.pinned_camera_ids: List[str] = []
+        self.hidden_camera_ids: List[str] = [str(x) for x in cfg.get("hidden_camera_ids", [])]
         # IDs da reunião não são persistentes; versões antigas usavam posições.
         self.libras_camera_ids: List[str] = []
         self.libras_disabled_camera_ids: Set[str] = set()
@@ -609,6 +610,7 @@ class BridgeState:
         self.libras_disabled_camera_ids.intersection_update(live_ids)
         self.pinned_camera_ids = [cid for cid in self.pinned_camera_ids if cid in live_ids]
         self.focused_camera_ids = [cid for cid in self.focused_camera_ids if cid in live_ids]
+        self.hidden_camera_ids = [cid for cid in self.hidden_camera_ids if cid in live_ids]
         saved = {normalized_name(n) for n in self.libras_saved_names if normalized_name(n)}
         disabled = {normalized_name(n) for n in self.libras_disabled_names if normalized_name(n)}
         frames, cameras = {}, []
@@ -633,7 +635,8 @@ class BridgeState:
                 'id': cid, 'original_name': original,
                 'name': self.custom_camera_names.get(cid, original),
                 'is_libras': is_libras, 'is_focused': cid in self.focused_camera_ids,
-                'is_pinned': cid in self.pinned_camera_ids})
+                'is_pinned': cid in self.pinned_camera_ids,
+                'is_hidden': cid in self.hidden_camera_ids})
         self.latest_camera_frames = frames
         self.cameras_list = cameras
         self.libras_camera_ids = [c['id'] for c in cameras if c['id'] in selected]
@@ -700,6 +703,7 @@ class BridgeState:
             "chat_source_filter": self.chat_source_filter,
             "custom_camera_names": self.custom_camera_names,
             "libras_disabled_names": self.libras_disabled_names,
+            "hidden_camera_ids": list(self.hidden_camera_ids),
             "lan_access": self.lan_access
         }
 
@@ -1199,10 +1203,12 @@ async def keep_alive_loop():
             inactivity_selectors = [
                 '[data-test="inactivityWarningConfirmBtn"]',
                 '[data-test="confirmInactivity"]',
-                'button:has-text("Verificar")',
-                'button:has-text("Continuar")',
-                'button:has-text("Estou aqui")',
-                'button:has-text("Sim")',
+                '[data-test*="inactivity" i] button:has-text("Verificar")',
+                '[data-test*="inactivity" i] button:has-text("Confirmar")',
+                '.modal:has-text("Verificação de atividade") button:has-text("Verificar")',
+                '.modal:has-text("atividade do usuário") button:has-text("Verificar")',
+                '[role="dialog"]:has-text("Verificação de atividade") button:has-text("Verificar")',
+                '[role="dialog"]:has-text("atividade do usuário") button:has-text("Verificar")',
                 'button:has-text("Sim, ainda estou aqui")',
                 'button:has-text("I\'m still here")',
                 'button:has-text("Stay in meeting")'
@@ -1221,6 +1227,20 @@ async def keep_alive_loop():
                     try:
                         btn = frame.locator(sel)
                         if await btn.count() > 0 and await btn.first.is_visible():
+                            # Proteção absoluta: NUNCA clicar em opções ou botões de enquete/votação!
+                            is_poll = await btn.first.evaluate('''el => {
+                                if (el.closest('#polling-container, [data-test*="poll" i], [class*="poll" i], aside[class*="poll" i], [aria-label*="enquete" i], [aria-label*="poll" i]')) return true;
+                                if (el.matches('[data-test*="poll" i], [class*="poll" i], [data-test="pollAnswerOption"]')) return true;
+                                const host = el.closest('.modal, [role="dialog"], [role="region"], aside, section');
+                                if (host) {
+                                    const hTxt = ((host.getAttribute('data-test') || '') + ' ' + (host.textContent || '')).toLowerCase();
+                                    if (hTxt.includes('enquete') || hTxt.includes('polling') || hTxt.includes('opções da enquete') || hTxt.includes('pergunta da enquete')) return true;
+                                }
+                                return false;
+                            }''')
+                            if is_poll:
+                                continue
+
                             await btn.first.click()
                             state.inactivity_bypassed_count += 1
                             log(f"🛡️ Modal de inatividade da RNP interceptado e confirmado automaticamente ({state.inactivity_bypassed_count}x)!")
@@ -1955,18 +1975,8 @@ async def extract_rnp_chat(target_frame):
 
 async def extract_rnp_poll(target_frame):
     try:
-        # 4. Capturar Enquete Ativa ou Publicada
+        # 4. Capturar Enquete Ativa ou Publicada (leitura estritamente passiva / read-only)
         poll_info = await asyncio.wait_for(target_frame.evaluate('''() => {
-                // Auto-fechar qualquer modal de aviso de áudio que possa sobrepor a tela
-                const audioDismissBtns = Array.from(document.querySelectorAll('button')).filter(b => {
-                    const t = (b.textContent || '').toLowerCase();
-                    const a = (b.getAttribute('aria-label') || '').toLowerCase();
-                    return t.includes('somente ouvir') || a.includes('somente ouvir') || t.includes('listen only') || a.includes('listen only');
-                });
-                if (audioDismissBtns.length > 0) {
-                    audioDismissBtns[0].click();
-                }
-
                 // 1. Modal de Votação Ativo (Procura por ID, data-test ou contêiner semântico sem varrer todos os divs com innerText)
                 let pollContainer = document.querySelector('#polling-container, [data-test="pollingContainer"], [data-test="pollingModal"], [data-test*="poll" i], aside[class*="poll" i], div[class*="poll" i]');
                 if (!pollContainer) {
@@ -2511,6 +2521,10 @@ async def api_grid_config(req: Request):
         state.focused_camera_ids = data["focused_camera_ids"]
     if "pinned_camera_ids" in data:
         state.pinned_camera_ids = [str(x) for x in data["pinned_camera_ids"]]
+    if "hidden_camera_ids" in data:
+        ids = data["hidden_camera_ids"]
+        if isinstance(ids, list):
+            state.hidden_camera_ids = [str(x) for x in ids]
     if "libras_camera_ids" in data:
         state.set_libras_cameras(data["libras_camera_ids"])
     if "libras_size" in data:
@@ -2544,6 +2558,23 @@ async def api_grid_config(req: Request):
     
     save_disk_config(state.export_config())
     return JSONResponse({"status": "ok", "libras_camera_ids": state.libras_camera_ids, "libras_saved_names": state.libras_saved_names})
+
+@app.post("/api/camera/toggle_hide")
+async def api_camera_toggle_hide(req: Request):
+    require_same_origin(req)
+    try:
+        data = await req.json()
+    except Exception:
+        return JSONResponse({"status": "error", "message": "JSON inválido"}, status_code=400)
+    cid = str(data.get("cam_id", ""))
+    if not cid:
+        return JSONResponse({"status": "error", "message": "cam_id obrigatório"}, status_code=400)
+    if cid in state.hidden_camera_ids:
+        state.hidden_camera_ids = [x for x in state.hidden_camera_ids if x != cid]
+    else:
+        state.hidden_camera_ids.append(cid)
+    save_disk_config(state.export_config())
+    return JSONResponse({"status": "ok", "hidden_camera_ids": state.hidden_camera_ids})
 
 @app.post("/api/libras/toggle_auto")
 async def api_libras_toggle_auto(req: Request):
@@ -2707,7 +2738,8 @@ async def api_status():
     # is_focused é recalculado aqui (não só no reconcile) para o dock e a /tv
     # refletirem o conjunto de foco imediatamente, sem esperar o próximo sync_loop.
     focados = set(state.focused_camera_ids)
-    cameras_atual = [{**c, 'is_focused': c['id'] in focados} for c in state.cameras_list]
+    ocultos = set(state.hidden_camera_ids)
+    cameras_atual = [{**c, 'is_focused': c['id'] in focados, 'is_hidden': c['id'] in ocultos} for c in state.cameras_list]
     return JSONResponse(
         {
             "connected": state.connected,
@@ -2735,6 +2767,7 @@ async def api_status():
             "focused_camera_ids": list(state.focused_camera_ids),
             "focused_camera_id": state.focused_camera_ids[0] if state.focused_camera_ids else None,
             "pinned_camera_ids": state.pinned_camera_ids,
+            "hidden_camera_ids": list(state.hidden_camera_ids),
             "libras_camera_ids": state.libras_camera_ids,
             "libras_saved_names": state.libras_saved_names,
             "libras_auto_detect": state.libras_auto_detect,
@@ -2989,9 +3022,25 @@ CAM_FORMAT_CSS = """
         .stage-cam-wrap[data-camfmt="quadrada"], .cam-card[data-camfmt="quadrada"] {
             aspect-ratio: 1 / 1; flex: 0 1 auto; margin: auto; max-width: 100%; max-height: 100%;
         }
+        /* Equalização de Câmeras em Coluna e Linha do Palco Composto */
+        .cameras-column .stage-cam-wrap {
+            flex: 0 0 auto !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            min-height: 0 !important;
+            min-width: 0 !important;
+            margin: auto !important;
+        }
+        .cameras-row .stage-cam-wrap {
+            flex: 0 0 auto !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            min-height: 0 !important;
+            min-width: 0 !important;
+            margin: auto !important;
+        }
         /* A moldura abraça o conteúdo com precisão pixel-perfect */
         .stage-cam-wrap, .cam-card, .libras-card {
-            flex: 0 1 auto;
             margin: auto;
             max-width: 100%;
             max-height: 100%;
@@ -3107,14 +3156,14 @@ NAME_TAG_CSS = """
     position: absolute;
     bottom: 10px;
     left: 10px;
-    background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
-    border: 1.5px solid rgba(74, 222, 128, 0.7);
-    padding: 5px 13px;
+    background: #f7f5ee;
+    border: 1.5px solid rgba(16, 124, 65, 0.45);
+    padding: 4px 12px;
     border-radius: 8px;
-    color: #ffffff;
+    color: #142217;
     font-size: 12.5px;
     font-weight: 800;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 12px rgba(34, 197, 94, 0.35);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
     display: flex;
     align-items: center;
     gap: 7px;
@@ -3127,7 +3176,34 @@ NAME_TAG_CSS = """
     height: 8px;
     background: #c8102e;
     border-radius: 2px;
-    box-shadow: 0 0 5px rgba(200, 16, 46, 0.9);
+    box-shadow: 0 0 4px rgba(200, 16, 46, 0.7);
+}
+
+.name-tag.style-ifes-dark {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: linear-gradient(135deg, rgba(20, 32, 25, 0.96), rgba(12, 20, 15, 0.96));
+    border: 1.5px solid rgba(74, 222, 128, 0.55);
+    padding: 4px 12px;
+    border-radius: 8px;
+    color: #f0fdf4;
+    font-size: 12.5px;
+    font-weight: 800;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 12px rgba(16, 124, 65, 0.35);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    z-index: 10;
+}
+.name-tag.style-ifes-dark::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #e5223a;
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(229, 34, 58, 0.8);
 }
 
 .name-tag.style-broadcast {
@@ -3439,6 +3515,96 @@ html, body {
 .theme-bubbles .chat-user { font-weight: 800; color: #5865f2; display: flex; align-items: center; gap: 6px; }
 .theme-bubbles .chat-time { font-size: 10px; color: #949ba4; }
 .theme-bubbles .chat-text { color: #dbdee1; font-weight: 500; line-height: 1.4; }
+
+.chat-text {
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
+}
+
+.theme-ifes .chat-card {
+    background: #f7f5ee;
+    border: 1.5px solid rgba(16, 124, 65, 0.45);
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    animation: chatSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.theme-ifes .chat-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.theme-ifes .chat-user { font-weight: 800; color: #107c41; letter-spacing: 0.2px; display: flex; align-items: center; gap: 6px; }
+.theme-ifes .chat-time { font-size: 11px; color: #52795d; font-weight: 600; }
+.theme-ifes .chat-text { color: #142217; font-weight: 600; line-height: 1.4; }
+.theme-ifes .source-rnp { background: #e2ebd8; color: #107c41; border: 1px solid #107c41; }
+.theme-ifes .source-yt { background: #fbe9eb; color: #c8102e; border: 1px solid #c8102e; }
+
+.theme-ifes-dark .chat-card {
+    background: rgba(17, 26, 21, 0.95);
+    border: 1.5px solid rgba(16, 124, 65, 0.55);
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6), 0 0 12px rgba(16, 124, 65, 0.25);
+    animation: chatSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.theme-ifes-dark .chat-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.theme-ifes-dark .chat-user { font-weight: 800; color: #86efac; letter-spacing: 0.2px; text-shadow: 0 0 8px rgba(34, 197, 94, 0.4); display: flex; align-items: center; gap: 6px; }
+.theme-ifes-dark .chat-time { font-size: 11px; color: #94a3b8; font-weight: 500; }
+.theme-ifes-dark .chat-text { color: #f0fdf4; font-weight: 500; line-height: 1.45; }
+.theme-ifes-dark .source-rnp { background: rgba(16, 124, 65, 0.3); color: #86efac; border: 1px solid #22c55e; }
+.theme-ifes-dark .source-yt { background: rgba(200, 16, 46, 0.3); color: #fca5a5; border: 1px solid #e5223a; }
+
+.chat-poll-box {
+    margin-top: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.theme-ifes .chat-poll-box {
+    background: rgba(16, 124, 65, 0.08);
+    border-color: rgba(16, 124, 65, 0.25);
+}
+.theme-ifes-dark .chat-poll-box {
+    background: rgba(16, 124, 65, 0.18);
+    border-color: rgba(74, 222, 128, 0.3);
+}
+.chat-poll-title {
+    font-weight: 800;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0.95;
+}
+.chat-poll-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.chat-poll-item-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    font-weight: 700;
+}
+.chat-poll-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.theme-ifes .chat-poll-bar {
+    background: #e0dcd0;
+}
+.chat-poll-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #107c41, #22c55e);
+    border-radius: 3px;
+    transition: width 0.35s ease;
+}
 """
 
 # --------------------------------------------------------------------------
@@ -3464,6 +3630,7 @@ async def get_control_panel():
     sel_min = "selected" if state.camera_name_style == "minimal" else ""
     sel_glow = "selected" if state.camera_name_style == "glow" else ""
     sel_ifes = "selected" if state.camera_name_style == "ifes" else ""
+    sel_ifes_dark = "selected" if state.camera_name_style == "ifes-dark" else ""
     sel_broadcast = "selected" if state.camera_name_style == "broadcast" else ""
     sel_cyber = "selected" if state.camera_name_style == "cyber" else ""
     sel_gradient = "selected" if state.camera_name_style == "gradient" else ""
@@ -3497,6 +3664,7 @@ async def get_control_panel():
     sel_pd_inf = "selected" if state.poll_display_duration == 0 else ""
 
     sel_pstyle_ifes = "selected" if state.poll_style == "ifes" else ""
+    sel_pstyle_ifes_dark = "selected" if state.poll_style == "ifes-dark" else ""
     sel_pstyle_neon = "selected" if state.poll_style == "neon" else ""
     sel_pstyle_glass = "selected" if state.poll_style == "glass" else ""
     sel_pstyle_bcast = "selected" if state.poll_style == "broadcast" else ""
@@ -3507,6 +3675,7 @@ async def get_control_panel():
     sel_pstyle_min = "selected" if state.poll_style == "minimal" else ""
 
     sel_chat_ifes = "selected" if state.chat_style == "ifes" else ""
+    sel_chat_ifes_dark = "selected" if state.chat_style == "ifes-dark" else ""
     sel_chat_glass = "selected" if state.chat_style == "glass" else ""
     sel_chat_streamer = "selected" if state.chat_style == "streamer" else ""
     sel_chat_bcast = "selected" if state.chat_style == "broadcast" else ""
@@ -4168,7 +4337,8 @@ async def get_control_panel():
             <div class="grid-opt-group">
                 <label style="margin: 0; font-size: 12px">Estilo:</label>
                 <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
-                    <option value="ifes" {sel_ifes}>★ Ifes Oficial</option>
+                    <option value="ifes" {sel_ifes}>🌿 Ifes Institucional (Claro)</option>
+                    <option value="ifes-dark" {sel_ifes_dark}>🌲 Ifes Noturno</option>
                     <option value="broadcast" {sel_broadcast}>📺 TV Broadcast (GC)</option>
                     <option value="glass" {sel_glass}>Glass (Vidro)</option>
                     <option value="pill" {sel_pill}>Pill (Pílula)</option>
@@ -4256,7 +4426,8 @@ async def get_control_panel():
             <div class="grid-opt-group">
                 <label style="margin: 0; font-size: 12px">Tema:</label>
                 <select id="selChatTheme" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateChatConfig()">
-                    <option value="ifes" {sel_chat_ifes}>★ Ifes Oficial</option>
+                    <option value="ifes" {sel_chat_ifes}>🌿 Ifes Institucional (Claro)</option>
+                    <option value="ifes-dark" {sel_chat_ifes_dark}>🌲 Ifes Noturno</option>
                     <option value="broadcast" {sel_chat_bcast}>🎬 Broadcast News</option>
                     <option value="glass" {sel_chat_glass}>💎 StreamYard Glass</option>
                     <option value="streamer" {sel_chat_streamer}>🔴 Streamer Avatar</option>
@@ -4428,7 +4599,8 @@ async def get_control_panel():
             <div class="grid-opt-group" style="width: 100%; justify-content: space-between; margin-top: 4px">
                 <label style="margin: 0; font-size: 12px; font-weight: 600">🎨 Estilo da Enquete:</label>
                 <select id="selPollStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updatePollConfig()">
-                    <option value="ifes" {sel_pstyle_ifes}>★ Ifes Oficial</option>
+                    <option value="ifes" {sel_pstyle_ifes}>🌿 Ifes Institucional (Claro)</option>
+                    <option value="ifes-dark" {sel_pstyle_ifes_dark}>🌲 Ifes Noturno</option>
                     <option value="broadcast" {sel_pstyle_bcast}>📺 TV Broadcast</option>
                     <option value="neon" {sel_pstyle_neon}>⚡ Neon Glow</option>
                     <option value="glass" {sel_pstyle_glass}>💎 Glassmorphism</option>
@@ -4546,7 +4718,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .slide-frame img, .slide-frame video {{
             width: 100% !important;
             height: 100% !important;
-            object-fit: cover !important;
+            object-fit: contain !important;
             display: block;
             border-radius: inherit;
         }}
@@ -4615,6 +4787,28 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             display: block;
         }}
 
+        /* THEMES PARA MOLDURAS NO STAGE */
+        .stage-container.theme-ifes .slide-frame,
+        .stage-container.theme-ifes .stage-cam-wrap {{
+            border: 1.5px solid rgba(16, 124, 65, 0.45) !important;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4) !important;
+        }}
+        .stage-container.theme-ifes .is-libras-box,
+        .stage-container.theme-ifes .libras-floating-box {{
+            border: 2.5px solid #107c41 !important;
+            box-shadow: 0 0 16px rgba(16, 124, 65, 0.4) !important;
+        }}
+        .stage-container.theme-ifes-dark .slide-frame,
+        .stage-container.theme-ifes-dark .stage-cam-wrap {{
+            border: 1.5px solid rgba(74, 222, 128, 0.45) !important;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.7), 0 0 12px rgba(16, 124, 65, 0.25) !important;
+        }}
+        .stage-container.theme-ifes-dark .is-libras-box,
+        .stage-container.theme-ifes-dark .libras-floating-box {{
+            border: 2px solid #22c55e !important;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.45) !important;
+        }}
+
         /* JANELA FLUTUANTE DE LIBRAS */
         .libras-floating-box {{
             position: absolute;
@@ -4638,10 +4832,13 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .preset-side-by-side {{
             flex-direction: row !important;
         }}
-        .preset-side-by-side .slide-container,
-        .preset-side-by-side .slide-frame {{
+        .preset-side-by-side .slide-container {{
             flex: 6.8 !important;
             height: 100% !important;
+        }}
+        .preset-side-by-side .slide-frame {{
+            max-width: 100%;
+            max-height: 100%;
         }}
         .preset-side-by-side .cameras-column {{
             flex: 3.2 !important;
@@ -4652,10 +4849,13 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .preset-bottom-bar {{
             flex-direction: column !important;
         }}
-        .preset-bottom-bar .slide-container,
-        .preset-bottom-bar .slide-frame {{
+        .preset-bottom-bar .slide-container {{
             flex: 7.2 !important;
             width: 100% !important;
+        }}
+        .preset-bottom-bar .slide-frame {{
+            max-width: 100%;
+            max-height: 100%;
         }}
         .preset-bottom-bar .cameras-row {{
             flex: 2.8 !important;
@@ -4674,11 +4874,6 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             border-radius: 0 !important;
             border: none !important;
         }}
-            width: 100% !important;
-            height: 100% !important;
-            border-radius: 0 !important;
-            border: none !important;
-        }}
         .preset-pip-bottom-right .cameras-column {{
             position: absolute !important;
             bottom: 24px !important;
@@ -4690,10 +4885,21 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             border: 2px solid #38bdf8 !important;
             border-radius: 12px !important;
             overflow: hidden !important;
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 2px !important;
+            padding: 0 !important;
+            background: #090d16 !important;
         }}
         .preset-pip-bottom-right .stage-cam-wrap {{
             border-radius: 0 !important;
             border: none !important;
+            flex: 1 1 0 !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
         }}
 
         /* 4. PRESET: PIP TOP RIGHT */
@@ -4719,10 +4925,21 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             border: 2px solid #38bdf8 !important;
             border-radius: 12px !important;
             overflow: hidden !important;
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 2px !important;
+            padding: 0 !important;
+            background: #090d16 !important;
         }}
         .preset-pip-top-right .stage-cam-wrap {{
             border-radius: 0 !important;
             border: none !important;
+            flex: 1 1 0 !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
         }}
 
         /* 5. PRESET: SPLIT 50/50 */
@@ -4848,12 +5065,30 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
         }}
 
-        /* 5. Estilo Ifes */
+        /* 5. Estilo Ifes Institucional (Claro) */
         .voice-chip.style-ifes {{
-            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
-            border: 1.5px solid #22c55e;
+            background: #f7f5ee;
+            border: 1.5px solid rgba(16, 124, 65, 0.45);
             border-radius: 8px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 14px rgba(34, 197, 94, 0.45);
+            color: #142217;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        }}
+        .voice-chip.style-ifes::after {{
+            background: #c8102e;
+            box-shadow: 0 0 8px rgba(200, 16, 46, 0.8);
+        }}
+
+        /* 5b. Estilo Ifes Noturno */
+        .voice-chip.style-ifes-dark {{
+            background: linear-gradient(135deg, rgba(20, 32, 25, 0.96), rgba(12, 20, 15, 0.96));
+            border: 1.5px solid rgba(74, 222, 128, 0.55);
+            border-radius: 8px;
+            color: #f0fdf4;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 12px rgba(16, 124, 65, 0.35);
+        }}
+        .voice-chip.style-ifes-dark::after {{
+            background: #e5223a;
+            box-shadow: 0 0 8px rgba(229, 34, 58, 0.8);
         }}
 
         /* 6. Estilo Broadcast */
@@ -4915,6 +5150,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         const stageMedia = useWebRTC ? new RnpStageMedia(container) : null;
         let ytHost = null, ytPlayer = null, ytApiLoading = false, stageYt = null;
         let camFmt = 'original';
+        let activePreset = 'side-by-side';
         window.onYouTubeIframeAPIReady = () => {{ window.__ytReady = true; }};
         function loadYtApi() {{
             if (ytApiLoading || window.__ytReady) return;
@@ -4959,12 +5195,14 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                 const yt = stageYt;
                 const ytActive = !!(useWebRTC && yt && yt.present && yt.video_id);
                 let cams = data.cameras || [];
+                const hiddenIds = (data.hidden_camera_ids || []).map(String);
+                cams = cams.filter(c => !hiddenIds.includes(String(c.id)));
                 const focusedId = (data.focused_camera_id !== null && data.focused_camera_id !== undefined) ? String(data.focused_camera_id) : null;
                 const pinnedIds = (data.pinned_camera_ids || []).map(String);
                 const librasIds = (data.libras_camera_ids || []).map(String);
                 const showNames = data.show_camera_names;
                 const nameStyle = data.camera_name_style || 'glass';
-                const activePreset = urlOverridePreset || data.stage_preset || 'side-by-side';
+                activePreset = urlOverridePreset || data.stage_preset || 'side-by-side';
                 const currentLibrasSize = urlOverrideLibrasSize || data.libras_size || 'equal';
 
                 const signature = JSON.stringify({{
@@ -4978,6 +5216,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     cams: cams.map(c => String(c.id) + '_' + c.name + '_' + (c.is_libras ? '1' : '0')),
                     focusedId,
                     pinnedIds,
+                    hiddenIds,
                     librasIds,
                     showNames,
                     nameStyle
@@ -5016,7 +5255,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                     // Libras como janela flutuante. Cada palco é flex:1, dividindo a largura.
                     if ((activePreset === 'cameras-only' || activePreset === 'camera-libras' || activePreset === 'grid-libras')
                             && (speakerCams.length > 0 || librasCams.length > 0)) {{
-                        container.className = 'preset-' + activePreset;
+                        container.className = 'stage-container preset-' + activePreset + ' theme-' + nameStyle;
                         const camsCont = document.createElement('div');
                         camsCont.className = 'cameras-row';
                         const box = (c, isLibras) => {{
@@ -5050,7 +5289,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 
                     // CASO 1: SEM NENHUMA CÂMERA CONECTADA OU MODO SOMENTE SLIDES
                     if (activePreset === 'slide-only' || (speakerCams.length === 0 && librasCams.length === 0)) {{
-                        container.className = 'preset-slide-only';
+                        container.className = 'stage-container preset-slide-only theme-' + nameStyle;
                         slideFrame.style.width = '100%';
                         slideFrame.style.height = '100%';
                         slideFrame.style.borderRadius = '0';
@@ -5059,7 +5298,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         return;
                     }}
 
-                    container.className = 'preset-' + activePreset;
+                    container.className = 'stage-container preset-' + activePreset + ' theme-' + nameStyle;
                     container.appendChild(slideCont);
 
                     // CASO 2: TEM LIBRAS E TEM PALESTRANTE COM MODO IGUAL (equal)
@@ -5069,22 +5308,32 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
 
                         const activeLibras = librasCams[0];
-                        const mainSpeaker = (focusedId ? speakerCams.find(c => String(c.id) === focusedId) : null) || speakerCams[0];
 
-                        // 1. Box do Palestrante
-                        const wrapSpeaker = document.createElement('div');
-                        wrapSpeaker.className = 'stage-cam-wrap';
-                        wrapSpeaker.style.flex = '0 0 calc(50% - 4px)';
-                        wrapSpeaker.innerHTML = `
-                            ${{cameraMarkup(mainSpeaker.id)}}
-                            ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(mainSpeaker.name)}}</div>` : ''}}
-                        `;
-                        camsCont.appendChild(wrapSpeaker);
+                        // Se focusedId estiver definido: apenas o palestrante focado + Libras
+                        // Se pinnedIds estiver definido: apenas os palestrantes fixados + Libras
+                        // Padrão (sem foco nem pin): TODOS os palestrantes ativos + Libras dividindo o espaço igualmente!
+                        let displaySpeakers = speakerCams;
+                        if (focusedId) {{
+                            const found = speakerCams.find(c => String(c.id) === focusedId);
+                            displaySpeakers = found ? [found] : (speakerCams.length > 0 ? [speakerCams[0]] : []);
+                        }} else if (pinnedIds.length > 0) {{
+                            displaySpeakers = speakerCams.filter(c => pinnedIds.includes(String(c.id)));
+                            if (displaySpeakers.length === 0) displaySpeakers = speakerCams;
+                        }}
 
-                        // 2. Box do Intérprete de Libras (Exatamente do mesmo tamanho)
+                        displaySpeakers.forEach(spk => {{
+                            const wrapSpeaker = document.createElement('div');
+                            wrapSpeaker.className = 'stage-cam-wrap';
+                            wrapSpeaker.innerHTML = `
+                                ${{cameraMarkup(spk.id)}}
+                                ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(spk.name)}}</div>` : ''}}
+                            `;
+                            camsCont.appendChild(wrapSpeaker);
+                        }});
+
+                        // Box do Intérprete de Libras
                         const wrapLibras = document.createElement('div');
                         wrapLibras.className = 'stage-cam-wrap is-libras-box';
-                        wrapLibras.style.flex = '0 0 calc(50% - 4px)';
                         wrapLibras.innerHTML = `
                             ${{cameraMarkup(activeLibras.id)}}
                             <div class="libras-badge-overlay">🤟 Libras</div>
@@ -5104,9 +5353,12 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
 
                             let displayCams = speakerCams;
-                            if (isPip) {{
-                                const mainCam = displayCams.find(c => String(c.id) === focusedId) || displayCams[0];
-                                displayCams = [mainCam];
+                            if (focusedId) {{
+                                const found = speakerCams.find(c => String(c.id) === focusedId);
+                                displayCams = found ? [found] : (speakerCams.length > 0 ? [speakerCams[0]] : []);
+                            }} else if (pinnedIds.length > 0) {{
+                                displayCams = speakerCams.filter(c => pinnedIds.includes(String(c.id)));
+                                if (displayCams.length === 0) displayCams = speakerCams;
                             }}
 
                             displayCams.forEach(c => {{
@@ -5252,31 +5504,127 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             sf.style.aspectRatio = '16 / 9';
                         }}
                     }}
-                    container.querySelectorAll('.stage-cam-wrap').forEach(w => {{
-                        w.dataset.camfmt = camFmt;
-                        const m = w.querySelector('video, img');
-                        const nw = m && (m.videoWidth || m.naturalWidth || 0);
-                        const nh = m && (m.videoHeight || m.naturalHeight || 0);
+                    function equalizeStageCameras() {{
+                        const isPip = (activePreset || '').startsWith('pip') || (container && container.className.includes('preset-pip'));
+                        if (isPip) return;
+
+                        let targetRatio = 16 / 9;
+                        let targetRatioCss = '16 / 9';
                         if (camFmt === 'retrato') {{
-                            w.style.aspectRatio = '9 / 16';
-                        }} else if (camFmt === 'paisagem') {{
-                            w.style.aspectRatio = '16 / 9';
+                            targetRatio = 9 / 16;
+                            targetRatioCss = '9 / 16';
                         }} else if (camFmt === 'quadrada') {{
-                            w.style.aspectRatio = '1 / 1';
-                        }} else if (camFmt === 'original' && nw && nh) {{
-                            w.style.aspectRatio = nw + ' / ' + nh;
-                        }} else if (nw && nh) {{
-                            w.style.aspectRatio = nw + ' / ' + nh;
-                        }} else {{
-                            w.style.aspectRatio = '16 / 9';
+                            targetRatio = 1;
+                            targetRatioCss = '1 / 1';
+                        }} else if (camFmt === 'paisagem') {{
+                            targetRatio = 16 / 9;
+                            targetRatioCss = '16 / 9';
                         }}
-                    }});
+
+                        // 1. Câmeras em Coluna (.cameras-column)
+                        container.querySelectorAll('.cameras-column').forEach(col => {{
+                            const items = Array.from(col.querySelectorAll(':scope > .stage-cam-wrap'));
+                            const n = items.length;
+                            if (n === 0) return;
+                            const gap = 10;
+                            const totalGap = (n - 1) * gap;
+                            const colW = col.clientWidth || col.parentElement?.clientWidth || 0;
+                            const colH = col.clientHeight || col.parentElement?.clientHeight || 0;
+                            if (!colW || !colH) return;
+
+                            const maxH = (colH - totalGap) / n;
+                            const maxW = colW;
+
+                            let itemW = maxW;
+                            let itemH = itemW / targetRatio;
+                            if (itemH > maxH) {{
+                                itemH = maxH;
+                                itemW = itemH * targetRatio;
+                            }}
+
+                            const finalW = Math.max(10, Math.floor(itemW));
+                            const finalH = Math.max(10, Math.floor(itemH));
+                            items.forEach(el => {{
+                                el.style.width = finalW + 'px';
+                                el.style.height = finalH + 'px';
+                                el.style.maxWidth = '100%';
+                                el.style.maxHeight = '100%';
+                                el.style.aspectRatio = targetRatioCss;
+                                el.style.flex = '0 0 auto';
+                                el.dataset.camfmt = camFmt;
+                            }});
+                        }});
+
+                        // 2. Câmeras em Linha (.cameras-row)
+                        container.querySelectorAll('.cameras-row').forEach(row => {{
+                            const items = Array.from(row.querySelectorAll(':scope > .stage-cam-wrap'));
+                            const n = items.length;
+                            if (n === 0) return;
+                            const gap = 10;
+                            const totalGap = (n - 1) * gap;
+                            const rowW = row.clientWidth || row.parentElement?.clientWidth || 0;
+                            const rowH = row.clientHeight || row.parentElement?.clientHeight || 0;
+                            if (!rowW || !rowH) return;
+
+                            const maxW = (rowW - totalGap) / n;
+                            const maxH = rowH;
+
+                            let itemW = maxW;
+                            let itemH = itemW / targetRatio;
+                            if (itemH > maxH) {{
+                                itemH = maxH;
+                                itemW = itemH * targetRatio;
+                            }}
+
+                            const finalW = Math.max(10, Math.floor(itemW));
+                            const finalH = Math.max(10, Math.floor(itemH));
+                            items.forEach(el => {{
+                                el.style.width = finalW + 'px';
+                                el.style.height = finalH + 'px';
+                                el.style.maxWidth = '100%';
+                                el.style.maxHeight = '100%';
+                                el.style.aspectRatio = targetRatioCss;
+                                el.style.flex = '0 0 auto';
+                                el.dataset.camfmt = camFmt;
+                            }});
+                        }});
+
+                        // 3. Demais Câmeras (avulsas, flutuantes ou específicas)
+                        container.querySelectorAll('.stage-cam-wrap').forEach(w => {{
+                            w.dataset.camfmt = camFmt;
+                            const inColOrRow = w.parentElement && (w.parentElement.classList.contains('cameras-column') || w.parentElement.classList.contains('cameras-row'));
+                            if (inColOrRow && !isPip) return;
+
+                            const m = w.querySelector('video, img');
+                            const nw = m && (m.videoWidth || m.naturalWidth || 0);
+                            const nh = m && (m.videoHeight || m.naturalHeight || 0);
+                            const isPipWrap = !!w.closest('.preset-pip-bottom-right, .preset-pip-top-right');
+                            if (isPipWrap) {{
+                                w.style.aspectRatio = 'unset';
+                            }} else if (camFmt === 'retrato') {{
+                                w.style.aspectRatio = '9 / 16';
+                            }} else if (camFmt === 'quadrada') {{
+                                w.style.aspectRatio = '1 / 1';
+                            }} else if (camFmt === 'original' && nw && nh) {{
+                                w.style.aspectRatio = nw + ' / ' + nh;
+                            }} else {{
+                                w.style.aspectRatio = '16 / 9';
+                            }}
+                        }});
+                    }}
+                    window.equalizeStageCameras = equalizeStageCameras;
+                    equalizeStageCameras();
                 }} catch (sizeErr) {{}}
                 stageMedia?.reconcile();
                 stageBusy = false;
             }}
         }}
 
+        window.addEventListener('resize', () => {{
+            try {{
+                if (typeof window.equalizeStageCameras === 'function') window.equalizeStageCameras();
+            }} catch (e) {{}}
+        }});
         setInterval(updateStage, useWebRTC ? 250 : 66);
         updateStage();
     </script>
@@ -5363,7 +5711,7 @@ async def get_libras_overlay(cam_id: Optional[str] = None, camfmt: Optional[str]
             try {{
                 const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
                 const data = await res.json();
-                const cams = data.cameras || [];
+                const cams = (data.cameras || []).filter(c => !c.is_hidden);
                 const librasIds = (data.libras_camera_ids || []).map(String);
                 const showNames = data.show_camera_names;
                 const nameStyle = data.camera_name_style || 'glass';
@@ -5583,23 +5931,61 @@ async def get_poll_overlay(mode: Optional[str] = None, duration: Optional[int] =
             background: #94a3b8;
         }}
 
-        /* ★ TEMA 6: IFES OFICIAL */
+        /* ★ TEMA 6: IFES INSTITUCIONAL (CLARO) */
         .poll-box.theme-ifes {{
-            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
+            background: #f7f5ee;
+            border: 2px solid #107c41;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35), 0 0 20px rgba(16, 124, 65, 0.25);
+            border-radius: 12px;
+        }}
+        .poll-box.theme-ifes .poll-tag {{
+            background: rgba(16, 124, 65, 0.15);
+            border: 1px solid #107c41;
+            color: #107c41;
+        }}
+        .poll-box.theme-ifes .poll-title,
+        .poll-box.theme-ifes .poll-opt-name,
+        .poll-box.theme-ifes .poll-opt-stats {{
+            color: #142217 !important;
+        }}
+        .poll-box.theme-ifes .poll-bar {{
+            background: #e2dfd3;
+        }}
+        .poll-box.theme-ifes .poll-fill {{
+            background: linear-gradient(90deg, #107c41, #22c55e);
+            border-right: 3px solid #107c41;
+        }}
+        .poll-box.theme-ifes .poll-countdown-bar {{
+            background: #107c41;
+        }}
+
+        /* ★ TEMA 6b: IFES NOTURNO */
+        .poll-box.theme-ifes-dark {{
+            background: rgba(17, 26, 21, 0.96);
             border: 2px solid #22c55e;
             box-shadow: 0 10px 30px rgba(0,0,0,0.8), 0 0 24px rgba(34, 197, 94, 0.45);
             border-radius: 12px;
         }}
-        .poll-box.theme-ifes .poll-tag {{
+        .poll-box.theme-ifes-dark .poll-tag {{
             background: rgba(34, 197, 94, 0.25);
             border: 1px solid #22c55e;
             color: #86efac;
         }}
-        .poll-box.theme-ifes .poll-fill {{
-            background: linear-gradient(90deg, rgba(34, 197, 94, 0.35), rgba(74, 222, 128, 0.5));
+        .poll-box.theme-ifes-dark .poll-title {{
+            color: #f0fdf4 !important;
+        }}
+        .poll-box.theme-ifes-dark .poll-opt-name,
+        .poll-box.theme-ifes-dark .poll-opt-stats {{
+            color: #e2e8f0 !important;
+        }}
+        .poll-box.theme-ifes-dark .poll-bar {{
+            background: rgba(0, 0, 0, 0.4);
+        }}
+        .poll-box.theme-ifes-dark .poll-fill {{
+            background: linear-gradient(90deg, rgba(34, 197, 94, 0.45), rgba(74, 222, 128, 0.65));
             border-right: 3px solid #22c55e;
         }}
-        .poll-box.theme-ifes .poll-countdown-bar {{
+        .poll-box.theme-ifes-dark .poll-countdown-bar {{
             background: #22c55e;
         }}
 
@@ -5986,8 +6372,8 @@ async def get_tv_page(chat: Optional[str] = None):
             try {{
                 const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
                 const data = await res.json();
-                // Só participantes: intérprete de Libras fica de fora (já tem /libras).
-                const cams = (data.cameras || []).filter(c => !c.is_libras);
+                // Só participantes: intérprete de Libras e câmeras ocultas ficam de fora.
+                const cams = (data.cameras || []).filter(c => !c.is_libras && !c.is_hidden);
                 const focused = (data.focused_camera_ids || (data.focused_camera_id != null ? [data.focused_camera_id] : [])).map(String);
                 const pinned = (data.pinned_camera_ids || []).map(String);
                 const showNames = data.show_camera_names !== false;
@@ -6267,12 +6653,30 @@ async def get_cameras_grid_overlay(
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
         }}
 
-        /* 5. Estilo Ifes */
+        /* 5. Estilo Ifes Institucional (Claro) */
         .voice-chip.style-ifes {{
-            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
-            border: 1.5px solid #22c55e;
+            background: #f7f5ee;
+            border: 1.5px solid rgba(16, 124, 65, 0.45);
             border-radius: 8px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 14px rgba(34, 197, 94, 0.45);
+            color: #142217;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        }}
+        .voice-chip.style-ifes::after {{
+            background: #c8102e;
+            box-shadow: 0 0 8px rgba(200, 16, 46, 0.8);
+        }}
+
+        /* 5b. Estilo Ifes Noturno */
+        .voice-chip.style-ifes-dark {{
+            background: linear-gradient(135deg, rgba(20, 32, 25, 0.96), rgba(12, 20, 15, 0.96));
+            border: 1.5px solid rgba(74, 222, 128, 0.55);
+            border-radius: 8px;
+            color: #f0fdf4;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 12px rgba(16, 124, 65, 0.35);
+        }}
+        .voice-chip.style-ifes-dark::after {{
+            background: #e5223a;
+            box-shadow: 0 0 8px rgba(229, 34, 58, 0.8);
         }}
 
         /* 6. Estilo Broadcast */
@@ -6356,7 +6760,7 @@ async def get_cameras_grid_overlay(
             try {{
                 const res = await fetch('/api/status?t=' + Date.now(), {{signal: AbortSignal.timeout(5000)}});
                 const data = await res.json();
-                const cams = data.cameras || [];
+                const cams = (data.cameras || []).filter(c => !c.is_hidden);
                 const showNames = (overrideNames !== null) ? !!overrideNames : (data.show_camera_names !== undefined ? data.show_camera_names : true);
                 const nameStyle = overrideStyle || data.camera_name_style || 'glass';
                 const layoutMode = overrideLayout || data.grid_layout_mode || 'auto';
@@ -6594,6 +6998,13 @@ async def get_chat_overlay(
         .size-large .msg-user {{ font-size: 14.5px; }}
         .size-large .msg-text {{ font-size: 15.5px; }}
 
+        .msg-text {{
+            overflow-wrap: anywhere !important;
+            word-break: break-word !important;
+            white-space: pre-wrap !important;
+            line-height: 1.4 !important;
+        }}
+
         /* THEMES */
         .theme-glass {{
             background: rgba(15, 23, 42, 0.85);
@@ -6646,13 +7057,80 @@ async def get_chat_overlay(
         .theme-bubbles .msg-text {{ color: #dbdee1; }}
 
         .theme-ifes {{
-            background: linear-gradient(135deg, rgba(27, 131, 62, 0.95), rgba(15, 75, 34, 0.95));
-            border: 1.5px solid rgba(74, 222, 128, 0.7);
-            border-radius: 8px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 12px rgba(34, 197, 94, 0.35);
+            background: #f7f5ee;
+            border: 1.5px solid rgba(16, 124, 65, 0.45);
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
         }}
-        .theme-ifes .msg-user {{ color: #86efac; font-weight: 800; }}
-        .theme-ifes .msg-text {{ color: #ffffff; }}
+        .theme-ifes .msg-user {{ color: #107c41; font-weight: 800; }}
+        .theme-ifes .msg-text {{ color: #142217; font-weight: 600; }}
+        .theme-ifes .badge-rnp {{ background: #e2ebd8; color: #107c41; border: 1px solid #107c41; }}
+        .theme-ifes .badge-yt {{ background: #fbe9eb; color: #c8102e; border: 1px solid #c8102e; }}
+
+        .theme-ifes-dark {{
+            background: rgba(17, 26, 21, 0.95);
+            border: 1.5px solid rgba(16, 124, 65, 0.55);
+            border-radius: 10px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6), 0 0 12px rgba(16, 124, 65, 0.25);
+        }}
+        .theme-ifes-dark .msg-user {{ color: #86efac; font-weight: 800; text-shadow: 0 0 8px rgba(34, 197, 94, 0.4); }}
+        .theme-ifes-dark .msg-text {{ color: #f0fdf4; font-weight: 500; }}
+        .theme-ifes-dark .badge-rnp {{ background: rgba(16, 124, 65, 0.3); color: #86efac; border: 1px solid #22c55e; }}
+        .theme-ifes-dark .badge-yt {{ background: rgba(200, 16, 46, 0.3); color: #fca5a5; border: 1px solid #e5223a; }}
+
+        .chat-poll-box {{
+            margin-top: 6px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }}
+        .theme-ifes .chat-poll-box {{
+            background: rgba(16, 124, 65, 0.08);
+            border-color: rgba(16, 124, 65, 0.25);
+        }}
+        .theme-ifes-dark .chat-poll-box {{
+            background: rgba(16, 124, 65, 0.18);
+            border-color: rgba(74, 222, 128, 0.3);
+        }}
+        .chat-poll-title {{
+            font-weight: 800;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            opacity: 0.95;
+        }}
+        .chat-poll-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }}
+        .chat-poll-item-header {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 11.5px;
+            font-weight: 700;
+        }}
+        .chat-poll-bar {{
+            width: 100%;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 3px;
+            overflow: hidden;
+        }}
+        .theme-ifes .chat-poll-bar {{
+            background: #e0dcd0;
+        }}
+        .chat-poll-fill {{
+            height: 100%;
+            background: linear-gradient(90deg, #107c41, #22c55e);
+            border-radius: 3px;
+            transition: width 0.35s ease;
+        }}
 
         .theme-cyber {{
             background: rgba(10, 14, 26, 0.95);
@@ -6735,6 +7213,36 @@ async def get_chat_overlay(
             return '';
         }}
 
+        function formatChatText(text) {{
+            if (!text) return '';
+            const raw = String(text);
+            const isPoll = /^(resultado da enquete|enquete:|poll results?:)/i.test(raw.trim()) ||
+                           (raw.includes('\\n') && /(-|\\:)\\s*\\d+\\s*\\(\\d+%?\\)/.test(raw));
+            if (isPoll) {{
+                const lines = raw.split('\\n').map(l => l.trim()).filter(Boolean);
+                const title = lines[0];
+                const options = lines.slice(1);
+                let html = '<div class="chat-poll-box"><div class="chat-poll-title">📊 ' + escHtml(title) + '</div>';
+                if (options.length > 0) {{
+                    options.forEach(opt => {{
+                        const m = opt.match(/(?:-|\\:)?\\s*(\\d+)\\s*\\(([\\d\\.,]+%?)\\)$/) || opt.match(/\\(([\\d\\.,]+%?)\\)$/);
+                        const pctStr = m ? m[m.length - 1].replace('%', '') : null;
+                        const label = m ? opt.slice(0, opt.lastIndexOf(m[0])).trim() : opt;
+                        const pct = pctStr ? parseFloat(pctStr.replace(',', '.')) : 0;
+                        html += '<div class="chat-poll-item">';
+                        html += '<div class="chat-poll-item-header"><span>' + escHtml(label || opt) + '</span>' + (m ? '<span style="opacity:0.9">' + escHtml(m[0].trim().replace(/^[-:]\\s*/, '')) + '</span>' : '') + '</div>';
+                        if (!isNaN(pct)) {{
+                            html += '<div class="chat-poll-bar"><div class="chat-poll-fill" style="width:' + Math.min(100, Math.max(0, pct)) + '%;"></div></div>';
+                        }}
+                        html += '</div>';
+                    }});
+                }}
+                html += '</div>';
+                return html;
+            }}
+            return escHtml(raw);
+        }}
+
         async function updateChat() {{
             try {{
                 const qSrc = overrideSource ? ('&source=' + encodeURIComponent(overrideSource)) : '';
@@ -6777,7 +7285,7 @@ async def get_chat_overlay(
                                 </div>
                                 <span class="msg-time">${{escHtml(m.time || '')}}</span>
                             </div>
-                            <div class="msg-text">${{escHtml(m.text || '')}}</div>
+                            <div class="msg-text">${{formatChatText(m.text || '')}}</div>
                         `;
                         container.appendChild(card);
                     }});
@@ -6846,12 +7354,22 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
         }}
 
         .featured-card.theme-ifes {{
-            background: linear-gradient(135deg, rgba(27, 131, 62, 0.96), rgba(15, 75, 34, 0.96)) !important;
+            background: #f7f5ee !important;
+            border: 2.5px solid #107c41 !important;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.4), 0 0 25px rgba(16, 124, 65, 0.25) !important;
+        }}
+        .featured-card.theme-ifes .feat-user {{ color: #107c41 !important; }}
+        .featured-card.theme-ifes .feat-text {{ color: #142217 !important; }}
+        .featured-card.theme-ifes .feat-icon {{ background: rgba(16, 124, 65, 0.12) !important; border-color: #107c41 !important; }}
+
+        .featured-card.theme-ifes-dark {{
+            background: rgba(17, 26, 21, 0.96) !important;
             border: 2.5px solid #22c55e !important;
             box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px rgba(34, 197, 94, 0.45) !important;
         }}
-        .featured-card.theme-ifes .feat-user {{ color: #86efac !important; }}
-        .featured-card.theme-ifes .feat-text {{ color: #ffffff !important; }}
+        .featured-card.theme-ifes-dark .feat-user {{ color: #86efac !important; }}
+        .featured-card.theme-ifes-dark .feat-text {{ color: #f0fdf4 !important; }}
+        .featured-card.theme-ifes-dark .feat-icon {{ background: rgba(16, 124, 65, 0.2) !important; border-color: #22c55e !important; }}
 
         .featured-card.theme-broadcast {{
             background: #09090b !important;
@@ -6956,7 +7474,10 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
             font-size: 17px;
             font-weight: 700;
             color: #fef08a;
-            line-height: 1.35;
+            line-height: 1.4;
+            overflow-wrap: anywhere !important;
+            word-break: break-word !important;
+            white-space: pre-wrap !important;
         }}
         .source-tag {{
             font-size: 10px;
@@ -6992,6 +7513,36 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
             const s = u.trim();
             if (/^(https?:\\/\\/|data:image\\/|\\/)/i.test(s)) return escHtml(s);
             return '';
+        }}
+
+        function formatChatText(text) {{
+            if (!text) return '';
+            const raw = String(text);
+            const isPoll = /^(resultado da enquete|enquete:|poll results?:)/i.test(raw.trim()) ||
+                           (raw.includes('\\n') && /(-|\\:)\\s*\\d+\\s*\\(\\d+%?\\)/.test(raw));
+            if (isPoll) {{
+                const lines = raw.split('\\n').map(l => l.trim()).filter(Boolean);
+                const title = lines[0];
+                const options = lines.slice(1);
+                let html = '<div class="chat-poll-box"><div class="chat-poll-title">📊 ' + escHtml(title) + '</div>';
+                if (options.length > 0) {{
+                    options.forEach(opt => {{
+                        const m = opt.match(/(?:-|\\:)?\\s*(\\d+)\\s*\\(([\\d\\.,]+%?)\\)$/) || opt.match(/\\(([\\d\\.,]+%?)\\)$/);
+                        const pctStr = m ? m[m.length - 1].replace('%', '') : null;
+                        const label = m ? opt.slice(0, opt.lastIndexOf(m[0])).trim() : opt;
+                        const pct = pctStr ? parseFloat(pctStr.replace(',', '.')) : 0;
+                        html += '<div class="chat-poll-item">';
+                        html += '<div class="chat-poll-item-header"><span>' + escHtml(label || opt) + '</span>' + (m ? '<span style="opacity:0.9">' + escHtml(m[0].trim().replace(/^[-:]\\s*/, '')) + '</span>' : '') + '</div>';
+                        if (!isNaN(pct)) {{
+                            html += '<div class="chat-poll-bar"><div class="chat-poll-fill" style="width:' + Math.min(100, Math.max(0, pct)) + '%;"></div></div>';
+                        }}
+                        html += '</div>';
+                    }});
+                }}
+                html += '</div>';
+                return html;
+            }}
+            return escHtml(raw);
         }}
 
         async function updateFeatured() {{
@@ -7041,7 +7592,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                     }}
 
                     const defaultStyle = `border-color: ${{isYt ? '#ef4444' : '#eab308'}}; box-shadow: 0 16px 40px rgba(0,0,0,0.8), 0 0 25px ${{isYt ? 'rgba(239,68,68,0.4)' : 'rgba(234,179,8,0.4)'}};`;
-                    const hasCustomTheme = ['ifes', 'broadcast', 'cyber', 'gradient', 'frosted'].includes(theme);
+                    const hasCustomTheme = ['ifes', 'ifes-dark', 'broadcast', 'cyber', 'gradient', 'frosted'].includes(theme);
 
                     container.innerHTML = `
                         <div class="featured-card theme-${{theme}}" id="featBox" style="${{hasCustomTheme ? '' : defaultStyle}}">
@@ -7051,7 +7602,7 @@ async def get_chat_featured_overlay(style: Optional[str] = None, avatar: Optiona
                                     <span class="source-tag ${{isYt ? 'tag-yt' : 'tag-rnp'}}">${{isYt ? 'YouTube' : 'RNP'}}</span>
                                     <span class="feat-user">${{escHtml(feat.user || 'Participante')}}</span>
                                 </div>
-                                <div class="feat-text">${{escHtml(feat.text)}}</div>
+                                <div class="feat-text">${{formatChatText(feat.text)}}</div>
                             </div>
                         </div>
                     `;

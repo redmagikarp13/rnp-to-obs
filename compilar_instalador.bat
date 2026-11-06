@@ -8,7 +8,7 @@ echo    CRIADOR DO INSTALADOR PROFISSIONAL (SETUP.EXE) - RNP TO OBS
 echo ======================================================================
 echo.
 
-set "ISCC_PATH=C:\Users\leona\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+set "ISCC_PATH=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 if not exist "%ISCC_PATH%" (
     set "ISCC_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 )

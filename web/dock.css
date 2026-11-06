@@ -128,6 +128,8 @@ input[type="text"]:focus, input[type="email"]:focus, select:focus { border-color
 .btn-ctrl.active-pin { background: #10b981 !important; color: #000 !important; border-color: #10b981 !important; box-shadow: 0 0 10px rgba(16, 185, 129, 0.6); }
 .btn-ctrl.active-libras { background: #06b6d4 !important; color: #082f49 !important; border-color: #06b6d4 !important; box-shadow: 0 0 10px rgba(6, 182, 212, 0.7); }
 .btn-ctrl.active-preset { background: #38bdf8 !important; color: #0f172a !important; border-color: #38bdf8 !important; box-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
+.btn-ctrl.active-hidden { background: rgba(239, 68, 68, 0.25) !important; border-color: #ef4444 !important; color: #fca5a5 !important; box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+.mod-box.is-cam-hidden { opacity: 0.55; filter: grayscale(0.6); border-style: dashed !important; border-color: #ef4444 !important; }
 
 .grid-options-bar { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 9px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .grid-opt-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
