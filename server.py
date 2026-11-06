@@ -224,6 +224,7 @@ DEFAULT_CONFIG = {
     "youtube_auto_connect": False,
     "control_theme": DEFAULT_CONTROL_THEME,
     "show_camera_names": True,
+    "show_voice_indicator": True,
     "camera_name_style": "glass",
     "grid_layout_mode": "auto",
     "camera_format": "original",
@@ -539,6 +540,7 @@ class BridgeState:
         self.libras_auto_detect: bool = cfg.get("libras_auto_detect", True)
         self.libras_size: str = cfg.get("libras_size", "equal")
         self.show_camera_names: bool = cfg.get("show_camera_names", True)
+        self.show_voice_indicator: bool = bool(cfg.get("show_voice_indicator", True))
         self.camera_name_style: str = cfg.get("camera_name_style", "glass")
         # Acesso LAN (bind 0.0.0.0). Só afeta o host de escuta no boot; o estado
         # guarda o valor para o dock refletir e o /api/config devolver.
@@ -677,6 +679,7 @@ class BridgeState:
             "youtube_auto_connect": self.youtube_auto_connect,
             "control_theme": self.control_theme,
             "show_camera_names": self.show_camera_names,
+            "show_voice_indicator": self.show_voice_indicator,
             "camera_name_style": self.camera_name_style,
             "camera_format": self.camera_format,
             "speak_peak_threshold": self.speak_peak_threshold,
@@ -2508,6 +2511,8 @@ async def api_grid_config(req: Request):
         state.libras_size = data["libras_size"]
     if "show_camera_names" in data:
         state.show_camera_names = bool(data["show_camera_names"])
+    if "show_voice_indicator" in data:
+        state.show_voice_indicator = bool(data["show_voice_indicator"])
     if "camera_name_style" in data:
         state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data:
@@ -2614,6 +2619,7 @@ async def api_config_save(req: Request):
     if "youtube_auto_connect" in data: state.youtube_auto_connect = bool(data["youtube_auto_connect"])
     if "control_theme" in data: state.control_theme = normalize_theme(data["control_theme"])
     if "show_camera_names" in data: state.show_camera_names = bool(data["show_camera_names"])
+    if "show_voice_indicator" in data: state.show_voice_indicator = bool(data["show_voice_indicator"])
     if "camera_name_style" in data: state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data: state.grid_layout_mode = data["grid_layout_mode"]
     if "stage_preset" in data: state.stage_preset = data["stage_preset"]
@@ -2650,6 +2656,7 @@ async def api_config_reset(req: Request):
     state.user_email = cfg["user_email"]
     state.youtube_url = cfg["youtube_url"]
     state.show_camera_names = cfg["show_camera_names"]
+    state.show_voice_indicator = cfg["show_voice_indicator"]
     state.camera_name_style = cfg["camera_name_style"]
     state.grid_layout_mode = cfg["grid_layout_mode"]
     state.camera_format = cfg.get("camera_format", "original")
@@ -2727,6 +2734,7 @@ async def api_status():
             "libras_auto_detect": state.libras_auto_detect,
             "libras_size": state.libras_size,
             "show_camera_names": state.show_camera_names,
+            "show_voice_indicator": state.show_voice_indicator,
             "camera_name_style": state.camera_name_style,
             "camera_format": state.camera_format,
             "grid_layout_mode": state.grid_layout_mode,
@@ -3309,6 +3317,7 @@ async def get_control_panel():
     headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
     
     chk_show_names = "checked" if state.show_camera_names else ""
+    chk_show_voice_indicator = "checked" if state.show_voice_indicator else ""
     sel_glass = "selected" if state.camera_name_style == "glass" else ""
     sel_pill = "selected" if state.camera_name_style == "pill" else ""
     sel_min = "selected" if state.camera_name_style == "minimal" else ""
@@ -3996,6 +4005,13 @@ async def get_control_panel():
             </div>
 
             <div class="grid-opt-group">
+                <label style="margin: 0; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px" title="Exibe a pílula com nome de quem fala no microfone sem câmera ligada">
+                    <input type="checkbox" id="chkShowVoiceIndicator" {chk_show_voice_indicator} onchange="updateGridConfig()">
+                    <span>🎙️ Voz s/ Câmera</span>
+                </label>
+            </div>
+
+            <div class="grid-opt-group">
                 <label style="margin: 0; font-size: 12px">Estilo:</label>
                 <select id="selNameStyle" style="width: auto; padding: 4px 8px; font-size: 12px" onchange="updateGridConfig()">
                     <option value="glass" {sel_glass}>Glass (Vidro)</option>
@@ -4548,9 +4564,78 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         /* O seletor universal acima aplica `overflow: hidden` a tudo; aqui é preciso
            sobrescrever, senão a caixa do contêiner (que encolhe ao tamanho do chip)
            recorta o box-shadow e a sombra sai retangular em vez de sangrar. */
-        #voiceChips {{ position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 300; pointer-events: none; overflow: visible; }}
-        .voice-chip {{ display: flex; align-items: center; gap: 7px; background: rgba(2, 6, 23, .82); border: 1px solid rgba(34, 197, 94, .65); color: #e2e8f0; font: 700 13px/1.2 sans-serif; padding: 6px 14px; border-radius: 999px; box-shadow: 0 0 14px rgba(34, 197, 94, .45); backdrop-filter: blur(6px); overflow: visible; }}
-        .voice-chip::before {{ content: '🎙'; font-size: 12px; }}
+        #voiceChips {{
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 300;
+            pointer-events: none;
+            overflow: visible;
+        }}
+        .voice-chip {{
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            color: #ffffff;
+            font: 700 13px/1.2 sans-serif;
+            padding: 6px 14px;
+            overflow: visible;
+            transition: all 0.2s ease;
+        }}
+        .voice-chip::before {{
+            content: '🎙';
+            font-size: 13px;
+        }}
+        .voice-chip::after {{
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 8px #22c55e;
+            animation: pulseLive 1.2s infinite;
+            margin-left: 2px;
+        }}
+
+        /* 1. Estilo Glass (Vidro) */
+        .voice-chip.style-glass {{
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(34, 197, 94, 0.7);
+            border-radius: 8px;
+            box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.4), 0 0 14px rgba(34, 197, 94, 0.45);
+        }}
+
+        /* 2. Estilo Pill (Pílula) */
+        .voice-chip.style-pill {{
+            background: #0f172a;
+            border: 2px solid #22c55e;
+            border-radius: 24px;
+            box-shadow: 0 0 14px rgba(34, 197, 94, 0.45);
+        }}
+
+        /* 3. Estilo Minimal Dark */
+        .voice-chip.style-minimal {{
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(34, 197, 94, 0.8);
+            border-radius: 4px;
+            padding: 4px 10px;
+            color: #f1f5f9;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+        }}
+
+        /* 4. Estilo Neon Glow */
+        .voice-chip.style-glow {{
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.95), rgba(99, 102, 241, 0.95));
+            border: 1.5px solid #22c55e;
+            border-radius: 6px;
+            box-shadow: 0 0 16px rgba(34, 197, 94, 0.7);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        }}
     </style>
     <script src="/assets/stage-media.js"></script>
     <script src="/assets/stage-youtube.js"></script>
@@ -4845,18 +4930,26 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 
                 // Chips de voz para quem fala SEM câmera (topo central, sempre visível).
                 const chipBox = document.getElementById('voiceChips');
+                const showVoice = (data.show_voice_indicator !== false);
                 if (chipBox) {{
-                    const names = (data.voice_speakers || []).map(v => v.name || 'Participante');
-                    const chipSig = names.join('|');
-                    if (chipBox.dataset.sig !== chipSig) {{
-                        chipBox.dataset.sig = chipSig;
+                    if (!showVoice) {{
+                        chipBox.style.display = 'none';
                         chipBox.innerHTML = '';
-                        names.forEach(n => {{
-                            const d = document.createElement('div');
-                            d.className = 'voice-chip';
-                            d.textContent = n;
-                            chipBox.appendChild(d);
-                        }});
+                        chipBox.dataset.sig = '';
+                    }} else {{
+                        chipBox.style.display = 'flex';
+                        const names = (data.voice_speakers || []).map(v => v.name || 'Participante');
+                        const chipSig = nameStyle + '::' + names.join('|');
+                        if (chipBox.dataset.sig !== chipSig) {{
+                            chipBox.dataset.sig = chipSig;
+                            chipBox.innerHTML = '';
+                            names.forEach(n => {{
+                                const d = document.createElement('div');
+                                d.className = 'voice-chip style-' + nameStyle;
+                                d.textContent = n;
+                                chipBox.appendChild(d);
+                            }});
+                        }}
                     }}
                 }}
 

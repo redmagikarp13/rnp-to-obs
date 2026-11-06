@@ -327,6 +327,7 @@
                 youtube_url: document.getElementById('ytUrl').value.trim(),
                 youtube_auto_connect: document.getElementById('chkYtAutoConnect').checked,
                 show_camera_names: document.getElementById('chkShowNames').checked,
+                show_voice_indicator: document.getElementById('chkShowVoiceIndicator') ? document.getElementById('chkShowVoiceIndicator').checked : true,
                 camera_name_style: document.getElementById('selNameStyle').value,
                 grid_layout_mode: document.getElementById('selGridLayout').value,
                 stage_preset: activeStagePreset,
@@ -353,6 +354,9 @@
                 document.getElementById('ytUrl').value = cfg.youtube_url || '';
                 document.getElementById('chkYtAutoConnect').checked = !!cfg.youtube_auto_connect;
                 document.getElementById('chkShowNames').checked = !!cfg.show_camera_names;
+                if (document.getElementById('chkShowVoiceIndicator')) {
+                    document.getElementById('chkShowVoiceIndicator').checked = (cfg.show_voice_indicator !== false);
+                }
                 document.getElementById('selNameStyle').value = cfg.camera_name_style || 'glass';
                 document.getElementById('selGridLayout').value = cfg.grid_layout_mode || 'auto';
                 document.getElementById('selCamFormat').value = cfg.camera_format || 'original';
@@ -901,13 +905,14 @@
 
         async function updateGridConfig() {
             const show_camera_names = document.getElementById('chkShowNames').checked;
+            const show_voice_indicator = document.getElementById('chkShowVoiceIndicator') ? document.getElementById('chkShowVoiceIndicator').checked : true;
             const camera_name_style = document.getElementById('selNameStyle').value;
             const grid_layout_mode = document.getElementById('selGridLayout').value;
             const camera_format = document.getElementById('selCamFormat').value;
             await fetch('/api/grid/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ show_camera_names, camera_name_style, grid_layout_mode, camera_format, stage_preset: activeStagePreset, libras_camera_ids: librasCamIds, libras_size: activeLibrasSize })
+                body: JSON.stringify({ show_camera_names, show_voice_indicator, camera_name_style, grid_layout_mode, camera_format, stage_preset: activeStagePreset, libras_camera_ids: librasCamIds, libras_size: activeLibrasSize })
             });
             showSaveNotice();
         }

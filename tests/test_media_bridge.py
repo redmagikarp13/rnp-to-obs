@@ -249,6 +249,30 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(self.state.grid_layout_mode, 'row')
         self.assertEqual(self.state.stage_preset, 'cameras-only')
 
+    def test_voice_indicator_config_e_estilos_no_palco(self):
+        # 1. Configurar via /api/grid/config
+        r = self.client.post('/api/grid/config', json={'show_voice_indicator': False, 'camera_name_style': 'glow'})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(self.state.show_voice_indicator)
+        self.assertEqual(self.state.camera_name_style, 'glow')
+        self.assertFalse(self.client.get('/api/status').json()['show_voice_indicator'])
+
+        # 2. Reativar
+        r = self.client.post('/api/grid/config', json={'show_voice_indicator': True})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(self.state.show_voice_indicator)
+
+        # 3. HTML do /stage possui estilos dinâmicos para .voice-chip
+        stage_html = self.client.get('/stage').text
+        self.assertIn('.voice-chip.style-glass', stage_html)
+        self.assertIn('.voice-chip.style-pill', stage_html)
+        self.assertIn('.voice-chip.style-minimal', stage_html)
+        self.assertIn('.voice-chip.style-glow', stage_html)
+
+        # 4. HTML do /control possui o checkbox de controle
+        ctrl_html = self.client.get('/control').text
+        self.assertIn('chkShowVoiceIndicator', ctrl_html)
+
     def test_config_save_rejeita_enum_invalido(self):
         self.state.grid_layout_mode = 'auto'
         r = self.client.post('/api/config/save', json={'grid_layout_mode': 'tetraédrico'})
