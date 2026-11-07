@@ -129,7 +129,7 @@ CAMERA_FORMATS = ('auto', 'original', 'retrato', 'paisagem', 'quadrada', 'estica
 LIBRAS_SIZES = ('equal', 'huge', 'large', 'medium')
 CAMERA_NAME_STYLES = ('glass', 'pill', 'minimal', 'glow', 'ifes', 'ifes-dark', 'broadcast', 'cyber', 'gradient', 'frosted')
 GRID_LAYOUT_MODES = ('auto', 'row', 'column', 'grid')
-STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right',
+STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'top-bar', 'pip-bottom-right', 'pip-top-right',
                  'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras')
 CHAT_SOURCE_FILTERS = ('all', 'rnp', 'youtube')
 _ENUM_CAMPOS = {
@@ -4500,6 +4500,9 @@ async def get_control_panel():
             <button id="btnPreset_bottom-bar" class="btn-ctrl" onclick="setStagePreset('bottom-bar')">
                 ⬇️ Slide Top + Rodapé
             </button>
+            <button id="btnPreset_top-bar" class="btn-ctrl" onclick="setStagePreset('top-bar')">
+                ⬆️ Cabeçalho + Slide
+            </button>
             <button id="btnPreset_pip-bottom-right" class="btn-ctrl" onclick="setStagePreset('pip-bottom-right')">
                 🖼️ PIP Canto Inferior
             </button>
@@ -4860,6 +4863,25 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
         .preset-bottom-bar .cameras-row {{
             flex: 2.8 !important;
             width: 100% !important;
+        }}
+
+        /* PRESET: TOP-BAR (Câmeras Cabeçalho + Slide Embaixo) */
+        .preset-top-bar {{
+            flex-direction: column !important;
+        }}
+        .preset-top-bar .cameras-row {{
+            order: 1 !important;
+            flex: 2.8 !important;
+            width: 100% !important;
+        }}
+        .preset-top-bar .slide-container {{
+            order: 2 !important;
+            flex: 7.2 !important;
+            width: 100% !important;
+        }}
+        .preset-top-bar .slide-frame {{
+            max-width: 100%;
+            max-height: 100%;
         }}
 
         /* 3. PRESET: PIP BOTTOM RIGHT */
@@ -5303,9 +5325,9 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
 
                     // CASO 2: TEM LIBRAS E TEM PALESTRANTE COM MODO IGUAL (equal)
                     if (currentLibrasSize === 'equal' && librasCams.length > 0 && speakerCams.length > 0) {{
-                        const isBottomRow = (activePreset === 'bottom-bar');
+                        const isRow = (activePreset === 'bottom-bar' || activePreset === 'top-bar');
                         const camsCont = document.createElement('div');
-                        camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
+                        camsCont.className = isRow ? 'cameras-row' : 'cameras-column';
 
                         const activeLibras = librasCams[0];
 
@@ -5341,16 +5363,20 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         `;
                         camsCont.appendChild(wrapLibras);
 
-                        container.appendChild(camsCont);
+                        if (activePreset === 'top-bar') {{
+                            container.insertBefore(camsCont, slideCont);
+                        }} else {{
+                            container.appendChild(camsCont);
+                        }}
 
                     }} else {{
                         // CASO 3: APENAS PALESTRANTE, OU LIBRAS EM JANELA FLUTUANTE, OU APENAS LIBRAS
-                        const isBottomRow = (activePreset === 'bottom-bar');
+                        const isRow = (activePreset === 'bottom-bar' || activePreset === 'top-bar');
                         const isPip = activePreset.startsWith('pip');
 
                         if (speakerCams.length > 0) {{
                             const camsCont = document.createElement('div');
-                            camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
+                            camsCont.className = isRow ? 'cameras-row' : 'cameras-column';
 
                             let displayCams = speakerCams;
                             if (focusedId) {{
@@ -5371,11 +5397,15 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 camsCont.appendChild(wrap);
                             }});
 
-                            container.appendChild(camsCont);
+                            if (activePreset === 'top-bar') {{
+                                container.insertBefore(camsCont, slideCont);
+                            }} else {{
+                                container.appendChild(camsCont);
+                            }}
                         }} else if (librasCams.length > 0 && currentLibrasSize === 'equal') {{
                             // Se só tem Libras e está no modo equal, exibe a Libras na coluna
                             const camsCont = document.createElement('div');
-                            camsCont.className = isBottomRow ? 'cameras-row' : 'cameras-column';
+                            camsCont.className = isRow ? 'cameras-row' : 'cameras-column';
 
                             const activeLibras = librasCams[0];
                             const wrapLibras = document.createElement('div');
@@ -5386,7 +5416,11 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 ${{showNames ? `<div class="name-tag style-${{escHtml(nameStyle)}}">${{escHtml(activeLibras.name)}}</div>` : ''}}
                             `;
                             camsCont.appendChild(wrapLibras);
-                            container.appendChild(camsCont);
+                            if (activePreset === 'top-bar') {{
+                                container.insertBefore(camsCont, slideCont);
+                            }} else {{
+                                container.appendChild(camsCont);
+                            }}
                         }}
 
                         // JANELA FLUTUANTE DE LIBRAS (SELECIONADA OU SE NÃO FOR EQUAL)

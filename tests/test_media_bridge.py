@@ -521,6 +521,18 @@ class MediaRoutesTests(unittest.TestCase):
         for p in nomes:
             self.assertIn(p, stage, f'ramo de layout do preset {p} ausente no /stage.')
 
+    def test_preset_top_bar_existe_no_dock_e_no_stage(self):
+        # Preset 'top-bar': Câmeras no cabeçalho (topo) + Slides embaixo (rodapé)
+        self.assertIn('top-bar', server.STAGE_PRESETS)
+        html = self.client.get('/control').text
+        self.assertIn('btnPreset_top-bar', html, 'Botão do preset top-bar ausente no dock.')
+        self.assertIn("setStagePreset('top-bar')", html)
+        stage = self.client.get('/stage').text
+        self.assertIn('.preset-top-bar', stage, 'CSS do preset top-bar ausente no /stage.')
+        r = self.client.post('/api/grid/config', json={'stage_preset': 'top-bar'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.state.stage_preset, 'top-bar')
+
     def test_aviso_webrtc_mora_dentro_do_bloco_de_fontes(self):
         # O aviso de modo WebRTC era um bloco 1x1 próprio que sobrava como tile vazio
         # no mosaico. É informação de setup das fontes, então mora DENTRO do card de

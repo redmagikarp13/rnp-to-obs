@@ -54,6 +54,7 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 
 - `side-by-side`: Slides em 68% à esquerda + Câmeras em 32% à direita.
 - `bottom-bar`: Slides no topo + Câmeras no rodapé.
+- `top-bar`: Câmeras no cabeçalho (topo) + Slides embaixo (rodapé).
 - `pip-bottom-right` / `pip-top-right`: Slides em tela cheia com palestrante flutuante em PIP (380x215).
 - `split-50-50`: Divisão paritária meio a meio.
 - `slide-only`: Apenas apresentação.

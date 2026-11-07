@@ -417,7 +417,7 @@
         }
 
         function updatePresetButtonsUI(presetName) {
-            const presets = ['side-by-side', 'bottom-bar', 'pip-bottom-right', 'pip-top-right', 'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras'];
+            const presets = ['side-by-side', 'bottom-bar', 'top-bar', 'pip-bottom-right', 'pip-top-right', 'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras'];
             presets.forEach(p => {
                 const btn = document.getElementById('btnPreset_' + p);
                 if (btn) {
