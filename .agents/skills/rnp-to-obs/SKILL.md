@@ -100,6 +100,7 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
   - **Previews do dock desligados** ao entrar em eco (o operador pode religar manualmente; o poll não os religa).
 - **Injeção:** `window.RNP_PERF_MODE` é injetado por `add_init_script` antes do adapter, para valer desde a conexão.
 - **Diagnóstico de GPU:** `tools/diag_gpu_decode.py` sobe o navegador com os mesmos `BROWSER_LAUNCH_ARGS`/`browser_channels()` de `server.py` e reporta o renderer WebGL (GPU real vs SwiftShader) e `decoderImplementation`/`powerEfficientDecoder` — para confirmar se o decode de vídeo está na GPU (o maior componente do "piso" de CPU em notebook).
+- **Validação em E-cores (proxy de notebook fraco):** `tools/rodar_em_ecores.py` confina a ponte (`python server.py` + a árvore Edge headless, que herda a máscara de afinidade) aos núcleos de eficiência de uma CPU híbrida Intel, reaplicando a afinidade à árvore a cada 1 s. `--topology` mostra P/E-cores; `--cores N` restringe a N E-cores (padrão 4); `--port` usa porta dedicada; `--measure` consulta `/api/status` a cada 3 s e imprime fps médio das câmeras, gaps de áudio e loop-lag. Se a ponte sustentar vídeo+áudio presa a poucos E-cores, terá folga num notebook. Limitação: confina só a ponte (o navegador do operador e o OBS seguem nos P-cores), então é o piso da ponte, não o cenário inteiro.
 
 ---
 
