@@ -1118,6 +1118,9 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         await self.receiver.goto(self.url + '/control')
         await self.receiver.evaluate("() => RnpDock.activateTab('audio')")
         await self.receiver.wait_for_selector('[data-audio-id="audio-w_a"]', timeout=10000)
+        # Os medidores individuais nascem DESLIGADOS (economia de CPU: o dock nem abre
+        # o /ws/peaks_out). O teste valida justamente o push, então liga os medidores.
+        await self.receiver.evaluate("() => RnpMeters.toggle()")
         await self.receiver.wait_for_function(
             "parseFloat(document.querySelector('[data-audio-id=audio-w_a] .vu-fill-vertical').style.height || '0') > 5",
             timeout=5000)
@@ -1125,28 +1128,35 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                         'A mesa precisa assinar o canal de picos empurrados.')
 
     async def test_toggle_desliga_preview_de_webcams_e_apresentacao(self):
-        # Desligar o preview precisa PARAR de carregar a fonte (src about:blank),
-        # e o poll que refresca o thumb da apresentação não pode ressuscitá-lo.
+        # Previews nascem DESLIGADOS (economia de CPU). O botao liga/desliga e, ao
+        # desligar, precisa PARAR de carregar a fonte (src about:blank); o poll que
+        # refresca o thumb da apresentacao nao pode ressuscitar um preview desativado.
         await self.receiver.goto(self.url + '/control')
         await self.receiver.evaluate("() => RnpDock.activateTab('cameras')")
-        await self.receiver.click('#btnToggleCamPreview')
-        await self.receiver.wait_for_timeout(300)
-        estado = await self.receiver.evaluate("""() => ({
+        leitura = """() => ({
             src: document.getElementById('gridPreviewIframe').getAttribute('src'),
             off: document.getElementById('gridPreviewIframe').parentElement.classList.contains('preview-off'),
-        })""")
-        self.assertEqual(estado['src'], 'about:blank', 'Preview de webcams desligado não deve carregar o grid.')
-        self.assertTrue(estado['off'], 'O contêiner deve marcar preview-off para o placeholder.')
+        })"""
+        inicial = await self.receiver.evaluate(leitura)
+        self.assertEqual(inicial['src'], 'about:blank', 'O preview de webcams nasce desligado.')
+        self.assertTrue(inicial['off'], 'Nasce marcado preview-off.')
+        # Liga: restaura a fonte.
         await self.receiver.click('#btnToggleCamPreview')
         await self.receiver.wait_for_timeout(300)
         self.assertIn('/cameras/grid', await self.receiver.evaluate(
             "() => document.getElementById('gridPreviewIframe').getAttribute('src')"),
-            'Religar o preview deve restaurar a fonte.')
+            'Ligar o preview deve carregar a fonte.')
+        # Desliga de novo: para de carregar e marca preview-off.
+        await self.receiver.click('#btnToggleCamPreview')
+        await self.receiver.wait_for_timeout(300)
+        estado = await self.receiver.evaluate(leitura)
+        self.assertEqual(estado['src'], 'about:blank', 'Preview de webcams desligado nao deve carregar o grid.')
+        self.assertTrue(estado['off'], 'O conteiner deve marcar preview-off para o placeholder.')
+        # Apresentacao: ja nasce desligada; aguarda >1 ciclo de poll e o thumb NAO religa.
         await self.receiver.evaluate("() => RnpDock.activateTab('palco')")
-        await self.receiver.click('#btnToggleScreenPreview')
         await self.receiver.wait_for_timeout(1600)
         src = await self.receiver.evaluate("() => document.getElementById('thumbScreen').getAttribute('src') || ''")
-        self.assertNotIn('/raw_frame', src, 'O poll não pode religar o preview desativado.')
+        self.assertNotIn('/raw_frame', src, 'O poll nao pode religar o preview desativado.')
 
     async def test_mixer_canais_com_largura_fixa(self):
         # Mesa de verdade: cada canal tem largura constante, não estica com a tela.

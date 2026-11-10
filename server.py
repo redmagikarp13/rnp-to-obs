@@ -3059,8 +3059,26 @@ PCM_AUDIO_SCRIPT = """
 CAM_FORMAT_CSS = """
         /* Formatos de câmera (data-camfmt no wrapper): proporção e ajuste da imagem. */
         [data-camfmt="esticado"] > video, [data-camfmt="esticado"] > img { object-fit: fill !important; }
-        [data-camfmt="original"] > video, [data-camfmt="original"] > img,
-        [data-camfmt="auto"] > video, [data-camfmt="auto"] > img,
+        /* original/auto: a moldura ABRAÇA o conteúdo — contain (sem corte), fundo
+           transparente e proporção real definida inline pelo JS (videoWidth/Height).
+           Especificidade alta (.wrap[data-camfmt] > video) para vencer o object-fit:cover
+           e o background:#090d16 base de .stage-cam-wrap/.cam-card/.libras-card. */
+        .stage-cam-wrap[data-camfmt="original"] > video, .stage-cam-wrap[data-camfmt="original"] > img,
+        .cam-card[data-camfmt="original"] > video, .cam-card[data-camfmt="original"] > img,
+        .libras-card[data-camfmt="original"] > video, .libras-card[data-camfmt="original"] > img,
+        .stage-cam-wrap[data-camfmt="auto"] > video, .stage-cam-wrap[data-camfmt="auto"] > img,
+        .cam-card[data-camfmt="auto"] > video, .cam-card[data-camfmt="auto"] > img,
+        .libras-card[data-camfmt="auto"] > video, .libras-card[data-camfmt="auto"] > img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+            border-radius: inherit !important;
+            display: block;
+        }
+        .stage-cam-wrap[data-camfmt="original"], .cam-card[data-camfmt="original"], .libras-card[data-camfmt="original"],
+        .stage-cam-wrap[data-camfmt="auto"], .cam-card[data-camfmt="auto"], .libras-card[data-camfmt="auto"] {
+            background: transparent !important;
+        }
         [data-camfmt="retrato"] > video, [data-camfmt="retrato"] > img,
         [data-camfmt="paisagem"] > video, [data-camfmt="paisagem"] > img,
         [data-camfmt="quadrada"] > video, [data-camfmt="quadrada"] > img {
@@ -5320,6 +5338,13 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                         slideFrame.appendChild(ytHost);
                     }} else if (!useWebRTC || data.has_presentation) {{
                         slideFrame.innerHTML = '<img id="stage_slide_img" src="/raw_frame/presentation">';
+                    }} else {{
+                        // Sem slide, sem vídeo e sem YouTube: o frame ficaria VAZIO. Num
+                        // overlay transparente do OBS, pintar a caixa #090d16 viraria um
+                        // retângulo escuro indevido — deixa o placeholder transparente.
+                        slideFrame.style.background = 'transparent';
+                        slideFrame.style.border = 'none';
+                        slideFrame.style.boxShadow = 'none';
                     }}
                     slideCont.appendChild(slideFrame);
 
@@ -5615,6 +5640,19 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                             targetRatioCss = '16 / 9';
                         }}
 
+                        // No formato 'original' a moldura adota a proporção REAL de cada
+                        // vídeo (pixel-perfect), não um alvo fixo — vale também para itens
+                        // em coluna/linha, que a seção 3 abaixo não alcança.
+                        const ratioFor = (el) => {{
+                            if (camFmt === 'retrato') return '9 / 16';
+                            if (camFmt === 'quadrada') return '1 / 1';
+                            if (camFmt === 'paisagem') return '16 / 9';
+                            const m = el.querySelector('video, img');
+                            const nw = m && (m.videoWidth || m.naturalWidth || 0);
+                            const nh = m && (m.videoHeight || m.naturalHeight || 0);
+                            return (camFmt === 'original' && nw && nh) ? (nw + ' / ' + nh) : targetRatioCss;
+                        }};
+
                         // 1. Câmeras em Coluna (.cameras-column)
                         container.querySelectorAll('.cameras-column').forEach(col => {{
                             const items = Array.from(col.querySelectorAll(':scope > .stage-cam-wrap'));
@@ -5643,7 +5681,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 el.style.height = finalH + 'px';
                                 el.style.maxWidth = '100%';
                                 el.style.maxHeight = '100%';
-                                el.style.aspectRatio = targetRatioCss;
+                                el.style.aspectRatio = ratioFor(el);
                                 el.style.flex = '0 0 auto';
                                 el.dataset.camfmt = camFmt;
                             }});
@@ -5677,7 +5715,7 @@ async def get_stage_overlay(preset: Optional[str] = None, libras_size: Optional[
                                 el.style.height = finalH + 'px';
                                 el.style.maxWidth = '100%';
                                 el.style.maxHeight = '100%';
-                                el.style.aspectRatio = targetRatioCss;
+                                el.style.aspectRatio = ratioFor(el);
                                 el.style.flex = '0 0 auto';
                                 el.dataset.camfmt = camFmt;
                             }});
