@@ -48,6 +48,23 @@
                 for (const report of reports.values()) {
                     if (report.type !== 'inbound-rtp' || !['audio', 'video'].includes(report.kind || report.mediaType)) continue;
                     entry.receiving = true;
+                    // Diagnóstico de decode de vídeo: codec + implementação do decoder
+                    // (HW vs SW). Revela se o gpu-process está decodificando por hardware
+                    // ou queimando CPU em software. Dedup por (codec|decoder).
+                    if ((report.kind || report.mediaType) === 'video') {
+                        const codec = report.codecId ? reports.get(report.codecId) : null;
+                        const mime = codec ? (codec.mimeType || codec.codec || null) : null;
+                        const decoder = report.decoderImplementation || null;
+                        const chave = (mime || '?') + '|' + (decoder || '?');
+                        if (!Array.isArray(result.video_decode)) result.video_decode = [];
+                        if (!result.video_decode.some(d => d.key === chave)) {
+                            result.video_decode.push({
+                                key: chave, mime, decoder,
+                                power_efficient: (typeof report.powerEfficientDecoder === 'boolean') ? report.powerEfficientDecoder : null,
+                                width: report.frameWidth || null, height: report.frameHeight || null
+                            });
+                        }
+                    }
                     const previous = entry.previous.get(report.id);
                     next.set(report.id, {timestamp: report.timestamp,
                         received: report.packetsReceived, lost: report.packetsLost});

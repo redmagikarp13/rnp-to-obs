@@ -293,6 +293,24 @@ padrão `full`) limita o relay ponte→OBS **ao vivo**, sem reconectar:
   use `tools/diag_gpu_decode.py` (mesmos `BROWSER_LAUNCH_ARGS`/`browser_channels()`
   da produção; reporta o renderer WebGL e `decoderImplementation`/`powerEfficientDecoder`).
 
+### Codecs: VP8 na entrada (software), H264 na saída (hardware no OBS)
+Diagnóstico ao vivo (getStats das trilhas + sonda de SDP):
+- **Entrada (sala BBB → ponte):** o servidor Mconf/RNP entrega **VP8-only** (SDP `m=video`
+  só com VP8 PT 96 + RTX 97; sem VP9/H264/AV1). O assinante não tem codec alternativo
+  para negociar. E **nenhum browser mainstream (Chrome/Edge/Firefox) faz HW decode de VP8**
+  no Windows — cai em **libvpx (software)**, medido como `decoderImplementation="libvpx"`,
+  `powerEfficientDecoder=false`. A GPU até poderia (o NVDEC decodifica VP8, segundo o doc
+  NVIDIA Video Codec SDK), mas o Chromium não roteia VP8 para o NVDEC. Esse é o **piso de
+  CPU da ponte** (~245% no gpu-process) e só cai se a RNP habilitar VP9/H264 no servidor
+  (aí o Chromium faz HW decode) ou com um pipeline nativo (FFmpeg `vp8_cuvid`).
+- **Saída (ponte → OBS):** a perna negociava **VP8** por padrão, e o CEF do OBS decodifica
+  VP8 em software. Como ambos os lados são Chromium e o SDP de resposta da ponte oferece
+  H264/VP9/AV1/VP8, os receptores (`web/stage-media.js`, `web/webrtc-receiver.js`) passaram
+  a aplicar `setCodecPreferences` **preferindo H264** (demais como fallback). Com isso o
+  **OBS decodifica em hardware** (Chromium faz HW decode de H264), sem custo extra de encode
+  na ponte (medido: H264 372,7% vs VP8 374,8%, ruído). Diagnóstico permanente em
+  `/api/status.inbound_video` (codec/decoder/powerEfficient da entrada).
+
 **Limites das evidências:**
 - A melhora de fluidez é relato qualitativo do usuário no OBS; não houve medição
   controlada de CPU/GPU, latência total ou A/B dentro do OBS.

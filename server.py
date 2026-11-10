@@ -2802,6 +2802,8 @@ async def api_status():
             "connecting": state.connecting,
             "status_message": state.status_message,
             "connection_quality": state.connection_quality(),
+            "inbound_video": ((state.connection_stats or {}).get('video_decode')
+                              if (time.monotonic() - state.connection_stats_received_at) < 6 else None),
             "pcm_diag": _diag_snapshot(),
             "lan_access": state.lan_access,
             "bind_host": resolve_bind_host(),

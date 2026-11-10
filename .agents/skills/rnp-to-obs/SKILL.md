@@ -87,6 +87,8 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 - **Coleta**: `web/connection-quality.js` instala um Proxy sobre `RTCPeerConnection` antes do cliente BBB nascer; `sync_loop` puxa o snapshot a cada ~2 s. Perda é calculada por **delta na janela**, nunca o acumulado da sessão.
 - **Faixas**: Atenção em RTT ≥ 300 ms / jitter ≥ 30 ms / perda ≥ 2%; Ruim em RTT ≥ 600 ms / jitter ≥ 60 ms / perda ≥ 5% ou transporte interrompido. É o **pior valor** entre as trilhas recebidas.
 - **API**: `/api/status` expõe `connection_quality: {level, rtt_ms, jitter_ms, loss_pct, age_ms}`. Amostra vencida (> 6 s) vira `unknown` (não reutiliza valor velho).
+- **Decode de entrada (`inbound_video` em `/api/status`)**: o coletor (`web/connection-quality.js`) registra, por trilha de vídeo recebida da sala, `mime` (codec), `decoder` (`decoderImplementation`), `power_efficient` (`powerEfficientDecoder`), `width`/`height`. É o diagnóstico que revela se o decode é **hardware ou software**. Amostra vencida (> 6 s) vira `null`.
+- **Codec de saída (ponte → OBS)**: os receptores que o OBS carrega (`web/stage-media.js` e `web/webrtc-receiver.js`) aplicam `RTCRtpTransceiver.setCodecPreferences` **preferindo H264** (mantendo VP8/VP9/AV1 como fallback). Motivo: o CEF/Chromium do OBS **decodifica H264 em hardware**, enquanto **VP8 só decodifica em software (libvpx)** — em qualquer browser. O encode H264 na ponte custa o mesmo do VP8 (validado ao vivo). Isso **não** muda o decode de **entrada** da ponte: a sala BBB entrega **VP8-only** (SDP sem VP9/H264), então o piso de decode de entrada continua software até a RNP habilitar outro codec no servidor.
 
 ---
 

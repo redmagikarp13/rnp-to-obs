@@ -857,6 +857,32 @@ class MediaRoutesTests(unittest.TestCase):
                       'O handler deve estar servido por /assets/dock.js.')
         self.assertIn('performance_mode', js, 'O handler posta o campo performance_mode.')
 
+    def test_receptores_preferem_h264_na_saida(self):
+        # Os receptores que o OBS carrega devem preferir H264 no transceiver de vídeo
+        # (setCodecPreferences), porque o CEF/Chromium decodifica H264 em hardware e
+        # VP8 só em software (libvpx). Vale para /stage (stage-media.js) e /webrtc
+        # (webrtc-receiver.js), mantendo os demais codecs como fallback.
+        for asset in ('/assets/stage-media.js', '/assets/webrtc-receiver.js'):
+            js = self.client.get(asset).text
+            self.assertIn('setCodecPreferences', js,
+                          f'{asset} deve aplicar setCodecPreferences para preferir H264.')
+            self.assertRegex(js, r'H264',
+                             f'{asset} deve preferir H264 na perna de saída.')
+
+    def test_status_expoe_inbound_video_do_coletor(self):
+        # /api/status.inbound_video repassa o video_decode capturado pelo coletor
+        # (codec/decoder/powerEfficient) enquanto a amostra esta fresca (<6s); vencida,
+        # devolve None (nao reutiliza valor velho). Foi isso que revelou VP8/libvpx.
+        import time as _t
+        decode = [{'mime': 'video/VP8', 'decoder': 'libvpx', 'power_efficient': False,
+                   'width': 451, 'height': 338}]
+        self.state.connection_stats = {'video_decode': decode}
+        self.state.connection_stats_received_at = _t.monotonic()
+        self.assertEqual(self.client.get('/api/status').json()['inbound_video'], decode)
+        self.state.connection_stats_received_at = _t.monotonic() - 30
+        self.assertIsNone(self.client.get('/api/status').json()['inbound_video'],
+                          'Amostra vencida nao pode ser reutilizada.')
+
     def test_vitrine_de_temas_removida(self):
         for rota in ('/catalog', '/themes'):
             self.assertEqual(self.client.get(rota).status_code, 404,

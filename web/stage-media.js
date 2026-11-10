@@ -3,6 +3,23 @@
     const closeRemote = id => id && fetch('/api/webrtc/close/' + encodeURIComponent(id),
         {method: 'POST', keepalive: true}).catch(() => {});
 
+    // Prefere H264 no vídeo de saída: o CEF/Chromium do OBS decodifica H264 em
+    // HARDWARE, enquanto VP8 cai em libvpx (software). A lista completa é só
+    // REORDENADA (H264 primeiro, demais como fallback), então nada quebra se o H264
+    // não for negociável. Custo de encode na ponte é o mesmo (validado ao vivo).
+    function preferirH264(transceiver) {
+        try {
+            if (!transceiver || !transceiver.setCodecPreferences) return;
+            const caps = (window.RTCRtpReceiver && RTCRtpReceiver.getCapabilities)
+                ? RTCRtpReceiver.getCapabilities('video') : null;
+            if (!caps || !caps.codecs) return;
+            const eh264 = c => /h264/i.test(c.mimeType || '');
+            const h264 = caps.codecs.filter(eh264);
+            if (!h264.length) return;
+            transceiver.setCodecPreferences([...h264, ...caps.codecs.filter(c => !eh264(c))]);
+        } catch (e) {}
+    }
+
     class RnpStageMedia {
         constructor(container) {
             this.container = container;
@@ -105,7 +122,7 @@
                 this.status(entry, message);
             };
             this.status(entry, 'Conectando vídeo…');
-            peer.addTransceiver('video', {direction: 'recvonly'});
+            preferirH264(peer.addTransceiver('video', {direction: 'recvonly'}));
             peer.ontrack = event => {
                 if (!current()) return;
                 entry.video.muted = true;

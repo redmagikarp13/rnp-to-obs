@@ -166,6 +166,33 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['degraded'])
         self.assertIsNone(result['rtt_ms'])
 
+    async def test_coletor_captura_codec_e_decoder_de_video(self):
+        # O coletor de conexao (connection-quality.js) tambem registra codec +
+        # decoderImplementation das trilhas de video recebidas, que o /api/status
+        # expoe como inbound_video. Foi assim que VP8/libvpx (software) foi cravado.
+        await self.receiver.evaluate(MEDIA_SOURCE_JS)
+        snap = await self.receiver.evaluate("""async () => {
+            const pc = new RTCPeerConnection();
+            pc.getStats = () => Promise.resolve(new Map([
+                ['c1', {id:'c1', type:'codec', mimeType:'video/VP8'}],
+                ['v1', {id:'v1', type:'inbound-rtp', kind:'video', codecId:'c1',
+                        decoderImplementation:'libvpx', powerEfficientDecoder:false,
+                        packetsReceived:10, packetsLost:0, jitter:0.01, timestamp:1000,
+                        frameWidth:451, frameHeight:338}],
+                ['t1', {id:'t1', type:'transport', selectedCandidatePairId:'p1'}],
+                ['p1', {id:'p1', type:'candidate-pair', state:'succeeded', currentRoundTripTime:0.02}],
+            ]));
+            const s = await RnpConnection.sample();
+            pc.close();
+            return s;
+        }""")
+        vd = snap.get('video_decode')
+        self.assertTrue(vd, 'O coletor deve registrar video_decode para trilhas de video.')
+        self.assertEqual(vd[0]['mime'], 'video/VP8')
+        self.assertEqual(vd[0]['decoder'], 'libvpx')
+        self.assertFalse(vd[0]['power_efficient'])
+        self.assertEqual(vd[0]['width'], 451)
+
     async def test_medidor_conexao_timeout_nao_bloqueia_nem_sobrepoe_coleta(self):
         self.assertTrue(await self.producer.evaluate('!!window.RnpConnection'))
         result = await self.producer.evaluate("""async () => {
@@ -659,15 +686,26 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
     async def test_formato_original_frame_acompanha_conteudo(self):
         self.state.camera_format = 'original'
         await self.open_stage()
+        # A moldura adota a proporção REAL do vídeo; equalizeStageCameras roda a cada
+        # ~250ms, então espera assentar (dims disponíveis) antes de afirmar — senão é
+        # race de leitura, não bug. Se nunca assentar, o wait estoura e revela defeito.
+        await self.receiver.wait_for_function("""() => {
+            const w = document.querySelector('.stage-cam-wrap');
+            const v = w && w.querySelector('video');
+            return !!(w && v && v.videoWidth && w.style.aspectRatio
+                && w.style.aspectRatio.replace(/ /g, '') === (v.videoWidth + '/' + v.videoHeight));
+        }""", timeout=5000)
         info = await self.receiver.evaluate("""() => {
             const w = document.querySelector('.stage-cam-wrap');
+            const v = w.querySelector('video');
             return {bg: getComputedStyle(w).backgroundColor, ratio: w.style.aspectRatio, fmt: w.dataset.camfmt,
-                shadow: getComputedStyle(w).boxShadow};
+                shadow: getComputedStyle(w).boxShadow, vw: v.videoWidth, vh: v.videoHeight};
         }""")
         self.assertEqual(info['fmt'], 'original')
         self.assertIn(info['bg'], ('rgba(0, 0, 0, 0)', 'transparent'), 'No formato original a moldura não deve pintar caixa preta.')
         self.assertNotEqual(info['shadow'], 'none', 'O drop shadow deve permanecer contornando o conteúdo.')
-        self.assertEqual(info['ratio'].replace(' ', ''), '320/180', 'A moldura deve adotar a proporção real do vídeo.')
+        self.assertEqual(info['ratio'].replace(' ', ''), f"{info['vw']}/{info['vh']}",
+                         'A moldura deve adotar a proporção real do vídeo.')
 
     async def test_formato_esticado_sobrepoe_via_url(self):
         self.state.camera_format = 'original'
@@ -915,6 +953,37 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any('/ws/pcm_out' in u for u in ws_urls),
                         'O palco precisa reproduzir o master de áudio (participantes + apresentações).')
         self.assertCountEqual(self.offers, ['cam-w_a', 'cam-w_b'])
+
+    async def test_stage_prefere_h264_na_saida_para_o_obs(self):
+        # A perna ponte->OBS deve negociar H264, que o CEF/Chromium do OBS decodifica
+        # em HARDWARE, em vez do VP8 padrao (que cai em libvpx software no OBS). O
+        # receptor (/stage via stage-media.js) aplica setCodecPreferences(H264 primeiro),
+        # mantendo VP8/VP9/AV1 como fallback.
+        await self.receiver.add_init_script("""(() => {
+            const Native = window.RTCPeerConnection;
+            window.__stagePcs = [];
+            window.RTCPeerConnection = new Proxy(Native, {
+                construct(t, a, nt) { const pc = Reflect.construct(t, a, nt); window.__stagePcs.push(pc); return pc; }
+            });
+        })()""")
+        await self.open_stage()
+        resultado = await self.receiver.evaluate("""async () => {
+            const nomes = new Set();
+            const pcs = window.__stagePcs || [];
+            for (const pc of pcs) {
+                let st; try { st = await pc.getStats(); } catch (e) { continue; }
+                const cs = {}; st.forEach(r => { if (r.type === 'codec') cs[r.id] = r.mimeType; });
+                st.forEach(r => {
+                    if (r.type === 'inbound-rtp' && (r.kind === 'video' || r.mediaType === 'video'))
+                        nomes.add((cs[r.codecId] || '?') + ':' + (r.framesDecoded || 0));
+                });
+            }
+            return {count: pcs.length, codecs: [...nomes]};
+        }""")
+        codecs = resultado['codecs']
+        self.assertGreater(resultado['count'], 0, 'O receptor do /stage deve criar peers WebRTC capturaveis.')
+        self.assertTrue(any('H264' in c.upper() for c in codecs),
+                        f'A perna de saida deve negociar H264 para o OBS decodificar em hardware; obtido: {codecs}')
 
     async def test_stage_preserva_conexoes_ao_trocar_layout_e_libras(self):
         await self.open_stage()
