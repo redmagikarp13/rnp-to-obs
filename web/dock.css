@@ -683,6 +683,13 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--ok); }
     font-weight: 600;
 }
 .dock-statusbar-theme select { width: auto; padding: 2px 6px; font-size: 11px; }
+/* Modo econômico ativo: destaca o botão com o token de alerta (sem cor inline). */
+#btnPerfMode { flex: 0 0 auto; min-width: 0; padding: 2px 8px; font-size: 11px; }
+#btnPerfMode[data-mode="eco"] {
+    background: var(--warn);
+    border-color: var(--warn);
+    color: #0f172a;
+}
 /* Cluster direito da barra: quebra junto, sem órfãos nem vãos no meio. */
 .dock-bar-right {
     display: flex;

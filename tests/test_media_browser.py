@@ -374,6 +374,37 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
         third = await self._real_video_offer('cam-w_b')
         self.assertEqual(third.status_code, 200)
 
+    async def test_modo_eco_limita_encode_e_full_remove_tetos(self):
+        # O relay ponte->OBS nao pode ficar sem teto em 'eco': limitar o encode a
+        # <=15 fps corta CPU de encode na ponte E de decode em cada Browser Source.
+        # Captura os RTCPeerConnection criados no produtor (lado sender do answer()).
+        await self.producer.evaluate("""() => {
+            const Native = window.RTCPeerConnection;
+            window.__senderPcs = [];
+            window.RTCPeerConnection = class extends Native {
+                constructor(...a) { super(...a); window.__senderPcs.push(this); }
+            };
+        }""")
+        leitura = """() => {
+            const pc = window.__senderPcs.find(p => { try { return p.getSenders().some(s => s.track && s.track.kind === 'video'); } catch (e) { return false; } });
+            if (!pc) return null;
+            const s = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+            const enc = (s.getParameters().encodings || [{}])[0];
+            return {maxFramerate: enc.maxFramerate ?? null, maxBitrate: enc.maxBitrate ?? null};
+        }"""
+        await self.producer.evaluate("() => RnpMedia.setPerfMode('eco')")
+        r = await self._real_video_offer('cam-w_a')
+        self.assertEqual(r.status_code, 200)
+        eco = await self.producer.evaluate(leitura)
+        self.assertIsNotNone(eco, 'deve haver um peer sender de video')
+        self.assertIsNotNone(eco['maxFramerate'], 'eco precisa impor teto de framerate')
+        self.assertLessEqual(eco['maxFramerate'], 15)
+        # 'full' remove os tetos do MESMO peer, ao vivo, sem reconectar.
+        await self.producer.evaluate("() => RnpMedia.setPerfMode('full')")
+        cheio = await self.producer.evaluate(leitura)
+        self.assertTrue(cheio['maxFramerate'] is None or cheio['maxFramerate'] >= 30,
+                        'full nao pode manter o teto de 15 fps')
+
     async def test_captura_estado_youtube_da_sala(self):
         await self.producer.evaluate("""() => {
             window.dispatchEvent(new MessageEvent('message', {data: JSON.stringify({event:'infoDelivery',

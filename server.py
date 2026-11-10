@@ -132,12 +132,17 @@ GRID_LAYOUT_MODES = ('auto', 'row', 'column', 'grid')
 STAGE_PRESETS = ('side-by-side', 'bottom-bar', 'top-bar', 'pip-bottom-right', 'pip-top-right',
                  'split-50-50', 'slide-only', 'cameras-only', 'camera-libras', 'grid-libras')
 CHAT_SOURCE_FILTERS = ('all', 'rnp', 'youtube')
+# Modo de desempenho da ponte: 'full' preserva o comportamento histórico; 'eco'
+# limita o encode de vídeo (720p/15fps), reduz a cadência do sync_loop e desliga
+# os previews do dock — para rodar leve em notebooks/máquinas fracas em eventos.
+PERFORMANCE_MODES = ('full', 'eco')
 _ENUM_CAMPOS = {
     'libras_size': LIBRAS_SIZES,
     'camera_name_style': CAMERA_NAME_STYLES,
     'grid_layout_mode': GRID_LAYOUT_MODES,
     'stage_preset': STAGE_PRESETS,
     'chat_source_filter': CHAT_SOURCE_FILTERS,
+    'performance_mode': PERFORMANCE_MODES,
 }
 
 
@@ -247,6 +252,9 @@ DEFAULT_CONFIG = {
     "libras_camera_ids": [],
     # Acesso LAN: quando True, o servidor escuta em 0.0.0.0 (todas as interfaces)
     # para outras máquinas da rede abrirem /tv, /stage, /control etc. Padrão False
+    # Modo de desempenho: 'full' (padrão) ou 'eco' (vídeo 720p/15fps, sync 1 Hz,
+    # previews do dock desligados). Aplica ao vivo; não exige reiniciar.
+    "performance_mode": "full",
     # (só localhost) por segurança. Muda o bind no boot: exige reiniciar o app.
     "lan_access": False
 }
@@ -560,6 +568,8 @@ class BridgeState:
         self.dock_block_order: list = _ordem if _ordem is not None else list(DOCK_BLOCKS)
         self.grid_layout_mode: str = cfg.get("grid_layout_mode", "auto")
         self.stage_preset: str = cfg.get("stage_preset", "side-by-side")
+        _perf = cfg.get("performance_mode", "full")
+        self.performance_mode: str = _perf if _perf in PERFORMANCE_MODES else "full"
         self.custom_camera_names: Dict[str, str] = cfg.get("custom_camera_names", {})
 
         # Opções de Estilização do Chat
@@ -689,6 +699,7 @@ class BridgeState:
             "dock_block_order": self.dock_block_order,
             "grid_layout_mode": self.grid_layout_mode,
             "stage_preset": self.stage_preset,
+            "performance_mode": self.performance_mode,
             "libras_size": self.libras_size,
             "libras_auto_detect": self.libras_auto_detect,
             "libras_saved_names": self.libras_saved_names,
@@ -861,6 +872,60 @@ async def cancel_connection():
     state.connection_task = None
 
 
+# Args de launch do navegador de captura (Edge/Chrome headless). Extraído para o
+# nível de módulo para que ferramentas de diagnóstico (tools/diag_gpu_decode.py)
+# subam o navegador EXATAMENTE como a produção e para run_connection reutilizar.
+BROWSER_LAUNCH_ARGS = [
+    '--use-fake-ui-for-media-stream',
+    '--autoplay-policy=no-user-gesture-required',
+    '--disable-web-security',
+    '--headless=new',
+    # --- Aceleração de Hardware (GPU) & Baixa Latência ---
+    '--enable-gpu-rasterization',
+    '--enable-zero-copy',
+    '--enable-accelerated-video-decode',
+    '--enable-accelerated-mjpeg-decode',
+    '--enable-features=WebRtcHWDecoding,WebRtcHWEncoding,CanvasOopRasterization',
+    '--disable-frame-rate-limit',
+    '--ignore-gpu-blocklist',
+    *(['--use-gl=angle', '--use-angle=d3d11'] if sys.platform == 'win32' else []),
+    # --- Performance & Memória ---
+    '--disable-dev-shm-usage',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-ipc-flooding-protection',
+    '--disable-hang-monitor',
+    # --- Reduzir overhead visual do browser ---
+    '--disable-smooth-scrolling',
+    '--disable-default-apps',
+    '--no-first-run',
+    '--disable-extensions',
+    '--disable-component-update',
+    '--disable-breakpad',
+    '--metrics-recording-only',
+    '--mute-audio',
+]
+
+
+def browser_channels() -> list:
+    """Ordem de canais do navegador de captura, controlável por RNP_BROWSER_CHANNEL.
+    No Playwright, headless=True sem 'channel' sobe o chrome-headless-shell (build
+    reduzido, sem pilha de áudio real); channel='msedge'/'chrome'/'chromium' sobe o
+    navegador COMPLETO em --headless=new. Valores: 'chromium'/'full' -> Chromium
+    completo; 'shell'/'playwright'/'' -> chrome-headless-shell; ausente -> Edge,
+    Chrome, Chromium completo, shell (nessa ordem)."""
+    _canal_env = os.environ.get('RNP_BROWSER_CHANNEL')
+    if _canal_env is None:
+        return ["msedge", "chrome", "chromium", None]
+    _canal = _canal_env.strip().lower()
+    if _canal in ('chromium', 'full'):
+        return ["chromium", None]
+    if _canal in ('shell', 'headless_shell', 'headless-shell', 'playwright', ''):
+        return [None]
+    return [_canal_env.strip()]
+
+
 async def run_connection(room_url: str, user_name: str, user_email: str):
     if state.connected or state.connecting:
         await stop_connection()
@@ -879,37 +944,7 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
 
     try:
         state.playwright = await async_playwright().start()
-        launch_args = [
-            '--use-fake-ui-for-media-stream',
-            '--autoplay-policy=no-user-gesture-required',
-            '--disable-web-security',
-            '--headless=new',
-            # --- Aceleração de Hardware (GPU) & Baixa Latência ---
-            '--enable-gpu-rasterization',
-            '--enable-zero-copy',
-            '--enable-accelerated-video-decode',
-            '--enable-accelerated-mjpeg-decode',
-            '--enable-features=WebRtcHWDecoding,WebRtcHWEncoding,CanvasOopRasterization',
-            '--disable-frame-rate-limit',
-            '--ignore-gpu-blocklist',
-            *(['--use-gl=angle', '--use-angle=d3d11'] if sys.platform == 'win32' else []),
-            # --- Performance & Memória ---
-            '--disable-dev-shm-usage',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-ipc-flooding-protection',
-            '--disable-hang-monitor',
-            # --- Reduzir overhead visual do browser ---
-            '--disable-smooth-scrolling',
-            '--disable-default-apps',
-            '--no-first-run',
-            '--disable-extensions',
-            '--disable-component-update',
-            '--disable-breakpad',
-            '--metrics-recording-only',
-            '--mute-audio',
-        ]
+        launch_args = list(BROWSER_LAUNCH_ARGS)
 
         browser_obj = None
         # RNP_BROWSER_CHANNEL fixa o navegador de captura sem editar codigo.
@@ -928,17 +963,7 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         # O ultimo item da ordem default NAO e decorativo: sem ele, uma maquina sem
         # Edge/Chrome cai direto no chrome-headless-shell, que nao tem pilha de audio
         # real e produz o stutter na fonte (medido: clock 0,63x, 62,5% da taxa nominal).
-        _canal_env = os.environ.get('RNP_BROWSER_CHANNEL')
-        if _canal_env is None:
-            canais_navegador = ["msedge", "chrome", "chromium", None]
-        else:
-            _canal = _canal_env.strip().lower()
-            if _canal in ('chromium', 'full'):
-                canais_navegador = ["chromium", None]
-            elif _canal in ('shell', 'headless_shell', 'headless-shell', 'playwright', ''):
-                canais_navegador = [None]
-            else:
-                canais_navegador = [_canal_env.strip()]
+        canais_navegador = browser_channels()
         for ch in canais_navegador:
             try:
                 if ch:
@@ -970,6 +995,9 @@ async def run_connection(room_url: str, user_name: str, user_email: str):
         except ValueError:
             max_peers = 0
         await state.context.add_init_script(f'window.RNP_MAX_PEERS = {max_peers};')
+        # Modo de desempenho lido pelo adaptador (web/media-source.js) para limitar o
+        # encode WebRTC quando 'eco'. Injetado ANTES do adapter para valer desde já.
+        await state.context.add_init_script(f'window.RNP_PERF_MODE = {json.dumps(state.performance_mode)};')
         await state.context.add_init_script(MEDIA_SOURCE_JS)
         state.page = await state.context.new_page()
 
@@ -1269,6 +1297,20 @@ async def keep_alive_loop():
 # chips de fala e o fps da barra responsivos pela metade do custo. O legado
 # (JPEG) continua em 0.05 s porque o mosaico de frames depende dessa cadência.
 SYNC_INTERVAL_WEBRTC = 0.5
+# Modo econômico: metade da cadência (1 Hz) corta pela metade o custo dos evaluate()
+# por câmera (fps/fala) no piso da ponte. Só vale em webrtc_only; o legado JPEG
+# mantém 0,05 s independente do modo (o mosaico de frames depende dessa cadência).
+SYNC_INTERVAL_ECO = 1.0
+
+
+def sync_interval(webrtc_only: bool, performance_mode: str) -> float:
+    """Intervalo-alvo de cada volta do sync_loop, derivado do modo de operação e de
+    desempenho. Legado JPEG: 0,05 s. webrtc_only: 0,5 s em 'full', 1,0 s em 'eco'."""
+    if not webrtc_only:
+        return 0.05
+    if performance_mode == 'eco':
+        return SYNC_INTERVAL_ECO
+    return SYNC_INTERVAL_WEBRTC
 
 # Timeout do evaluate() principal do sync_loop (câmeras/áudio/stats). Se a main
 # thread do BBB travar, o evaluate penduraria para sempre e congelaria o loop
@@ -1718,7 +1760,7 @@ async def sync_loop():
             pass
 
         elapsed = time.time() - t_start
-        sleep_time = max(0.015, (SYNC_INTERVAL_WEBRTC if state.webrtc_only else 0.05) - elapsed)
+        sleep_time = max(0.015, sync_interval(state.webrtc_only, state.performance_mode) - elapsed)
         await asyncio.sleep(sleep_time)
 
 
@@ -2547,6 +2589,18 @@ async def api_grid_config(req: Request):
         state.dock_block_order = data["dock_block_order"]
     if "stage_preset" in data:
         state.stage_preset = data["stage_preset"]
+    if "performance_mode" in data:
+        state.performance_mode = data["performance_mode"]
+        # Aplica ao vivo: re-aplica (ou remove) os tetos de encode nos peers WebRTC
+        # já abertos; a cadência do sync_loop passa a ler o novo modo na próxima volta.
+        if state.connected and state.page:
+            try:
+                _frame = find_active_bbb_frame(state.page)
+                await asyncio.wait_for(
+                    _frame.evaluate('(m) => window.RnpMedia?.setPerfMode(m)', state.performance_mode),
+                    timeout=SYNC_EVAL_TIMEOUT)
+            except Exception:
+                pass
     if "custom_name" in data and "cam_id" in data:
         c_name = data["custom_name"].strip()
         cid_str = str(data["cam_id"])
@@ -2660,6 +2714,7 @@ async def api_config_save(req: Request):
     if "camera_name_style" in data: state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data: state.grid_layout_mode = data["grid_layout_mode"]
     if "stage_preset" in data: state.stage_preset = data["stage_preset"]
+    if "performance_mode" in data: state.performance_mode = data["performance_mode"]
     if "libras_size" in data: state.libras_size = data["libras_size"]
     if "libras_saved_names" in data: state.libras_saved_names = [str(x) for x in data["libras_saved_names"]]
     if "poll_display_mode" in data: state.poll_display_mode = data["poll_display_mode"]
@@ -2698,6 +2753,7 @@ async def api_config_reset(req: Request):
     state.grid_layout_mode = cfg["grid_layout_mode"]
     state.camera_format = cfg.get("camera_format", "original")
     state.stage_preset = cfg["stage_preset"]
+    state.performance_mode = cfg.get("performance_mode", "full")
     state.libras_size = cfg["libras_size"]
     state.libras_saved_names = []
     state.libras_disabled_names = []
@@ -2778,6 +2834,7 @@ async def api_status():
             "camera_format": state.camera_format,
             "grid_layout_mode": state.grid_layout_mode,
             "stage_preset": state.stage_preset,
+            "performance_mode": state.performance_mode,
             "chat_style": state.chat_style,
             "chat_font_size": state.chat_font_size,
             "chat_max_messages": state.chat_max_messages,
@@ -3756,6 +3813,9 @@ async def get_control_panel():
                 <option value="ifes" {sel_th_ifes}>Ifes</option>
             </select>
         </label>
+        <button type="button" id="btnPerfMode" class="btn btn-ctrl" data-mode="{state.performance_mode}"
+                onclick="togglePerformanceMode()"
+                title="Modo Econômico: limita o vídeo a 720p/15fps, reduz a cadência de sincronização e desliga os previews — para rodar leve em notebooks/máquinas fracas">⚡ <span id="perfModeLabel">{'Econômico' if state.performance_mode == 'eco' else 'Cheio'}</span></button>
         <span class="dock-bar-right">
         <span class="dock-bar-config">
             <button id="btnBarSave" class="btn btn-ctrl" onclick="saveAllConfigurations()" title="Salvar todas as configurações em disco">Salvar</button>

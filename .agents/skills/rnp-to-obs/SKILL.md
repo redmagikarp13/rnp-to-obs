@@ -90,6 +90,19 @@ Todos os links são servidos em `http://localhost:3333` com fundo 100% transpare
 
 ---
 
+## ⚡ Modo Econômico (`performance_mode`) — para notebooks/máquinas fracas
+
+- **Campo** `performance_mode` em `config.json` / `/api/status` / `/api/grid/config` / `/api/config/save`, enum `('full','eco')`, padrão `full` (comportamento histórico). Validado por `erro_enum` (valor inválido → 400, sem aplicar metade do payload).
+- **Botão `#btnPerfMode`** na barra de status do `/control` (handler `togglePerformanceMode` em `web/dock.js`; badge `#perfModeLabel` = Cheio/Econômico; destaque via `#btnPerfMode[data-mode="eco"]` em `web/dock.css`, sem cor inline). Alterna e aplica **ao vivo**, sem reconectar.
+- **O que o `eco` faz:**
+  - **Encode WebRTC limitado a ~720p/15fps** (`ECO_MAX_FPS=15`, `ECO_MAX_BITRATE=1.2 Mbps`) no relay ponte→OBS: `limitarClone` (`applyConstraints` no clone) + `limitarSender` (`encodings`/`degradationPreference=maintain-resolution`) em `web/media-source.js`. Corta CPU de **encode na ponte** e de **decode em cada Browser Source**. `setPerfMode(mode)` re-aplica aos peers já abertos.
+  - **`sync_loop` a 1 Hz** (`SYNC_INTERVAL_ECO=1.0` via `sync_interval(webrtc_only, performance_mode)`), metade dos `evaluate()` por câmera. O legado JPEG ignora o modo (mantém 0,05 s).
+  - **Previews do dock desligados** ao entrar em eco (o operador pode religar manualmente; o poll não os religa).
+- **Injeção:** `window.RNP_PERF_MODE` é injetado por `add_init_script` antes do adapter, para valer desde a conexão.
+- **Diagnóstico de GPU:** `tools/diag_gpu_decode.py` sobe o navegador com os mesmos `BROWSER_LAUNCH_ARGS`/`browser_channels()` de `server.py` e reporta o renderer WebGL (GPU real vs SwiftShader) e `decoderImplementation`/`powerEfficientDecoder` — para confirmar se o decode de vídeo está na GPU (o maior componente do "piso" de CPU em notebook).
+
+---
+
 ## 🔊 Arquitetura de Áudio (PCM WebRTC) e Estabilidade
 
 - Captura as trilhas `<audio>/<video>` da conferência via **Web Audio API** na página da sala

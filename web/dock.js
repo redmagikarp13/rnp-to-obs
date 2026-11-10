@@ -234,6 +234,34 @@
             }
         }
 
+        // Selo do modo de desempenho: só reflete o estado (badge/rótulo). Entrar em
+        // eco desliga os previews apenas na ação do operador (togglePerformanceMode),
+        // nunca a cada poll — senão brigaria com quem religar um preview manualmente.
+        function renderPerfMode(mode) {
+            const btn = document.getElementById('btnPerfMode');
+            const lbl = document.getElementById('perfModeLabel');
+            if (btn) btn.dataset.mode = mode;
+            if (lbl) lbl.textContent = mode === 'eco' ? 'Econômico' : 'Cheio';
+        }
+
+        // Alterna full <-> eco e aplica ao vivo via /api/grid/config (que re-aplica os
+        // tetos de encode nos peers abertos e muda a cadência do sync_loop). O corpo
+        // mora aqui (dock.js), não inline no HTML — ver teste de migração de handlers.
+        async function togglePerformanceMode() {
+            const btn = document.getElementById('btnPerfMode');
+            const atual = btn ? (btn.dataset.mode || 'full') : 'full';
+            const proximo = atual === 'eco' ? 'full' : 'eco';
+            if (!await postSave('/api/grid/config', { performance_mode: proximo })) return;
+            renderPerfMode(proximo);
+            // Entrar em eco desliga os previews ao vivo: cada preview é uma página
+            // inteira decodificando vídeo no dock. O operador pode religar depois.
+            if (proximo === 'eco' && window.RnpDock && window.RnpDock.previewOff) {
+                for (const kind of ('cameras', 'presentation', 'stage')) {
+                    if (!window.RnpDock.previewOff[kind]) window.RnpDock.togglePreview(kind);
+                }
+            }
+        }
+
         function toggleMonitorMute() {
             isLocalMuted = !isLocalMuted;
             const btn = document.getElementById('btnMuteMonitor');
@@ -623,6 +651,8 @@
                     badge.className = 'badge disconnected';
                     badge.innerHTML = '● Desconectado';
                 }
+
+                if (typeof data.performance_mode === 'string') renderPerfMode(data.performance_mode);
 
 
                 const ytBadge = document.getElementById('ytStatusBadge');

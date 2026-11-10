@@ -276,6 +276,23 @@ webcams na sala e observe quando o FPS começa a cair — esse é o teto real da
 se quiser um backstop, defina `RNP_MAX_PEERS=<número>` na linha de comando do
 servidor. (Medição do OBS em si segue pendente.)
 
+### Modo Econômico e teto de encode (2026-11)
+Para rodar em notebooks/máquinas fracas, o campo `performance_mode` (`full`|`eco`,
+padrão `full`) limita o relay ponte→OBS **ao vivo**, sem reconectar:
+- Em `eco`, `web/media-source.js` aplica `limitarClone` (`applyConstraints`
+  frameRate≤15, 1280x720) e `limitarSender` (`encodings.maxFramerate=15`,
+  `maxBitrate=1.2Mbps`, `degradationPreference='maintain-resolution'`) em cada peer
+  de vídeo. Corta CPU de **encode na ponte** e de **decode em cada Browser Source**
+  do OBS. `setPerfMode(mode)` re-aplica aos peers já abertos; o server injeta
+  `window.RNP_PERF_MODE` no `add_init_script` e chama `setPerfMode` no
+  `/api/grid/config` ao alternar (botão `#btnPerfMode` no dock).
+- Em `eco`, o `sync_loop` cai para **1 Hz** (`sync_interval()` / `SYNC_INTERVAL_ECO`),
+  metade dos `evaluate()` por câmera. O legado JPEG mantém 0,05 s.
+- O piso dominante continua sendo o **decode das trilhas de entrada** na página da
+  sala (a ponte é um participante BBB). Para confirmar se esse decode está na GPU,
+  use `tools/diag_gpu_decode.py` (mesmos `BROWSER_LAUNCH_ARGS`/`browser_channels()`
+  da produção; reporta o renderer WebGL e `decoderImplementation`/`powerEfficientDecoder`).
+
 **Limites das evidências:**
 - A melhora de fluidez é relato qualitativo do usuário no OBS; não houve medição
   controlada de CPU/GPU, latência total ou A/B dentro do OBS.

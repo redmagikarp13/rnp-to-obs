@@ -50,6 +50,19 @@ class FindBbbFrameTests(unittest.TestCase):
         self.assertIs(f, page.main_frame)
 
 
+class SyncIntervalTests(unittest.TestCase):
+    """A cadência do sync_loop deriva do modo de desempenho: eco reduz para 1 Hz
+    (metade do trabalho de evaluate por câmera), full mantém 0,5 s, e o legado
+    JPEG mantém 0,05 s porque o mosaico de frames depende dessa cadência."""
+
+    def test_sync_interval_por_modo(self):
+        self.assertAlmostEqual(server.sync_interval(True, 'full'), 0.5)
+        self.assertAlmostEqual(server.sync_interval(True, 'eco'), 1.0)
+        # Legado (não webrtc_only) ignora o modo: o mosaico de frames exige 20 Hz.
+        self.assertAlmostEqual(server.sync_interval(False, 'full'), 0.05)
+        self.assertAlmostEqual(server.sync_interval(False, 'eco'), 0.05)
+
+
 class YouTubeChatTests(unittest.TestCase):
     def test_pytchat_criado_sem_handler_de_signal(self):
         # pytchat.create default interruptable=True chama signal.signal(SIGINT), que
@@ -248,6 +261,38 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(self.state.camera_name_style, 'pill')
         self.assertEqual(self.state.grid_layout_mode, 'row')
         self.assertEqual(self.state.stage_preset, 'cameras-only')
+
+    def test_grid_config_valida_performance_mode(self):
+        # performance_mode é um campo de enumeração: valor inventado -> 400 sem mutar.
+        self.state.performance_mode = 'full'
+        r = self.client.post('/api/grid/config', json={'performance_mode': 'apocalipse'})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.state.performance_mode, 'full', 'inválido não pode mutar')
+        r = self.client.post('/api/grid/config', json={'performance_mode': 'eco'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.state.performance_mode, 'eco')
+        self.assertEqual(self.state.export_config()['performance_mode'], 'eco',
+                         'deve persistir no config exportado')
+        self.assertEqual(self.client.get('/api/status').json()['performance_mode'], 'eco',
+                         'o dock lê o modo pelo /api/status')
+
+    def test_config_save_valida_performance_mode(self):
+        self.state.performance_mode = 'full'
+        r = self.client.post('/api/config/save', json={'performance_mode': 'eco'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.state.performance_mode, 'eco')
+        r = self.client.post('/api/config/save', json={'performance_mode': 'turbo'})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.state.performance_mode, 'eco', 'inválido não pode mutar')
+
+    def test_grid_config_nao_aplica_metade_com_performance_mode_invalido(self):
+        self.state.performance_mode = 'full'
+        self.state.stage_preset = 'bottom-bar'
+        r = self.client.post('/api/grid/config',
+                             json={'stage_preset': 'cameras-only', 'performance_mode': 'nope'})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.state.stage_preset, 'bottom-bar',
+                         'nada pode ser aplicado quando outro campo do payload é inválido')
 
     def test_voice_indicator_config_e_estilos_no_palco(self):
         # 1. Configurar via /api/grid/config com estilo ifes
@@ -797,6 +842,20 @@ class MediaRoutesTests(unittest.TestCase):
             self.assertIn(fn, js, f'{fn} deve estar servido por /assets/dock.js.')
         # O PCM master continua inline (é script injetado, não handler do dock).
         self.assertIn('PCM_AUDIO_SCRIPT', open('server.py', encoding='utf-8').read())
+
+    def test_botao_modo_economico_na_barra_e_handler_no_dock_js(self):
+        # O modo econômico precisa de um botão na barra de status cujo handler mora
+        # em web/dock.js (não inline no HTML), no padrão dos demais handlers do dock.
+        html = self.client.get('/control').text
+        js = self.client.get('/assets/dock.js').text
+        barra = html[html.index('dock-statusbar'):html.index('dock-monitor-fixed')]
+        self.assertIn('btnPerfMode', barra, 'O botão de modo econômico fica na barra de status.')
+        self.assertIn('togglePerformanceMode', html, 'O botão chama o handler global via onclick.')
+        self.assertNotIn('function togglePerformanceMode', html,
+                         'O corpo do handler não pode voltar a ser inline no /control.')
+        self.assertIn('function togglePerformanceMode', js,
+                      'O handler deve estar servido por /assets/dock.js.')
+        self.assertIn('performance_mode', js, 'O handler posta o campo performance_mode.')
 
     def test_vitrine_de_temas_removida(self):
         for rota in ('/catalog', '/themes'):

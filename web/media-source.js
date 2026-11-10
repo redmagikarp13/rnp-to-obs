@@ -1,6 +1,13 @@
 (() => {
     if (window.RnpMedia?.version === 1) return;
     const peers = new Map();
+    // Modo de desempenho do relay ponte->OBS. 'eco' limita o encode de vídeo para
+    // cortar CPU na ponte (encode) e em cada Browser Source (decode); 'full' não
+    // impõe tetos. Injetado pelo server (window.RNP_PERF_MODE) e alternado ao vivo
+    // por setPerfMode, que re-aplica aos peers já abertos sem reconectar.
+    let perfMode = (window.RNP_PERF_MODE === 'eco') ? 'eco' : 'full';
+    const ECO_MAX_FPS = 15;
+    const ECO_MAX_BITRATE = 1200000;
     const cameraPublications = new Map();
     const cameraElements = new WeakMap();
     const itemSelector = '[data-test="webcamVideoItem"], [data-test="webcamItem"], [data-test="webcamItemTalkingUser"]';
@@ -548,6 +555,50 @@
         entry.clone.stop(); // Nunca parar a trilha original da sala.
     }
 
+    // Tetos de encode do relay. limitarClone age sobre a trilha clonada (constraints
+    // de captura); limitarSender age sobre o RTCRtpSender (encodings/bitrate). Ambos
+    // são tolerantes a falha: se o navegador rejeitar, o relay segue sem teto.
+    function limitarClone(clone) {
+        try {
+            if (perfMode === 'eco') {
+                clone.applyConstraints({frameRate: {max: ECO_MAX_FPS}, width: {ideal: 1280}, height: {ideal: 720}}).catch(() => {});
+            } else {
+                clone.applyConstraints({frameRate: {max: 60}}).catch(() => {});
+            }
+        } catch (e) {}
+    }
+
+    function limitarSender(pc) {
+        try {
+            for (const sender of pc.getSenders()) {
+                if (!sender.track || sender.track.kind !== 'video') continue;
+                const p = sender.getParameters();
+                p.encodings = (p.encodings && p.encodings.length) ? p.encodings : [{}];
+                const enc = p.encodings[0];
+                if (perfMode === 'eco') {
+                    enc.maxFramerate = ECO_MAX_FPS;
+                    enc.maxBitrate = ECO_MAX_BITRATE;
+                    p.degradationPreference = 'maintain-resolution';
+                } else {
+                    delete enc.maxFramerate;
+                    delete enc.maxBitrate;
+                    delete enc.scaleResolutionDownBy;
+                    delete p.degradationPreference;
+                }
+                sender.setParameters(p).catch(() => {});
+            }
+        } catch (e) {}
+    }
+
+    function setPerfMode(mode) {
+        perfMode = (mode === 'eco') ? 'eco' : 'full';
+        window.RNP_PERF_MODE = perfMode;
+        for (const entry of peers.values()) {
+            limitarClone(entry.clone);
+            limitarSender(entry.pc);
+        }
+    }
+
     async function answer({session_id, source_id, kind, sdp}) {
         const original = sourceTrack(source_id, kind);
         if (!original) throw new Error('Fonte indisponível ou sem trilha individual.');
@@ -556,6 +607,7 @@
         const pc = new RTCPeerConnection({iceServers: [], bundlePolicy: 'max-bundle'});
         window.RnpConnection?.ignore(pc); // Relay local para o OBS, não é a entrada RNP.
         const clone = original.clone();
+        limitarClone(clone);
         const entry = {pc, clone};
         peers.set(session_id, entry);
         entry.expiry = setTimeout(() => close(session_id), 20000);
@@ -576,6 +628,7 @@
         try {
             await pc.setRemoteDescription({type: 'offer', sdp});
             pc.addTrack(clone, new MediaStream([clone]));
+            limitarSender(pc);
             await pc.setLocalDescription(await pc.createAnswer());
             await new Promise((resolve, reject) => {
                 if (pc.iceGatheringState === 'complete') return resolve();
@@ -693,5 +746,5 @@
     }).observe(document.documentElement, {childList: true, subtree: true});
     setInterval(dismissInactivityModals, 2000);
 
-    window.RnpMedia = {version: 1, cameraEntries, audioEntries, audioInfo, describe, answer, close, startPcm, youtubeState};
+    window.RnpMedia = {version: 1, cameraEntries, audioEntries, audioInfo, describe, answer, close, startPcm, youtubeState, setPerfMode};
 })();

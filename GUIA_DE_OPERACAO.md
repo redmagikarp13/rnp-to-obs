@@ -59,6 +59,11 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 - O temporizador padrão manterá o resultado visível por 15 segundos (com barra regressiva animada) e fará o fade-out automático, sem necessidade de intervenção do operador.
 - No Dock, o operador pode forçar a exibição contínua, alterar o estilo visual (`Neon`, `Glass`, `Discord`, `Cyberpunk`, `Minimal`) ou fechar o card manualmente.
 
+### Modo Econômico (notebooks e máquinas fracas)
+- Na barra de status do topo do painel, o botão **⚡ Cheio / Econômico** (`#btnPerfMode`) alterna o modo de desempenho **ao vivo**, sem precisar reconectar.
+- No modo **Econômico** a ponte: limita o vídeo enviado ao OBS a **720p/15fps**, reduz pela metade a cadência de sincronização e desliga os previews do painel. Isso corta bastante o uso de CPU — recomendado para **notebooks** e máquinas mais fracas em eventos.
+- Use **Cheio** quando a máquina for forte (desktop com bom CPU/GPU) e você quiser a máxima fluidez de quadro.
+
 ---
 
 ## 🛑 Pós-Live e Encerramento
@@ -97,3 +102,11 @@ O operador pode alternar os layouts a qualquer instante conforme o momento da tr
 - **Solução:**
   1. Evite manter Browser Sources apontando diretamente para a URL da sala BBB (`conferenciaweb.rnp.br/...`) abertas junto com a ponte — cada uma roda um cliente BBB completo e satura a CPU. Use apenas os endpoints leves da ponte (`/stage`, `/cameras/grid`, `/presentation`, `/libras`, `/chat`).
   2. No bloco **Fontes para o OBS Studio** do painel (`/control`), abra o guia recolhível **⚡ Áudio trava em segundo plano? Ajustes de energia do Windows** para copiar os comandos de `powercfg` (estado mínimo da CPU em 100% na tomada, desativação de ASPM PCIe e suspensão seletiva USB) e de prioridade de áudio/rede do Windows (MMCSS e desativação de *Power Throttling*).
+
+### 8. O uso de CPU está alto / a transmissão trava em notebook
+- **Causa:** A ponte é um navegador dentro da sala BBB e decodifica todas as trilhas de vídeo; cada Browser Source do OBS decodifica de novo. Em notebooks (CPU mais fraca) isso pesa.
+- **Solução:**
+  1. Ative o **Modo Econômico** (botão **⚡** na barra de status) — limita o vídeo a 720p/15fps e reduz a cadência de sincronização.
+  2. No OBS, prefira **uma única fonte `/stage` composta** em vez de uma fonte por câmera (cada fonte extra custa ~15% de CPU somando ponte + OBS).
+  3. Mantenha a **aceleração de hardware ligada** no OBS e os previews do painel desligados.
+  4. Para verificar se o vídeo está sendo decodificado pela **GPU** (e não pela CPU), rode `python tools/diag_gpu_decode.py` na máquina da transmissão; se aparecer *SwiftShader/software*, atualize o driver da GPU e garanta que a GPU dedicada está sendo usada.
