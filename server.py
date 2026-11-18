@@ -1318,6 +1318,23 @@ def sync_interval(webrtc_only: bool, performance_mode: str) -> float:
 # próxima tenta de novo — degrada graciosamente em vez de travar.
 SYNC_EVAL_TIMEOUT = 8.0
 
+
+async def aplicar_perf_mode_ao_vivo():
+    """Re-aplica (ou remove) os tetos de encode nos peers WebRTC já abertos, para o
+    performance_mode valer sem reconectar. A cadência do sync_loop lê o novo modo na
+    próxima volta. Chamado por /api/grid/config, /api/config/save e /api/config/reset:
+    mudar só o estado deixava os peers abertos com os caps antigos (bug da auditoria).
+    O adapter tem guarda version===1, então re-avaliar o JS é no-op: só setPerfMode
+    re-aplica aos peers abertos."""
+    if state.connected and state.page:
+        try:
+            _frame = find_active_bbb_frame(state.page)
+            await asyncio.wait_for(
+                _frame.evaluate('(m) => window.RnpMedia?.setPerfMode(m)', state.performance_mode),
+                timeout=SYNC_EVAL_TIMEOUT)
+        except Exception:
+            pass
+
 # --------------------------------------------------------------------------
 # Broadcast de áudio/picos por fila (não-bloqueante)
 # --------------------------------------------------------------------------
@@ -2591,16 +2608,7 @@ async def api_grid_config(req: Request):
         state.stage_preset = data["stage_preset"]
     if "performance_mode" in data:
         state.performance_mode = data["performance_mode"]
-        # Aplica ao vivo: re-aplica (ou remove) os tetos de encode nos peers WebRTC
-        # já abertos; a cadência do sync_loop passa a ler o novo modo na próxima volta.
-        if state.connected and state.page:
-            try:
-                _frame = find_active_bbb_frame(state.page)
-                await asyncio.wait_for(
-                    _frame.evaluate('(m) => window.RnpMedia?.setPerfMode(m)', state.performance_mode),
-                    timeout=SYNC_EVAL_TIMEOUT)
-            except Exception:
-                pass
+        await aplicar_perf_mode_ao_vivo()
     if "custom_name" in data and "cam_id" in data:
         c_name = data["custom_name"].strip()
         cid_str = str(data["cam_id"])
@@ -2714,7 +2722,9 @@ async def api_config_save(req: Request):
     if "camera_name_style" in data: state.camera_name_style = data["camera_name_style"]
     if "grid_layout_mode" in data: state.grid_layout_mode = data["grid_layout_mode"]
     if "stage_preset" in data: state.stage_preset = data["stage_preset"]
-    if "performance_mode" in data: state.performance_mode = data["performance_mode"]
+    if "performance_mode" in data:
+        state.performance_mode = data["performance_mode"]
+        await aplicar_perf_mode_ao_vivo()
     if "libras_size" in data: state.libras_size = data["libras_size"]
     if "libras_saved_names" in data: state.libras_saved_names = [str(x) for x in data["libras_saved_names"]]
     if "poll_display_mode" in data: state.poll_display_mode = data["poll_display_mode"]
@@ -2754,6 +2764,7 @@ async def api_config_reset(req: Request):
     state.camera_format = cfg.get("camera_format", "original")
     state.stage_preset = cfg["stage_preset"]
     state.performance_mode = cfg.get("performance_mode", "full")
+    await aplicar_perf_mode_ao_vivo()
     state.libras_size = cfg["libras_size"]
     state.libras_saved_names = []
     state.libras_disabled_names = []

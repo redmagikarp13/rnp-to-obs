@@ -954,6 +954,60 @@ class BrowserMediaTests(unittest.IsolatedAsyncioTestCase):
                         'O palco precisa reproduzir o master de áudio (participantes + apresentações).')
         self.assertCountEqual(self.offers, ['cam-w_a', 'cam-w_b'])
 
+    async def test_eco_desliga_previews_ao_ativar_pelo_botao(self):
+        # Bug pego na auditoria: togglePerformanceMode iterava
+        # ('cameras', 'presentation', 'stage') com operador VIRGULA => iterava as
+        # letras de 'stage' e togglePreview saia sem desligar preview nenhum.
+        await self.receiver.goto(self.url + '/control')
+        await self.receiver.evaluate("""() => {
+            for (const k of ['cameras', 'presentation', 'stage']) {
+                if (window.RnpDock.previewOff[k]) window.RnpDock.togglePreview(k);
+            }
+        }""")
+        self.assertNotEqual(
+            await self.receiver.evaluate("document.getElementById('gridPreviewIframe').getAttribute('src')"),
+            'about:blank', 'preview deveria estar ligado antes do eco')
+        await self.receiver.locator('#btnPerfMode').click()
+        await self.receiver.wait_for_function(
+            "document.getElementById('btnPerfMode').dataset.mode === 'eco'", timeout=10000)
+        await self.receiver.wait_for_function(
+            "document.getElementById('gridPreviewIframe').getAttribute('src') === 'about:blank' && "
+            "!document.getElementById('thumbScreen').hasAttribute('src') && "
+            "document.getElementById('stagePreviewIframe').getAttribute('src') === 'about:blank'",
+            timeout=10000)
+
+    async def test_oferta_webrtc_mantem_fallback_de_codecs(self):
+        # A preferencia H264 na saida nao pode REMOVER os codecs fallback da oferta:
+        # se o OBS/CEF nao puder H264, a negociacao cai em VP8/VP9/AV1.
+        sdp_ofertas = []
+
+        async def captura(route):
+            try:
+                corpo = route.request.post_data_json
+                if corpo and corpo.get('sdp'):
+                    sdp_ofertas.append(corpo['sdp'])
+            except Exception:
+                pass
+            await route.continue_()
+
+        await self.receiver.route('**/api/webrtc/offer', captura)
+        await self.receiver.goto(self.url + '/webrtc?source=cam-w_a&kind=video')
+        await self.receiver.wait_for_function(
+            "document.body.classList.contains('connected')", timeout=25000)
+        await self.receiver.unroute('**/api/webrtc/offer')
+        self.assertTrue(sdp_ofertas, 'nenhuma oferta SDP capturada')
+        sdp = sdp_ofertas[0]
+        mvideo = [l for l in sdp.splitlines() if l.startswith('m=video')][0]
+        pts = mvideo.split()[3:]
+        codecs = {}
+        for l in sdp.splitlines():
+            if l.startswith('a=rtpmap:'):
+                pt, nome = l[len('a=rtpmap:'):].split(' ', 1)
+                codecs[pt] = nome.split('/')[0]
+        ordem = [codecs.get(p, '?') for p in pts]
+        self.assertEqual(ordem[0], 'H264', f'H264 deve ser o primeiro codec de video: {ordem}')
+        self.assertIn('VP8', ordem, 'VP8 deve permanecer como fallback na oferta')
+
     async def test_stage_prefere_h264_na_saida_para_o_obs(self):
         # A perna ponte->OBS deve negociar H264, que o CEF/Chromium do OBS decodifica
         # em HARDWARE, em vez do VP8 padrao (que cai em libvpx software no OBS). O

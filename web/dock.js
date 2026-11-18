@@ -256,7 +256,7 @@
             // Entrar em eco desliga os previews ao vivo: cada preview é uma página
             // inteira decodificando vídeo no dock. O operador pode religar depois.
             if (proximo === 'eco' && window.RnpDock && window.RnpDock.previewOff) {
-                for (const kind of ('cameras', 'presentation', 'stage')) {
+                for (const kind of ['cameras', 'presentation', 'stage']) {
                     if (!window.RnpDock.previewOff[kind]) window.RnpDock.togglePreview(kind);
                 }
             }

@@ -285,6 +285,37 @@ class MediaRoutesTests(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(self.state.performance_mode, 'eco', 'inválido não pode mutar')
 
+    def test_perf_mode_aplicado_ao_vivo_em_save_e_reset(self):
+        # Bug pego na auditoria: /api/config/save e /api/config/reset mudavam o estado
+        # mas nao re-aplicavam os tetos de encode nos peers WebRTC ja abertos (so o
+        # /api/grid/config chamava setPerfMode). O modo novo so valeria apos reconectar.
+        chamadas = []
+
+        class _FramePerf:
+            url = 'https://live-x.mconf.rnp.br/html5client/?sessionToken=t'
+
+            async def evaluate(self, expr, arg=None):
+                chamadas.append((expr, arg))
+                return None
+
+        class _PagePerf:
+            def __init__(self):
+                self.main_frame = _FramePerf()
+                self.frames = [self.main_frame]
+
+        self.state.connected = True
+        self.state.page = _PagePerf()
+        self.state.performance_mode = 'full'
+        r = self.client.post('/api/config/save', json={'performance_mode': 'eco'})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(any('setPerfMode' in e and a == 'eco' for e, a in chamadas),
+                        'config/save deve re-aplicar o modo nos peers abertos')
+        chamadas.clear()
+        r = self.client.post('/api/config/reset')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(any('setPerfMode' in e and a == 'full' for e, a in chamadas),
+                        'config/reset deve re-aplicar o modo default nos peers abertos')
+
     def test_grid_config_nao_aplica_metade_com_performance_mode_invalido(self):
         self.state.performance_mode = 'full'
         self.state.stage_preset = 'bottom-bar'
