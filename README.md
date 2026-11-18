@@ -175,6 +175,18 @@ O master já cobre a transmissão. Se precisar de uma trilha separada (ex.: grav
 
 ---
 
+## ⚡ Modo econômico (`performance_mode`)
+
+Para rodar com folga em **notebooks de evento** ou máquinas mais fracas, a ponte oferece dois modos em `performance_mode`: `full` (padrão) e `eco`.
+
+- **Como alternar:** use o botão na barra de status do painel (`/control`), que aplica ao vivo via `/api/grid/config` sem reconectar a sala e desliga os previews ao vivo do dock ao entrar em `eco` (podem ser religados manualmente).
+- **Tetos aplicados em `eco`:** limita o relay WebRTC ponte → OBS a **1280x720, 15 fps e 1,2 Mbps** e reduz o `sync_loop` para **1 Hz** (contra 0,5 s no `full`), poupando CPU de encode na ponte e decode nas Browser Sources.
+- **O que NÃO resolve:** o piso de **decode de entrada em VP8/libvpx (software)** das trilhas recebidas da sala BBB (~245% no `gpu-process`).
+
+Detalhes técnicos, diagnóstico de GPU e validação em E-cores estão em [docs/WEBRTC_TRANSPORTE.md](docs/WEBRTC_TRANSPORTE.md).
+
+---
+
 ## 📄 Licença
 Desenvolvido para apoio às transmissões educacionais e institucionais.
 Cefor / Ifes — Instituto Federal do Espírito Santo.

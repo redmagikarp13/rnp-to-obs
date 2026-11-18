@@ -6,7 +6,7 @@
 > `app.pyw`, `.exe`); o legado JPEG permanece disponível apenas por opt-out
 > explícito com `RNP_WEBRTC_ONLY=0`.
 
-Última atualização: 2026-09-30.
+Última atualização: 2026-11-18 (última release: `v1.1.16`; branch `versaolite` prepara `v1.1.17`).
 
 ---
 
@@ -277,39 +277,31 @@ se quiser um backstop, defina `RNP_MAX_PEERS=<número>` na linha de comando do
 servidor. (Medição do OBS em si segue pendente.)
 
 ### Modo Econômico e teto de encode (2026-11)
-Para rodar em notebooks/máquinas fracas, o campo `performance_mode` (`full`|`eco`,
-padrão `full`) limita o relay ponte→OBS **ao vivo**, sem reconectar:
-- Em `eco`, `web/media-source.js` aplica `limitarClone` (`applyConstraints`
-  frameRate≤15, 1280x720) e `limitarSender` (`encodings.maxFramerate=15`,
-  `maxBitrate=1.2Mbps`, `degradationPreference='maintain-resolution'`) em cada peer
-  de vídeo. Corta CPU de **encode na ponte** e de **decode em cada Browser Source**
-  do OBS. `setPerfMode(mode)` re-aplica aos peers já abertos; o server injeta
-  `window.RNP_PERF_MODE` no `add_init_script` e chama `setPerfMode` no
-  `/api/grid/config` ao alternar (botão `#btnPerfMode` no dock).
-- Em `eco`, o `sync_loop` cai para **1 Hz** (`sync_interval()` / `SYNC_INTERVAL_ECO`),
-  metade dos `evaluate()` por câmera. O legado JPEG mantém 0,05 s.
-- O piso dominante continua sendo o **decode das trilhas de entrada** na página da
-  sala (a ponte é um participante BBB). Para confirmar se esse decode está na GPU,
-  use `tools/diag_gpu_decode.py` (mesmos `BROWSER_LAUNCH_ARGS`/`browser_channels()`
-  da produção; reporta o renderer WebGL e `decoderImplementation`/`powerEfficientDecoder`).
+Para rodar em notebooks/máquinas fracas em eventos, o campo `performance_mode` (`full`|`eco`, padrão `full` em `DEFAULT_CONFIG`, validado por `_ENUM_CAMPOS`/`erro_enum`) limita o relay ponte→OBS **ao vivo** via `/api/grid/config`, `/api/config/save` e `/api/config/reset` (helper `aplicar_perf_mode_ao_vivo`, sem reconectar):
+- Em `eco`, `web/media-source.js` aplica `limitarClone` (`applyConstraints` com `1280x720` ideal e `frameRate` máximo `15`) e `limitarSender` (`encodings.maxFramerate=15`, `maxBitrate=1.2 Mbps` / `1200000`, `degradationPreference='maintain-resolution'`) em cada peer de vídeo. Corta CPU de **encode na ponte** e de **decode em cada Browser Source** do OBS. `RnpMedia.setPerfMode(mode)` re-aplica aos peers já abertos; o server injeta `window.RNP_PERF_MODE` no `add_init_script`.
+- Em `eco`, o `sync_loop` cai para **1,0 s (1 Hz)** (`SYNC_INTERVAL_ECO=1.0`, contra `0,5 s` em `full`), metade dos `evaluate()` por câmera. O legado JPEG mantém `0,05 s`.
+- Ao entrar em `eco` pelo botão `#btnPerfMode` no dock (`togglePerformanceMode` em `web/dock.js`), os **previews ao vivo do dock são desligados** (o operador pode religar manualmente).
+- **O que o `eco` NÃO resolve:** o piso dominante de **decode de entrada** das trilhas da sala BBB (`VP8/libvpx` em software, ~245% no `gpu-process`, medido).
+- **Ferramentas de diagnóstico e validação:**
+  - `tools/rodar_em_ecores.py`: confina a árvore da ponte (`server.py` + Edge headless) a E-cores para simular notebook fraco (use `--measure` para acompanhar `/api/status`).
+  - `tools/diag_gpu_decode.py`: diagnóstico de renderer WebGL e `decoderImplementation`/`powerEfficientDecoder` usando os argumentos e canais de `server.py`.
 
-### Codecs: VP8 na entrada (software), H264 na saída (hardware no OBS)
+### Codecs: VP8 na entrada (software) e preferência H264 na saída
 Diagnóstico ao vivo (getStats das trilhas + sonda de SDP):
-- **Entrada (sala BBB → ponte):** o servidor Mconf/RNP entrega **VP8-only** (SDP `m=video`
+- **Entrada (sala BBB → ponte) — MEDIDO:** o servidor Mconf/RNP entrega **VP8-only** (SDP `m=video`
   só com VP8 PT 96 + RTX 97; sem VP9/H264/AV1). O assinante não tem codec alternativo
   para negociar. E **nenhum browser mainstream (Chrome/Edge/Firefox) faz HW decode de VP8**
   no Windows — cai em **libvpx (software)**, medido como `decoderImplementation="libvpx"`,
   `powerEfficientDecoder=false`. A GPU até poderia (o NVDEC decodifica VP8, segundo o doc
   NVIDIA Video Codec SDK), mas o Chromium não roteia VP8 para o NVDEC. Esse é o **piso de
-  CPU da ponte** (~245% no gpu-process) e só cai se a RNP habilitar VP9/H264 no servidor
+  CPU da ponte** (~245% no `gpu-process`, medido) e só cai se a RNP habilitar VP9/H264 no servidor
   (aí o Chromium faz HW decode) ou com um pipeline nativo (FFmpeg `vp8_cuvid`).
-- **Saída (ponte → OBS):** a perna negociava **VP8** por padrão, e o CEF do OBS decodifica
-  VP8 em software. Como ambos os lados são Chromium e o SDP de resposta da ponte oferece
-  H264/VP9/AV1/VP8, os receptores (`web/stage-media.js`, `web/webrtc-receiver.js`) passaram
-  a aplicar `setCodecPreferences` **preferindo H264** (demais como fallback). Com isso o
-  **OBS decodifica em hardware** (Chromium faz HW decode de H264), sem custo extra de encode
-  na ponte (medido: H264 372,7% vs VP8 374,8%, ruído). Diagnóstico permanente em
-  `/api/status.inbound_video` (codec/decoder/powerEfficient da entrada).
+- **Saída (ponte → OBS) — MEDIDO vs HIPÓTESE:** os receptores (`web/stage-media.js`, `web/webrtc-receiver.js`)
+  aplicam `setCodecPreferences` **preferindo H264** (VP8/VP9/AV1 como fallback). **Medido na ponte:**
+  o encode H264 custa praticamente o mesmo do VP8 (`372,7%` vs `374,8%`, dentro do ruído). **Hipótese
+  pendente de validação:** que o CEF do OBS decodifique H264 em hardware — isso **ainda não foi
+  confirmado em OBS real** (Edge headless não expõe `decoderImplementation`). Diagnóstico permanente da
+  entrada em `/api/status.inbound_video` (codec/decoder/powerEfficient).
 
 **Limites das evidências:**
 - A melhora de fluidez é relato qualitativo do usuário no OBS; não houve medição
